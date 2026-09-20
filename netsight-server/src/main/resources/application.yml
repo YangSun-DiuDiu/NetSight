@@ -1,0 +1,125 @@
+# NetSight 主配置
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: netsight-server
+  profiles:
+    active: dev
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 50MB
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.1.55}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 5s
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:192.168.1.55}:${MYSQL_PORT:3306}/${MYSQL_DB:netsight}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&connectionCollation=utf8mb4_general_ci
+    username: ${MYSQL_USER:sadmin}
+    password: ${MYSQL_PASSWORD:}
+    hikari:
+      # 连接初始化强制设置会话字符集（Connector/J 9.x 对 characterEncoding 行为有变化，双保险）
+      connection-init-sql: SET NAMES utf8mb4
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+
+# MyBatis-Plus 配置
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.netsight.modules.**.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: del_flag
+      logic-delete-value: 2
+      logic-not-delete-value: 0
+
+# JWT 配置（密钥通过环境变量注入，禁止硬编码到代码库）
+jwt:
+  secret: ${JWT_SECRET:}
+  # Token 有效期（分钟）——720=12 小时，避免运维人员频繁掉线（2026-09-16 由 120 调长）
+  expire-minutes: 720
+  # Token 请求头
+  header: Authorization
+  # Token 前缀
+  prefix: "Bearer "
+
+# Token 落库加密（AES-256-GCM）——密钥通过环境变量 AES_TOKEN_KEY 注入，禁止硬编码到代码库
+# 【安全】生产必须注入独立密钥；更换密钥会导致历史密文不可解密（Token 需重置），上线后禁止随意更换
+# 注：默认值仅作开发兜底（Spring @Value 不支持环境变量宽松绑定，必须在此提供非空默认）
+aes:
+  token-key: ${AES_TOKEN_KEY:NetSightAesTokenKey2026DevOnly!}
+
+# NetSight 业务配置
+netsight:
+  # 短信验证码开发模式：true=使用固定模拟验证码 123456，生产置 false
+  sms:
+    mock-mode: true
+    mock-code: "123456"
+    expire-minutes: 5
+  # 边缘网关 WebSocket 路径
+  websocket:
+    gateway-path: /ws/gateway
+    dashboard-path: /ws/dashboard
+  # ===== 监控告警链路（第 4 周）=====
+  alert:
+    # AlertManager Webhook 接入密钥 —— 仅本地开发/过渡期兜底
+    # 生产多租户：租户级 Webhook Token 优先（sys_tenant.webhook_token，服务端反查，Token 即租户身份）
+    # 【安全】生产禁止默认值：未注入 WEBHOOK_TOKEN 时为空，启动校验拒绝启动（防默认密钥被伪造告警利用）
+    webhook-token: ${WEBHOOK_TOKEN:}
+    # 通道发送失败重试间隔（ms），最多 3 次
+    retry-intervals: ${ALERT_RETRY_INTERVALS:1000,2000,3000}
+    # 短信失败自动降级公众号
+    fallback-enabled: true
+    channel:
+      # 短信通道（开发默认 mock；生产设环境变量 SMS_MOCK=false + 真实网关 API）
+      sms:
+        mock-mode: ${SMS_MOCK:true}
+        api-url: ${SMS_API_URL:}
+        app-key: ${SMS_APP_KEY:}
+        app-secret: ${SMS_APP_SECRET:}
+      # 微信公众号通道（开发默认 mock；生产设环境变量 WECHAT_MOCK=false + 服务号模板消息）
+      wechat:
+        mock-mode: ${WECHAT_MOCK:true}
+        app-id: ${WECHAT_APP_ID:}
+        app-secret: ${WECHAT_APP_SECRET:}
+        template-id: ${WECHAT_TEMPLATE_ID:}
+      # PushPlus 通道（租户级 Token：云端租户管理配置 sys_tenant.pushplus_token，发送时按事件租户取用）
+      # 开发默认 mock；生产设环境变量 PUSHPLUS_MOCK=false + 租户配置真实 Token 即生效（代码层默认值亦为 false 兜底）
+      pushplus:
+        mock-mode: ${PUSHPLUS_MOCK:true}
+        api-url: ${PUSHPLUS_API_URL:https://www.pushplus.plus/send}
+        timeout-ms: 5000
+        title-prefix: ${PUSHPLUS_TITLE_PREFIX:【运维告警】}
+
+logging:
+  # 显式指定 Logback 配置（Spring Boot 默认已按 logback-spring.xml 自动加载，此处声明便于排查）
+  config: classpath:logback-spring.xml
+  # 日志文件落盘路径：本地相对项目目录 logs/；云端由 systemd WorkingDirectory=/opt/nams-server 落 /opt/nams-server/logs/
+  file:
+    path: logs
+  level:
+    com.netsight: info
+    com.netsight.modules.system.mapper: debug

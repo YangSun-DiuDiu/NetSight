@@ -1,0 +1,51 @@
+[
+  {
+    "targets": [
+      "192.168.10.1"
+    ],
+    "labels": {
+      "tenant_id": "1",
+      "gateway_code": "GW202609110004",
+      "gateway_name": "厂区边缘网关",
+      "device_code": "DEV-SW-CORE-01",
+      "device_name": "核心交换机",
+      "device_ip": "192.168.10.1",
+      "device_type": "network",
+      "device_location": "1号楼机房A-01机柜"
+    }
+  },
+  {
+    "targets": [
+      "192.168.10.10"
+    ],
+    "labels": {
+      "tenant_id": "1",
+      "gateway_code": "GW202609110004",
+      "gateway_name": "厂区边缘网关",
+      "device_code": "DEV-SW-ACC-01",
+      "device_name": "接入交换机",
+      "device_ip": "192.168.10.10",
+      "device_type": "network",
+      "device_location": "1号楼3层弱电间",
+      "parent_main": "核心交换机",
+      "parent_backup1": "汇聚交换机A",
+      "parent_backup2": "汇聚交换机B"
+    }
+  },
+  {
+    "targets": [
+      "192.168.20.21"
+    ],
+    "labels": {
+      "tenant_id": "1",
+      "gateway_code": "GW202609110004",
+      "gateway_name": "厂区边缘网关",
+      "device_code": "DEV-CAM-01",
+      "device_name": "车间枪机",
+      "device_ip": "192.168.20.21",
+      "device_type": "camera",
+      "device_location": "1号车间东墙",
+      "parent_main": "接入交换机"
+    }
+  }
+]

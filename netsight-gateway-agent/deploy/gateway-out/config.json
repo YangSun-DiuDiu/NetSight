@@ -1,0 +1,11 @@
+{
+  "source": "prometheus",
+  "base_url": "http://192.168.1.55",
+  "webhook_token": "CHANGE_ME",
+  "tenant_id": 1,
+  "gateway_code": "GW202609110004",
+  "gateway_token": "",
+  "push_interval": 15,
+  "heartbeat_interval": 30,
+  "device_count": 3
+}

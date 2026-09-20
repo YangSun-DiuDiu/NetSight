@@ -1,0 +1,9 @@
+{
+  "target_url": "http://192.168.1.5:8080",
+  "gateway_token": "e3f2a1b4c5d6e7f8091a2b3c4d5e6f70",
+  "tenant_id": 1,
+  "ip_address": "192.168.1.60",
+  "status_interval": 15,
+  "heartbeat_interval": 30,
+  "devices_file": "/opt/nams-gateway-sim/devices.json"
+}

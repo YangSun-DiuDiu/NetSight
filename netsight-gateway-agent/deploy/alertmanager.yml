@@ -1,0 +1,17 @@
+# NetSight 边缘网关 Alertmanager 配置
+# 告警统一路由到 nams-agent 本地告警接收(:18080)，由 nams-agent 转投云端（租户 Webhook Token 鉴权）
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'device_code']
+  group_wait: 5s
+  group_interval: 30s
+  repeat_interval: 4h
+  receiver: 'nams-agent'
+
+receivers:
+  - name: 'nams-agent'
+    webhook_configs:
+      - url: 'http://127.0.0.1:18080/alert/push'
+        send_resolved: true

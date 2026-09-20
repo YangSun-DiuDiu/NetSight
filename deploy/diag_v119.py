@@ -1,0 +1,15 @@
+import paramiko, sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+c = paramiko.SSHClient(); c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+c.connect('192.168.1.55', 22, 'root', 'Chinaunicom@1358', timeout=15)
+def run(cmd):
+    i,o,e = c.exec_command(cmd); return (o.read().decode('utf-8','ignore')+e.read().decode('utf-8','ignore')).strip()
+print('== nams-server 状态 ==')
+print(run('systemctl is-active nams-server; systemctl status nams-server --no-pager | head -5'))
+print('== 重启后端 ==')
+print(run('systemctl restart nams-server; sleep 6; systemctl is-active nams-server'))
+print('== health ==')
+print(run("curl -s http://127.0.0.1:8080/actuator/health"))
+print('== dist 现状 ==')
+print(run('ls -la /opt/nams-ui/dist/ | head; echo ---; ls -la /opt/nams-ui/dist/index.html'))
+c.close()

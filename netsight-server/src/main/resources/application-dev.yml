@@ -1,0 +1,30 @@
+# 开发环境配置
+# 敏感信息（数据库密码、JWT密钥）不写入此文件，通过环境变量注入：
+#   MYSQL_PASSWORD、JWT_SECRET
+# 开发阶段约定（见《开发规范.md》）：
+#   MySQL: 192.168.1.55:3306 用户 sadmin
+#   Redis: 192.168.1.55:6379 无密码
+spring:
+  data:
+    redis:
+      host: 192.168.1.55
+      port: 6379
+      password: ""
+  datasource:
+    url: jdbc:mysql://192.168.1.55:3306/netsight?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: sadmin
+    # 密码不写入配置文件，通过环境变量 MYSQL_PASSWORD 注入
+    password: ${MYSQL_PASSWORD:}
+
+jwt:
+  # 开发阶段密钥，生产必须通过环境变量注入
+  secret: ${JWT_SECRET:NetSightDevSecretKey2026ForLocalDevOnly!}
+
+netsight:
+  alert:
+    # 开发阶段默认 Webhook Token（仅 dev profile 生效，生产 application.yml 无默认值，缺失即拒绝启动）
+    webhook-token: ${WEBHOOK_TOKEN:NetSightDevWebhookToken2026}
+
+logging:
+  level:
+    com.netsight: debug

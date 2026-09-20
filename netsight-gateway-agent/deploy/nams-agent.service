@@ -1,0 +1,18 @@
+[Unit]
+Description=NetSight Gateway Agent (nams-agent)
+After=network-online.target prometheus.service alertmanager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/nams-gateway
+ExecStart=/opt/java21/bin/java -Xms256m -Xmx768m -Dnams.home=/opt/nams-gateway -Dnams.conf=/opt/nams-gateway/conf/config.json -DLOG_PATH=/opt/nams-gateway/logs -jar /opt/nams-gateway/bin/nams-agent.jar
+Restart=always
+RestartSec=5
+# 本地管理页面仅内网访问：应用默认监听 0.0.0.0:8081，
+# 建议在防火墙层仅允许内网网段访问 8081/18080（见部署方案 9.3）
+# 健康检查：GET http://127.0.0.1:8081/local/api/healthz（预留）
+
+[Install]
+WantedBy=multi-user.target

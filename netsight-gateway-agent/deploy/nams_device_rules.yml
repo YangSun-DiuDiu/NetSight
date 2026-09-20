@@ -1,0 +1,27 @@
+# NetSight 边缘网关设备告警规则（与方案第 3 章统一设备监控指标规范一致）
+# device_up / device_line_abnormal 由自研采集探针 nams-collector 暴露，标签完整（device_code 等）
+groups:
+  - name: nams_device
+    interval: 15s
+    rules:
+      # 规则1：设备离线报警（核心高危告警）
+      - alert: 网络设备离线故障
+        expr: device_up == 0
+        for: 10s
+        labels:
+          severity: critical
+          type: 网络设备故障
+        annotations:
+          summary: "设备{{ $labels.device_name }}({{ $labels.device_ip }})离线故障"
+          description: "设备部署位置：{{ $labels.device_location }}，设备已离线，需立即排查"
+
+      # 规则2：设备外线异常报警（一般告警）
+      - alert: 设备外线状态异常
+        expr: device_line_abnormal == 1
+        for: 20s
+        labels:
+          severity: warning
+          type: 外线链路异常
+        annotations:
+          summary: "设备{{ $labels.device_name }}({{ $labels.device_ip }})外线异常"
+          description: "设备外线链路衰减/错包异常，设备在线，建议巡检线路"

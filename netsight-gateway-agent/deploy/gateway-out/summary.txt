@@ -1,0 +1,18 @@
+NetSight 边缘网关配置文件生成报告
+========================================
+生成时间：2026-09-13 16:22:00
+生成设备数：3
+
+设备清单：
+  DEV-SW-CORE-01         核心交换机        192.168.10.1     类型=network      网关=GW202609110004
+  DEV-SW-ACC-01          接入交换机        192.168.10.10    类型=network      网关=GW202609110004
+  DEV-CAM-01             车间枪机         192.168.20.21    类型=camera       网关=GW202609110004
+
+输出文件：
+  targets/snmp.json  (1350 字节)
+  prometheus.yml  (1336 字节)
+  blackbox.yml  (286 字节)
+  nams_device_rules.yml  (1551 字节)
+  config.json  (258 字节)
+
+校验：promtool check config prometheus.yml && promtool check rules nams_device_rules.yml

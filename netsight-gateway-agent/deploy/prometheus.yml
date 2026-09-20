@@ -1,0 +1,37 @@
+# NetSight 边缘网关 Prometheus 配置（真实生产环境）
+# 采集自研设备采集探针 nams-collector(:9258) → 告警规则 → Alertmanager(:9093) → nams-agent(:18080) → 云端
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    monitor: 'nams-edge'
+
+# Alertmanager 配置
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['127.0.0.1:9093']
+
+# 告警规则（设备离线 / 外线异常）
+rule_files:
+  - '/etc/prometheus/rules/nams_device_rules.yml'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    scrape_interval: 5s
+    scrape_timeout: 5s
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: node
+    static_configs:
+      - targets: ['localhost:9100']
+
+  # NetSight 自研设备采集探针（device_up / device_line_abnormal）
+  - job_name: nams_device
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['127.0.0.1:9258']

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetSight 边缘网关告警链路数据流图</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236366F1'/%3E%3Cpath d='M9 22V10l9 8V10' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:radial-gradient(1200px 700px at 20% -10%, #1E1B4B 0%, #0B1220 55%, #080D1A 100%); color:#E2E8F0;
+         font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif; min-height:100vh; padding:28px 20px 40px; }
+  .wrap { max-width:1460px; margin:0 auto; }
+  header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:22px; }
+  .title h1 { font-size:24px; font-weight:700; letter-spacing:.5px;
+              background:linear-gradient(90deg,#818CF8,#38BDF8); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .title p { margin-top:6px; font-size:13px; color:#94A3B8; max-width:860px; line-height:1.7; }
+  .badges { display:flex; gap:8px; flex-wrap:wrap; }
+  .badge { font-size:12px; padding:5px 12px; border-radius:999px; border:1px solid rgba(148,163,184,.25); color:#CBD5E1; background:rgba(148,163,184,.06); white-space:nowrap; }
+  .stage { position:relative; }
+  .legend { display:flex; gap:22px; flex-wrap:wrap; margin:18px 0 8px; font-size:12.5px; color:#CBD5E1; }
+  .legend span { display:inline-flex; align-items:center; gap:7px; }
+  .legend i { width:26px; height:0; border-top:2px solid; display:inline-block; }
+  .legend .l-blue i { border-color:#38BDF8; }
+  .legend .l-org i { border-color:#F97316; }
+  .legend .l-dash i { border-top-style:dashed; border-color:#64748B; }
+  .svgbox { width:100%; overflow-x:auto; border-radius:16px; border:1px solid rgba(148,163,184,.15);
+            background:rgba(2,6,23,.55); box-shadow:0 20px 60px rgba(0,0,0,.45); }
+  svg { display:block; min-width:1120px; width:100%; height:auto; }
+  .foot { margin-top:14px; font-size:12px; color:#64748B; line-height:1.8; }
+  .foot code { color:#93C5FD; background:rgba(99,102,241,.12); padding:1px 6px; border-radius:4px; font-family:Consolas,Menlo,monospace; font-size:11.5px; }
+  /* 节点卡片 */
+  .node { fill:rgba(30,41,59,.85); stroke:#334155; stroke-width:1; rx:10; }
+  .node-head { font-size:15px; font-weight:700; fill:#F1F5F9; }
+  .node-port { font-size:11px; fill:#64748B; font-family:Consolas,Menlo,monospace; }
+  .node-desc { font-size:11.5px; fill:#94A3B8; }
+  .accent-blue { stroke:#6366F1; }
+  .accent-org { stroke:#F97316; }
+  .accent-grn { stroke:#10B981; }
+  .lane { fill:rgba(99,102,241,.05); stroke:rgba(99,102,241,.22); stroke-width:1; stroke-dasharray:6 6; rx:14; }
+  .lane-t { font-size:13px; font-weight:700; fill:#A5B4FC; letter-spacing:2px; }
+  .lane-sub { font-size:11px; fill:#64748B; }
+  .arr-label { font-size:11px; fill:#94A3B8; }
+  .arr-label-b { font-size:11px; fill:#7DD3FC; }
+  .arr-label-o { font-size:11px; fill:#FDBA74; }
+  .arr-label-r { font-size:11px; fill:#FCA5A5; }
+  .dev-box { fill:rgba(15,23,42,.6); stroke:#334155; stroke-width:1; rx:10; }
+  .dev-ip { font-family:Consolas,Menlo,monospace; font-size:10.5px; fill:#94A3B8; }
+  .dev-name { font-size:11.5px; fill:#E2E8F0; }
+  .dot-on { fill:#10B981; }
+  .dot-off { fill:#EF4444; }
+  .chip { font-size:10.5px; fill:#64748B; font-family:Consolas,Menlo,monospace; }
+  .note { font-size:11px; fill:#FBBF24; }
+  .note-box { fill:rgba(251,191,36,.07); stroke:rgba(251,191,36,.3); stroke-width:1; rx:8; }
+  .stat-on { fill:#34D399; font-weight:700; }
+  .stat-off { fill:#F87171; font-weight:700; }
+  @media (max-width:760px){ body{padding:18px 12px 30px;} .title h1{font-size:20px;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title">
+      <h1>NetSight 边缘网关 · 告警链路数据流图</h1>
+      <p>云端 mapping 下发 → 边缘网关 Prometheus 全家桶（blackbox_exporter ICMP 探测）→ 告警规则 → Alertmanager → nams-agent → 云端告警闭环。设备指标原始数据不出内网，仅必要告警上云。</p>
+    </div>
+    <div class="badges">
+      <span class="badge">生产环境 192.168.1.60</span>
+      <span class="badge">Prometheus 3.5.0</span>
+      <span class="badge">blackbox 0.26.0</span>
+      <span class="badge">8 台设备 · 3 在线 / 5 离线</span>
+    </div>
+  </header>
+
+  <div class="legend">
+    <span class="l-blue"><i></i>采集 / 探测链路（下行）</span>
+    <span class="l-org"><i></i>告警链路（上行）</span>
+    <span class="l-dash"><i></i>文件 / 配置依赖</span>
+  </div>
+
+  <div class="svgbox">
+  <svg viewBox="0 0 1420 980" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#101A33"/><stop offset="1" stop-color="#0A1120"/>
+      </linearGradient>
+      <linearGradient id="boxBlue" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#2A3A63"/><stop offset="1" stop-color="#1C2745"/>
+      </linearGradient>
+      <linearGradient id="boxOrg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#4A3320"/><stop offset="1" stop-color="#2A2018"/>
+      </linearGradient>
+      <marker id="arrBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#38BDF8"/>
+      </marker>
+      <marker id="arrOrg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#F97316"/>
+      </marker>
+      <marker id="arrRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#EF4444"/>
+      </marker>
+      <pattern id="dotGrid" width="26" height="26" patternUnits="userSpaceOnUse">
+        <circle cx="1" cy="1" r="1" fill="rgba(148,163,184,.08)"/>
+      </pattern>
+      <marker id="arrDash" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#64748B"/>
+      </marker>
+    </defs>
+
+    <rect width="1420" height="980" fill="url(#bgGrad)"/>
+    <rect width="1420" height="980" fill="url(#dotGrid)"/>
+
+    <!-- ===== 泳道：内网设备（右） ===== -->
+    <rect x="1052" y="120" width="344" height="700" rx="14" class="lane"/>
+    <text x="1070" y="148" class="lane-t">内网设备</text>
+    <text x="1070" y="167" class="lane-sub">192.168.1.0/24 · ICMP 可达即在线</text>
+
+    <!-- ===== 泳道：边缘网关（中） ===== -->
+    <rect x="420" y="60" width="592" height="860" rx="14" class="lane"/>
+    <text x="438" y="88" class="lane-t">边缘网关（192.168.1.60）</text>
+    <text x="438" y="107" class="lane-sub">数据不出内网 · 仅告警上云 · 二进制部署（无 Docker）</text>
+
+    <!-- ===== 泳道：云端（左） ===== -->
+    <rect x="24" y="120" width="356" height="700" rx="14" class="lane"/>
+    <text x="42" y="148" class="lane-t">NetSight 云端（192.168.1.55）</text>
+    <text x="42" y="167" class="lane-sub">Nginx 80 → 后端 8080 · 多租户隔离</text>
+
+    <!-- ==================================================
+         节点
+    ================================================== -->
+
+    <!-- 云端 A：mapping 下发 -->
+    <g>
+      <rect x="52" y="230" width="300" height="130" class="node accent-blue"/>
+      <text x="72" y="258" class="node-head">① 清单下发接口</text>
+      <text x="72" y="278" class="node-port">GET /edge/config/mapping</text>
+      <text x="72" y="300" class="node-desc">X-Gateway-Token 鉴权</text>
+      <text x="72" y="318" class="node-desc">返回设备清单（编码 / IP / 类型 / 标签）</text>
+      <text x="72" y="342" class="note">nams-agent 每 60s 轮询拉取</text>
+    </g>
+
+    <!-- 云端 B：/alert/push -->
+    <g>
+      <rect x="52" y="640" width="300" height="150" class="node accent-org"/>
+      <text x="72" y="668" class="node-head">⑧ 云端告警接收</text>
+      <text x="72" y="688" class="node-port">POST /alert/push</text>
+      <text x="72" y="710" class="node-desc">租户级 Webhook Token 鉴权（服务端反查）</text>
+      <text x="72" y="730" class="node-desc">→ 事件中心（bizId 幂等去重）</text>
+      <text x="72" y="748" class="node-desc">→ 通知通道：短信 + 微信公众号</text>
+      <text x="72" y="766" class="node-desc">→ 自动生成维修工单（24h 去重）</text>
+    </g>
+
+    <!-- 网关 C：nams-agent -->
+    <g>
+      <rect x="440" y="140" width="552" height="120" class="node accent-blue"/>
+      <text x="460" y="168" class="node-head">③ nams-agent（Java / Spring Boot）</text>
+      <text x="460" y="188" class="node-port">:18080 告警接收 · :8081 本地管理页 · WebSocket /ws/gateway 预留</text>
+      <text x="460" y="212" class="node-desc">清单同步（拉云端 mapping → 生成 file_sd targets）</text>
+      <text x="460" y="230" class="node-desc">告警转投（Alertmanager webhook → 云端 /alert/push）</text>
+      <text x="460" y="248" class="node-desc">状态快照 / 心跳上报（/edge/report/status · heartbeat）</text>
+    </g>
+
+    <!-- 网关 D：targets/snmp.json -->
+    <g>
+      <rect x="440" y="330" width="250" height="110" class="node" stroke-dasharray="5 4"/>
+      <text x="460" y="358" class="node-head">② 设备清单文件</text>
+      <text x="460" y="378" class="node-port">/opt/nams-gateway/conf/targets/snmp.json</text>
+      <text x="460" y="400" class="node-desc">file_sd 格式 · labels 含 device_code /</text>
+      <text x="460" y="418" class="node-desc">tenant_id / gateway_code / 位置等</text>
+      <text x="460" y="434" class="note">设备增删 → 改此文件 → 60s 生效，零重启</text>
+    </g>
+
+    <!-- 网关 G：Alertmanager -->
+    <g>
+      <rect x="730" y="330" width="262" height="110" class="node accent-org"/>
+      <text x="750" y="358" class="node-head">⑥ Alertmanager</text>
+      <text x="750" y="378" class="node-port">:9093 · /opt/alertmanager/alertmanager.yml</text>
+      <text x="750" y="400" class="node-desc">group_by[alertname, device_code]</text>
+      <text x="750" y="418" class="node-desc">repeat_interval 5m · send_resolved: true</text>
+      <text x="750" y="434" class="node-desc">receiver → nams-agent webhook</text>
+    </g>
+
+    <!-- 网关 E：Prometheus -->
+    <g>
+      <rect x="440" y="520" width="250" height="120" class="node accent-blue"/>
+      <text x="460" y="548" class="node-head">④ Prometheus</text>
+      <text x="460" y="568" class="node-port">:9090 · /etc/prometheus/prometheus.yml</text>
+      <text x="460" y="592" class="node-desc">job: nams_device_probe</text>
+      <text x="460" y="610" class="node-desc">metrics_path /probe · module=icmp</text>
+      <text x="460" y="628" class="node-desc">file_sd 发现 · relabel 五连（去端口 / 覆盖 meta）</text>
+    </g>
+
+    <!-- 网关 F：规则 -->
+    <g>
+      <rect x="730" y="520" width="262" height="120" class="node accent-org"/>
+      <text x="750" y="548" class="node-head">⑤ 规则文件（15s 评估）</text>
+      <text x="750" y="568" class="node-port">/etc/prometheus/rules/nams_device_rules.yml</text>
+      <text x="750" y="592" class="node-desc">recording: probe_success → device_up</text>
+      <text x="750" y="610" class="node-desc">recording: RTT&gt;150ms → device_line_abnormal</text>
+      <text x="750" y="628" class="node-desc">alert: device_up==0 (for 10s) → critical</text>
+    </g>
+
+    <!-- 网关 H：blackbox -->
+    <g>
+      <rect x="500" y="720" width="330" height="110" class="node accent-blue"/>
+      <text x="520" y="748" class="node-head">⑦ blackbox_exporter</text>
+      <text x="520" y="768" class="node-port">:9115 · /etc/prometheus/blackbox.yml</text>
+      <text x="520" y="790" class="node-desc">module: icmp（prober icmp · timeout 5s · ip4）</text>
+      <text x="520" y="808" class="node-desc">probe_success / probe_icmp_duration_seconds{rtt}</text>
+      <text x="520" y="824" class="note">Prometheus 官方全家桶 · 替代自研探针（国产化备选）</text>
+    </g>
+
+    <!-- 设备节点 -->
+    <g>
+      <rect x="1072" y="200" width="304" height="590" class="dev-box"/>
+      <text x="1092" y="228" class="node-head">8 台监控设备</text>
+      <text x="1092" y="247" class="chip">collectType=snmp · 探测端口由 relabel 剥离</text>
+
+      <!-- 核心交换机 .1 在线 -->
+      <g>
+        <rect x="1092" y="268" width="264" height="52" rx="8" fill="rgba(16,185,129,.08)" stroke="rgba(16,185,129,.3)"/>
+        <circle cx="1112" cy="294" r="5" class="dot-on"/>
+        <text x="1126" y="289" class="dev-name">核心交换机 DEV-SW-CORE-01</text>
+        <text x="1126" y="307" class="dev-ip">192.168.1.1 · 在线</text>
+      </g>
+      <!-- 汇聚A .2 离线 -->
+      <g>
+        <rect x="1092" y="330" width="264" height="52" rx="8" fill="rgba(239,68,68,.07)" stroke="rgba(239,68,68,.3)"/>
+        <circle cx="1112" cy="356" r="5" class="dot-off"/>
+        <text x="1126" y="351" class="dev-name">汇聚交换机A DEV-SW-AGG-01</text>
+        <text x="1126" y="369" class="dev-ip">192.168.1.2 · 离线</text>
+      </g>
+      <!-- 汇聚B .3 在线 -->
+      <g>
+        <rect x="1092" y="392" width="264" height="52" rx="8" fill="rgba(16,185,129,.08)" stroke="rgba(16,185,129,.3)"/>
+        <circle cx="1112" cy="418" r="5" class="dot-on"/>
+        <text x="1126" y="413" class="dev-name">汇聚交换机B DEV-SW-AGG-02</text>
+        <text x="1126" y="431" class="dev-ip">192.168.1.3 · 在线</text>
+      </g>
+      <!-- 接入 .10 离线 -->
+      <g>
+        <rect x="1092" y="454" width="264" height="52" rx="8" fill="rgba(239,68,68,.07)" stroke="rgba(239,68,68,.3)"/>
+        <circle cx="1112" cy="480" r="5" class="dot-off"/>
+        <text x="1126" y="475" class="dev-name">接入交换机 DEV-SW-ACC-01</text>
+        <text x="1126" y="493" class="dev-ip">192.168.1.10 · 离线</text>
+      </g>
+      <!-- 球机 .20 在线 -->
+      <g>
+        <rect x="1092" y="516" width="264" height="52" rx="8" fill="rgba(16,185,129,.08)" stroke="rgba(16,185,129,.3)"/>
+        <circle cx="1112" cy="542" r="5" class="dot-on"/>
+        <text x="1126" y="537" class="dev-name">车间球机 DEV-CAM-01</text>
+        <text x="1126" y="555" class="dev-ip">192.168.1.20 · 在线</text>
+      </g>
+      <!-- 枪机 .21 离线 -->
+      <g>
+        <rect x="1092" y="578" width="264" height="52" rx="8" fill="rgba(239,68,68,.07)" stroke="rgba(239,68,68,.3)"/>
+        <circle cx="1112" cy="604" r="5" class="dot-off"/>
+        <text x="1126" y="599" class="dev-name">车间枪机 DEV-CAM-02</text>
+        <text x="1126" y="617" class="dev-ip">192.168.1.21 · 离线</text>
+      </g>
+      <!-- NVR .30 离线 -->
+      <g>
+        <rect x="1092" y="640" width="264" height="52" rx="8" fill="rgba(239,68,68,.07)" stroke="rgba(239,68,68,.3)"/>
+        <circle cx="1112" cy="666" r="5" class="dot-off"/>
+        <text x="1126" y="661" class="dev-name">NVR 录像机 DEV-NVR-01</text>
+        <text x="1126" y="679" class="dev-ip">192.168.1.30 · 离线</text>
+      </g>
+      <!-- 门禁 .40 离线 -->
+      <g>
+        <rect x="1092" y="702" width="264" height="52" rx="8" fill="rgba(239,68,68,.07)" stroke="rgba(239,68,68,.3)"/>
+        <circle cx="1112" cy="728" r="5" class="dot-off"/>
+        <text x="1126" y="723" class="dev-name">门禁控制器 DEV-DOR-01</text>
+        <text x="1126" y="741" class="dev-ip">192.168.1.40 · 离线</text>
+      </g>
+    </g>
+
+    <!-- ==================================================
+         连线（蓝=下行采集，橙/红=上行告警）
+    ================================================== -->
+
+    <!-- ① A → C 清单下发（蓝） -->
+    <path d="M 352,300 C 380,300 410,300 440,300" fill="none" stroke="#38BDF8" stroke-width="2" marker-end="url(#arrBlue)"/>
+    <text x="356" y="286" class="arr-label-b">GET /edge/config/mapping · 60s 轮询</text>
+
+    <!-- ② C → D 生成清单文件（蓝虚线） -->
+    <path d="M 565,260 C 565,290 565,300 565,330" fill="none" stroke="#38BDF8" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrBlue)"/>
+    <text x="578" y="300" class="arr-label-b">写入 file_sd targets</text>
+
+    <!-- ③ D → E file_sd 发现（蓝虚线） -->
+    <path d="M 565,440 C 565,470 565,490 565,520" fill="none" stroke="#38BDF8" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrBlue)"/>
+    <text x="578" y="485" class="arr-label-b">file_sd 动态发现 · 60s</text>
+
+    <!-- ④ E → H 探测请求（蓝） -->
+    <path d="M 530,640 L 530,720" fill="none" stroke="#38BDF8" stroke-width="2" marker-end="url(#arrBlue)"/>
+    <text x="505" y="652" text-anchor="end" class="arr-label-b">探测请求</text>
+    <text x="505" y="668" text-anchor="end" class="arr-label-b">/probe?module=icmp</text>
+
+    <!-- ⑤ H → 设备 ICMP 探测（蓝） -->
+    <path d="M 830,775 C 940,775 980,775 1072,600" fill="none" stroke="#38BDF8" stroke-width="2" marker-end="url(#arrBlue)"/>
+    <text x="876" y="668" class="arr-label-b">ICMP echo · 2 包 · 5s 超时</text>
+
+    <!-- ⑥ 设备 → H ICMP 响应（橙） -->
+    <path d="M 1072,610 C 990,800 950,830 830,830" fill="none" stroke="#F97316" stroke-width="2" marker-end="url(#arrOrg)"/>
+    <text x="888" y="856" class="arr-label-o">probe_success=1 / RTT（&gt;150ms → 外线异常）</text>
+
+    <!-- ⑦ H → E 指标回传（橙） -->
+    <path d="M 625,720 L 625,640" fill="none" stroke="#F97316" stroke-width="2" marker-end="url(#arrOrg)"/>
+    <text x="638" y="655" class="arr-label-o">probe_success 回传</text>
+    <text x="638" y="671" class="arr-label-o">15s 抓取 · {device_code=…}</text>
+
+    <!-- ⑧ E → F 规则评估（橙） -->
+    <path d="M 690,580 C 700,580 715,580 730,580" fill="none" stroke="#F97316" stroke-width="2" marker-end="url(#arrOrg)"/>
+
+    <!-- ⑨ F → G alerting（红） -->
+    <path d="M 861,520 L 861,440" fill="none" stroke="#EF4444" stroke-width="2" marker-end="url(#arrRed)"/>
+    <text x="872" y="482" class="arr-label-r">告警 firing → alerting</text>
+
+    <!-- ⑩ G → C webhook（红） -->
+    <path d="M 861,330 C 861,310 861,300 861,260" fill="none" stroke="#EF4444" stroke-width="2" marker-end="url(#arrRed)"/>
+    <text x="872" y="300" class="arr-label-r">POST /alert/push（:18080）</text>
+
+    <!-- ⑪ C → B 转投云端（红） -->
+    <path d="M 440,200 C 400,200 380,600 352,660" fill="none" stroke="#EF4444" stroke-width="2" marker-end="url(#arrRed)"/>
+    <text x="356" y="470" class="arr-label-r" transform="rotate(84 356 470)">POST /alert/push（租户 Webhook Token）</text>
+
+    <!-- ⑫ 云端内闭环（红虚线） -->
+    <path d="M 352,680 C 396,680 396,740 380,740" fill="none" stroke="#EF4444" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#arrRed)"/>
+
+  </svg>
+  </div>
+
+  <div class="foot">
+    <p>图例说明：<code>蓝实线</code>=采集 / 探测链路（下行：清单下发 → 探测目标）　<code>橙实线</code>=告警链路（上行：指标 → 规则 → 告警）　<code>红实线</code>=告警投递（AM → nams-agent → 云端）　<code>虚线</code>=文件 / 配置依赖。当前 8 台设备：3 在线（绿）/ 5 离线（红）。</p>
+    <p>配置校验：<code>promtool check config /etc/prometheus/prometheus.yml</code> · <code>promtool check rules /etc/prometheus/rules/nams_device_rules.yml</code> · <code>amtool check-config /opt/alertmanager/alertmanager.yml</code></p>
+    <p>热重载：<code>kill -HUP $(pgrep prometheus)</code> · <code>kill -HUP $(pgrep alertmanager)</code> —— 改配置无需重启</p>
+  </div>
+</div>
+</body>
+</html>

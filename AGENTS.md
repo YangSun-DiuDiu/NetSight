@@ -1,0 +1,555 @@
+# AGENTS.md — NetSight（NAMS）项目开发上下文
+
+> 本文档记录对本仓库后续 AI / 开发者有价值的持久信息。方案文档见 
+>
+> `网络资产监控管理系统 V1.1 建设方案（含视频_门禁设备+短信_微信公众号告警）.md`
+>
+> ；开发约束见 
+>
+> `开发规范.md`
+>
+> （远程服务器一律 Python paramiko；敏感配置禁硬编码走环境变量；密码 BCrypt；统一返回格式；所有表含主键 + 创建 / 修改时间 + 逻辑删除；大列表分页；循环内禁止 DB 查询）。
+
+## 项目概览
+
+* **2026-09-19 实测反馈 9 项修复（侧边栏对齐/大屏下对齐/知识库预制/通知暴露 pushplus/派单含 pushplus，已编译+部署 .55+回归 PASS）**：**前端**：①sidebar.scss 卡片菜单项改 flex align-items:center（折叠模式恢复 block/line-height/text-align:center）；②dashboard/index.vue 三列 `.col > .panel:last-child{flex:1}`，三列 top=165/bottom=809 完全一致下对齐；③知识库 14 条经联网核实预制内容（海康/大华官方 FAQ、Cisco ping/traceroute、腾讯云排查指南），SQL `netsight-upgrade-v1.1.18.sql` 归租户1，fault_article 现 18 条（前端知识总数卡显示 17）。**后端**：④通知后端是 SPI 自动发现——ChannelRegistry 注入 `List<NotificationChannelSender>` 自动路由，PushplusChannelSender(channelType="pushplus") 早已存在，"三处加 pushplus"本质是把已存在通道暴露到前端（rule checkbox、template 搜索/tag/radio、event 手动发送 checkbox+接收人 placeholder"短信/公众号填手机号，逗号分隔；仅 PushPlus 可留空"、log 搜索/tag+接收人列改 receiversText(json) 数组 join(、)）；⑤WorkOrderService.dispatch 通道 List.of("sms","wechat","pushplus")（产品结论：PushPlus 按租户 token 一对多推送关注公众号者，无需给每个维修人员单独建 token）；⑥AlertEventController.manual 仅 pushplus 通道接收人可为空（onlyPushplus 放行）。**两个详细路径结论**：派单=WorkOrderService.dispatch 事务 afterCommit 异步→查租户级 tpl_order_dispatch 模板→构造 EventRecord→channelService.dispatch 按 channels 逐通道发；点检任务派发=InspectionService.doGenerateTasks 按 targetType 解析目标→插 inspection_task(status=0,assignee_id=计划执行人快照,唯一键 tenant+plan+target+date 防重)→落点检任务页按 assignee_id 查看执行，纯站内待办无外部通知（设计如此）。**本轮顺带修的真实部署 bug（关键，勿重踩）**：Nginx `location /alert/ { proxy_pass 8080; }` 把前端 history 路由 /alert/event|rule|template|log 全代理到后端→硬刷新/直接输 URL 全 401 JSON（SPA 内菜单跳转不刷新所以一直没暴露）；修复为 `location /alert/push`（后端 webhook 真实入口 POST /alert/push，X-Netsight-Webhook-Token 鉴权），前端 /alert/* 走 try_files 回退 index.html；备份 nams.conf.bak_alertroute。**构建坑（勿重踩）**：log/index.vue 首次构建报 Unexpected character 、——PowerShell 双单引号转义把 receiversText 写成 arr.join(''、'') 非法 JS；here-string 整段替换因 LF 换行 BAD_NOT_FOUND，最终用简单字面量 Replace 修回再 build。**回归（.55）**：admin 侧边栏 flex 居中、大屏三列 bottom=809、知识库 17 已启用、规则/模板/手动发送弹窗均含 推送(PushPlus)、log 通道 tag 推送+接收人解析；sunyang21（租户7）知识库 0 条（租户1 预制数据完全隔离）。
+* **2026-09-17 未决项处理完成（删除 awesome skill + Token 加密 + TraceId + 级联删除 + 登录提示，已编译/部署 .55/回归 PASS）**：**①删除 awesome 版 code-review-skill**（`.user_skills\code-review-skill` 已删，open-code-review / -delegate 保留）；**②R.traceId 恒 null**——新建 `TraceIdFilter`（OncePerRequestFilter，透传/生成 X-Trace-Id→MDC→响应头）+ `R.build()` 回填 traceId（API 响应已见 traceId）；**③Token 明文存储→AES-256-GCM 加密**——新建 `TokenCrypto`（密文 `enc:` 前缀、encrypt 对 enc: 幂等、decrypt 兼容明文、密钥<16 拒绝启动）+ `TokenCryptoMigration`（@PostConstruct+JdbcTemplate 启动迁移 4 列：edge_gateway.gateway_token/pushplus_token、sys_tenant.webhook_token/pushplus_token）；`application.yml` 加 `aes.token-key: ${AES_TOKEN_KEY:NetSightAesTokenKey2026DevOnly!}`，`deploy_nams.py` ENV 注入 AES_TOKEN_KEY；EdgeGatewayService/Controller add/reset 明文仅返回一次、列表 gatewayToken+pushplusToken 双脱敏（maskToken 实测 ec77aa****03ab）；WebhookTokenService initToken 明文返回+加密落库、evict 先 decrypt；PushplusTokenService/Sender 解密返回；SysTenantController list 脱敏前解密/add 返回 initToken 明文/delete 级联物理清理 20 张业务表+sys_user_role+sys_user（默认租户 id=1 禁删）；**④Math.random()→ThreadLocalRandom**（DeviceService.randomSuffix 等）；**⑤登录页开发验证码提示生产恒显**——login.vue `showDevHint: process.env.VUE_APP_SHOW_DEV_HINT==='true'` + `.env.development(true)/.env.production(false)`，生产构建隐藏（已部署验证 chunk-4fc59aad.72d8b247.js 含 showDevHint）。**Token 迁移故障链路（本轮核心，勿重踩）**：①首次部署迁移全失败——`Data too long for column`（密文 enc:+iv+ct≈85 字符超出 varchar(64)）→ `netsight-upgrade-v1.1.17.sql` 4 列 MODIFY VARCHAR(128)，**paramiko exec_command 内嵌 SQL 含反引号被远端 bash 当命令替换执行（bash: edge_gateway: command not found）→ 必须 sftp 传临时 SQL 文件再 `mysql < file` 执行**（deploy_alter_tokens.py 已用此法成功）；②扩列后迁移成功（DB 4 列全 enc: 前缀），但 .60 心跳/mapping 仍 1005"网关Token无效"——**根因：AES-256-GCM 随机 IV ⇒ 同一明文每次密文不同 ⇒ `WHERE col=encrypt(token)` 等值查询永远匹配不到库中密文行**；修复：`EdgeGatewayService.getByToken`、`WebhookTokenService.resolveTenantId` 均改"全量拉取（仅启用/未删）+ 内存 decrypt 比对"（网关/租户量级小可忽略；避免引入哈希索引列；**禁止再用等值 SQL 匹配密文，禁止在 evictCache 前不 decrypt——Redis 缓存 key 是明文、DB 是密文**）；**③顺带修复**：`GlobalExceptionHandler` 增 `MissingRequestHeaderException→401`（@RequestHeader 必填缺失原报 500，edge 无 token 已验 401）。**部署/回归（.55 全 PASS）**：health 200；.60 心跳/mapping 200（mapping 返回 DEV-SW-CORE-01 等设备 JSON）；租户7 webhook 鉴权反查 200"事件已接入"（X-Netsight-Webhook-Token c9e8... 内存匹配生效）；webhook 查看接口返回明文 c9e8...；网关列表脱敏正确；edge/alert 无 token 均 401；admin 登录 token len 324。**坑（勿重踩）**：① **deploy_ui.py 的 DIST_TGZ 固定读 `netsight-ui\dist.tar.gz`**（不是 deploy\ 下）——打包必须输出到 netsight-ui\dist.tar.gz，否则上传旧包（服务器 index.html mtime 不变即可判定）；② Start-Process 后台跑 _build_ui.ps1 有静默退出风险（log 停在 build:prod 无 BUILD_EXIT、无 node 进程）→ 改前台 `npm run build:prod` 转后台 TaskOutput block 成功；③ TokenCryptoMigration 幂等（重启无明文可迁移只打 TokenCrypto 初始化日志）；④ curl -w '%{http_code}' 在 paramiko Python 字符串中输出字面 %{http_code}（判定以 deploy_nams.py 健康探测为准）。**遗留**：租户删除级联按物理删实现（业务表普遍含 del_flag，用户未拍板物理 vs 逻辑删）；AES_TOKEN_KEY 生产独立强密钥未定（.55 沿用默认混淆值）；项目未 git init；完整四角色 UI 回归本轮未跑（接口级）。
+
+* **2026-09-17 OCR（阿里 open-code-review 委托模式）审查修复全部完成（1C/4H/8M/低危，已编译+部署 .55+接口级回归 PASS）**：备份 `backup\20260917_ocr_review_baseline\`（457 文件）。**本轮新增修复（上轮 12 项之外）**：①**High#5 租户删除后 Webhook Token 仍有效**——`SysTenantController.delete` 先置 `status=0` 再 `deleteById`（resolveTenantId 按 status=1 反查，双保险；sys_tenant 实体无 delFlag 字段，勿在实体上加逻辑删除注解）；②**Medium#6** `NotificationRuleService.updateRule` 强制 `rule.setTenantId(exist.getTenantId())` + checkTenantPermission null 拦截（防 NPE）；③**Medium#7** `NotificationChannelService.dispatch` 主模板改 `selectOne(eq(id).eq(tenantId,event.getTenantId()))`（异步线程无租户上下文，selectById 可跨租户串用模板）；④**Medium#8** `SparePartService`：checkTenantPart 显式租户校验（非超管 + tenantId 不符/为 null → 403）+ `stock` out 领用校验工单归属（注入 WorkOrderMapper，工单必须与备件同租户）；⑤**Medium#9** `RateLimitAspect.getClientIp` + `OperLogAspect.getClientIp` 改 **X-Real-IP 优先 → X-Forwarded-For 最右段**（Nginx $proxy_add_x_forwarded_for 追加真实 IP 在末尾；取首段可伪造 IP 绕过限流）；⑥**Medium#10** `PushplusChannelSender.mock-mode` 默认 `true`→`false`（@PostConstruct 开启时告警），**application.yml 三个通道 mock 统一环境变量化** `${SMS_MOCK:true}`/`${WECHAT_MOCK:true}`/`${PUSHPLUS_MOCK:true}`，`deploy_nams.py` 的 ENV_CONTENT 已加 `PUSHPLUS_MOCK=false`（生产真实发送，避免 jar 内 yml 显式 true 覆盖代码默认值）；⑦**Medium#11** `SysTenantController.add` 未传 status 显式置 1（防 Webhook Token 反查立即失效）；⑧**Medium#12** `KnowledgeService.checkTenantPermission(null)` 从放行改 FORBIDDEN（脏数据防越权读）；⑨**低危** `GlobalExceptionHandler` 新增 `HttpMessageNotReadableException`（JSON 解析失败友好提示）+ `DuplicateKeyException`（唯一约束提取冲突键友好提示）。**编译**：`mvn package -DskipTests` EXIT=0（jar 51.6MB）。**部署 .55 + 接口回归 6 项 PASS**：nams.env 含 PUSHPLUS_MOCK=false；health 200；sms→login 200（admin/super_admin）；getInfo 200；/edge/report/heartbeat 200；**Critical#1 跨租户回归**（租户1 网关 token 上报租户7 设备 up=1，status/line_status/update_time 全部不变，原子 UPDATE 0 行不更新）；spare/knowledge/dashboard 冒烟 200。**验证脚本** `deploy\deploy_verify_ocr_fix.py` 可复用。**遗留**：完整四角色 UI 回归待跑（本轮接口级）；低危 Math.random()/Token 明文/登录页固定验证码提示为设计权衡暂不处理；awesome 版 code-review-skill 保留。**坑（勿重踩）**：mvn/npm 前台命令 15s 自动转后台（TaskOutput block 等结果）；编译 -q 无输出即成功（看 EXIT=0）；paramiko 脚本内 SQL 用双引号包裹 + 单引号串内无转义问题。
+
+* **2026-09-17 前端按钮级权限接入（v-hasPermi/v-hasRole，四角色 UI 回归缺陷①修复，已部署 .55 四角色按钮显隐验证全 PASS）**：用户"开始修复"批准。**根因**：全部业务页面按钮未使用 v-hasPermi/v-hasRole（仅若依遗留 system/config·dept·dict·menu·post 用），无权限角色（repairer 等）仍看得到但点不了按钮（后端 @PreAuthorize 兜底 403，属"可见不可用"体验不一致）。**落地**：14 个页面 90 处绑定——**角色级 hasRole（device/edge/system 用户·角色·租户）→ v-hasRole 显式列全角色**（device/edge/user 写 `['super_admin','tenant_admin']` 或含 ops，role/tenant 写 `['super_admin']`，user 重置密码仅 `['super_admin']`）；**权限 key hasAuthority（alert/workorder/spare/notice）→ v-hasPermi**（alert:event:manual、alert:rule:add/edit/remove、alert:template:add/edit/remove、workorder:order:add/edit/remove/dispatch/complete、workorder:repairer:add/edit/remove、spare:part:add/edit/remove/stock、notice:add/edit/remove/publish）；**knowledge/inspection 已用 hasPerm() 方法**只补漏点（inspection/plan 生成任务补 `hasPerm('inspection:plan:edit')`、inspection/task 开始/执行补 `&& hasPerm('inspection:task:execute')`）。**关键坑（勿再踩）**：① **v-hasRole 指令超管通配是 'admin' 不是 'super_admin'**（src/directive/permission/hasRole.js 若依遗留硬编码）——前端必须显式写全角色列表，写 `['super_admin','tenant_admin']` 且后端注解只放行 super 时（role/tenant 页）前端隐藏正确；② hasPermi 超管 `*:*:*` 自动全命中（无需列）；③ `v-hasPermi` 与 `v-if` 同标签并存 OK（workorder/order 状态条件 + 权限双控）。**四角色按钮显隐验证（bu .55 全 PASS）**：repairer_test 工单页仅"详情+关闭"（无新增/派单/修改/删除）、备件页无新增、知识库无新增；ops_test 设备页无新增（拓扑/二维码可见、无修改删除）、工单页新增+报修派单+关闭可见（修改/删除隐藏）、备件无新增、知识库无新增、点检任务列表/详情可见；sunyang21（tenant_admin）设备新增/拓扑/二维码可见、用户页新增修改删除可见但**重置密码隐藏**（仅超管）、角色页操作按钮全隐藏；admin（超管）设备新增/工单新增/重置密码/分配权限全可见。**坑（勿重踩）**：/edge/*、/alert/* 前缀页面整页刷新被 Nginx 代理拦截须从菜单进；ops 点检任务"开始"按钮不显示是业务状态（租户7 任务已全部执行完 status=2，v-if status===0 未命中）非权限问题；bu 换角色须 JS fetch /prod-api/auth/logout + Bearer 再清 cookie/localStorage/sessionStorage（三轮均 logout 200）；构建流程沿用 deploy_build_ui.ps1 后台跑 + tar.exe 打包（dist.tar.gz 3,257,778 字节）+ deploy_ui.py 部署，部署后验证 nams.conf 四 location 全在、/prod-api 200、/edge/ 401、/alert/ 401（401 为网关/告警鉴权正常响应证明转发打通）。
+
+* **2026-09-17 全项目代码审核修复（receiving-code-review，已备份/编译/部署 .55/接口级回归 PASS）**：用户加载 receiving-code-review 技能要求全项目代码审核，产出 3 高危+6 中危+低危清单获批后逐项修复。**备份**：`E:\gitee\NetSight1.0\backup\20260917_code_review_baseline\`（692 文件/94.9MB + MANIFEST.txt 692 条，robocopy 排除 node_modules/dist/target；项目非 git 仓库，git status fatal 属正常）。**修复清单（12 项，全部编译+部署 .55）**：①**高危1 网关状态上报跨租户篡改**——`DeviceService.updateStatusBatch` 原按 deviceCode 全局 selectOne→updateById（白名单接口无租户上下文时 TenantLine 跳过可跨租户篡改）→ 改签名 `updateStatusBatch(List<Device>, Long gatewayId)` 用 `LambdaUpdateWrapper` 原子 UPDATE `eq(gateway_id).eq(device_code).set(status).set(line_status)`（影响 0 行自然忽略，无先查后更竞态）；调用点 `GatewayReportController` 传 `gateway.getId()`。**回归 PASS**：租户1 网关 token 上报租户7 设备 up=1，status/line_status/update_time 全部不变。②**高危2 登出黑名单失效**——`AuthService.logout` 原 key `blacklist:{hashCode}` 与过滤器校验格式 `blacklist:{subject}:{hashCode}` 不一致（登出永不生效）+ TTL 固定 2h≠JWT 720min → 改 key=`netsight:token:blacklist:{subject}:{hashCode}`（subject=JWT userId）+ TTL=剩余有效期（无效/过期 token 跳过）。**回归 PASS**：登录→登出→旧 token 访问 getInfo 返回 401。③**高危3 webhook-token 生产默认值**——`application.yml:84` 原内联默认 `NetSightWebhookToken2026` → `${WEBHOOK_TOKEN:}`（application-dev.yml 补 dev-only 默认 `NetSightDevWebhookToken2026`）；`AlertPushController` 去内联默认 + `@PostConstruct` 启动校验空值抛 IllegalStateException。**部署前置**：.55 nams.env 已注入 `WEBHOOK_TOKEN=NetSightWebhookToken2026`（显式环境变量，服务健康 UP 证明校验通过）。④**中危4 备件库存丢失更新**——`SparePartService.stock` 原先读后写 → `LambdaUpdateWrapper` 原子 UPDATE：扣减类 `.ge(quantity,-delta)` 防负 + `setSql("quantity=quantity+N")`，影响 0 行重查抛"库存不足"，update 后重查最新值供流水/低库存预警。⑤**中危5 超管判定硬编码**——4 处 `"admin".equals(username)`（AuthService.loginByPhone/JwtAuthenticationFilter.buildLoginUser/UserDetailsServiceImpl）改 `roles.contains("super_admin")`（UserDetailsServiceImpl 补 SysUserRoleMapper 加载角色）；SysUserService 新增 `isSuperAdminUser(userId)`（查 super_admin 角色绑定）用于 deleteUser 禁删内置管理员 + changeStatus 禁禁用。**回归 PASS**：admin 登录 isSuperAdmin=true roles=['super_admin']。⑥**中危6 工单跨租户**——`WorkOrderService.checkTenantOrder` 补显式校验 `!isSuperAdmin() && !order.tenantId.equals(getTenantId()) → FORBIDDEN`（selectById 依赖拦截器在无租户上下文时跳过）。⑦**中危7 点检任务越权**——InspectionService 抽 `isTaskManager()`（超管/tenant_admin/inspection:task:list）+ `checkTaskAssignee(task)`（非管理员仅允许操作本人 assignee 任务），startTask/submitTask 补校验。⑧**中危8 派单通知占用事务**——`WorkOrderService.dispatch` 内同步 `notifyRepairer`（HTTP+重试最长数秒）→ 改 `TransactionSynchronizationManager.registerSynchronization(afterCommit)` 事务提交后发送（失败仅 log.error 不影响工单状态；回滚不发通知）；顺带**低危④** notifyRepairer 模板查询补 `.eq(tenantId, order.getTenantId())` 防跨租户模板串用。⑨**中危9 验证码接口限流**——`AuthController /auth/sms-code` 原 `@RateLimit(key="ip",limit=30)` → `key="phone,ip",limit=5`（message 验证码获取过于频繁）。**回归 PASS**：连发 6 次，前 4 次 AuthService 内 Redis 手机号限流（业务码 400）、第 5-6 次 RateLimitAspect（5006）。**低危**：⑩pageOrder 循环内每行 2 次 selectCount → 批量 `in(orderIds)` 两次查 + groupingBy counting（N*2 次→2 次）；⑪PushplusChannelSender 响应日志截断 500 字符；⑫前端 `src/utils/generator/`（若依遗留代码生成器，含 `js.js:143 eval(item.pattern)`，全项目无任何业务引用）整目录删除。**顺带回修**：deploy_all.py NGINX_CONF 补 `location /alert/` 代理（历史坑：该脚本重写 nams.conf 会丢告警 webhook 入口）。**构建/部署坑（勿重踩）**：PowerShell 直接跑 mvn/npm 前台命令 15s 后自动转后台（TaskOutput block 等结果即可）；Windows 下 Git tar 打包 dist.tar.gz 报 Broken pipe——改用 `$env:SystemRoot\System32\tar.exe -czf dist.tar.gz dist`（**必须含 dist 前缀**）；paramiko WS 握手 curl 无 --max-time 会 PipeTimeout（用 `--max-time 3` 后 101 即成功）；部署后验证脚本 `deploy\_verify_deploy.py`/`deploy\_regression.py`/`deploy\_regress_h1.py` 可复用（网关 token e3f2a1b4c5d6e7f8091a2b3c4d5e6f70、admin 13800000000 mock 码 123456）。**遗留**：完整四角色 UI 回归待做（本轮为接口级回归）；work_order.device_code 列承载 IP 语义（已加注释，改独立 device_ip 列需同步迁移存量）。
+
+* **2026-09-17 完整四角色 UI 回归（浏览器自动化 .55 全 PASS，新发现 2 个前端缺陷待修）**：对 12 项修复后版本做页面级回归。**admin（13800000000 租户1 超管）全页面冒烟 PASS**：首页/监控大屏/设备列表（10 台：租户1 8+租户7 大华 2，保修期派生正常）/边缘网关（2 网关）/告警中心四页（事件 2634 大华离线高危、规则、模板、日志）/工单管理（9 待处理/21 总数）/备件/知识库（3 条）/点检任务/公告/待办（9 总待办）/系统管理三页；**中危5 删除保护 UI 链路 PASS**：DELETE /system/user/1 → code=400“不能删除当前登录用户”。**sunyang21（15657477316 租户7 租管）隔离全 PASS**：设备仅 2 台大华（.76/.77）、告警事件/工单（6 待处理/21）/用户管理（仅租户7 3 用户）均隔离；系统管理无租户管理子菜单（权限正确）；知识库 0 条（租户1 数据隔离）；**中危2 登出黑名单完整 UI 链路 PASS**：带 Bearer 调 logout→200，同 token 调 getInfo→401（黑名单生效）。**ops_test（15700000001 租户7 ops）PASS**：菜单无系统管理/通知公告；点检巡检仅点检任务（无计划/项库）；点检任务 2 条（含异常 1）；知识库只读（无新增知识按钮）；设备 2 台。**repairer_test（15700000002 租户7 repairer）PASS**：菜单无设备资产/告警中心/系统管理；待办 0/0/0/0（测试数据已还原无派单）；工单管理可看租户7 列表；点检任务可看；备件页只读。**新发现缺陷①（前端按钮级权限未接入，本轮未修）**：**全部业务页面按钮未使用 v-hasPermi**（仅若依遗留 system/config·dept·dict·menu·post 用），device/edge/alert/workorder/spare/knowledge/inspection/todo 等页面的新增/修改/删除/派单/关闭/出入库按钮对所有角色直接渲染——repairer 无 order:add/dispatch/remove 权限仍看到“新增工单/报修派单/关闭/修改/删除”、无 spare:part:add 仍看到“新增备件”（后端 @PreAuthorize 兜底 403，属“可见不可用”非安全漏洞，但 RBAC 体验不一致）；修复建议：给业务页按钮补 v-hasPermi（权限 key 数据库已配好：role3 ops 有 order:add/dispatch/complete、role4 repairer 仅 order:list/complete + spare:part:list/stock）。**新发现缺陷②（已核实为设计内）**：repairer 工单管理可见本租户全部工单（非仅自己负责），因 order:list 按租户过滤，历史设计如此（“派给我的工单”在统一待办体现，phone 关联 repairer 表）。**bu 自动化坑（本轮勿重踩）**：登出下拉 li 被 popper 遮罩覆盖（bu.click 报 covered）→ JS 触发也不生效（前端 logout fetch 不带 credentials）→ 改用 JS fetch `/prod-api/auth/logout` + `Authorization: Bearer <cookie Admin-Token>` 后再清 cookie/localStorage/sessionStorage 切角色；ops/repairer 角色验证均用此法登出（等价于 UI 登出效果+黑名单链路验证）；菜单两级点击须先点顶级再点子级（find 顶级名→展开→find 子菜单名→click a）。
+
+* **2026-09-16 设备保修期属性 + Hamburger 配色修复（已部署 .55 验证通过）**：**① 设备保修期**——用户先提"设备报修期"后修正为"设备保修期"。增量 SQL `netsight-upgrade-v1.1.16.sql`：`device` 加 `warranty_expire DATE NULL`（保修截止日期，AFTER collect_port，已上 .55）。后端 Device.java 加 `warrantyExpire`(LocalDate 表字段)/`warrantyStatus`(exist=false 派生)/`clearWarranty`(exist=false 清空标记)；DeviceService.updateDevice 清空逻辑 `clearWarranty=true` 时用 LambdaUpdateWrapper `.eq(id).set(warrantyExpire,null)` 绕过 MP 默认 NOT_NULL 更新策略（null 无法写入），否则 warrantyExpire!=null 才 set；fillDisplayFields 派生 warrantyStatus（null→none / >=今天→in_warranty / <今天→expired）。前端 device/index.vue：列表"保修期"列（日期 + el-tag 在保/已过保/未设置）、表单"保修截止"el-date-picker（value-format=yyyy-MM-dd clearable）、handleUpdate 记 oldWarranty、submitForm 清空逻辑（!warrantyExpire && oldWarranty → clearWarranty=true）。**坑（勿重踩）**：① paramiko exec_command 内嵌 SQL 含反引号被远端 bash 当命令替换吃掉（bash: device: command not found）→ 去反引号重跑（device 非保留字）；② 列表返回 `warrantyExpire` 为 null 时 Jackson NON_NULL 隐藏字段（keys 里只有 warrantyStatus:none，属预期，前端不显示日期只显示"未设置"标签）；③ 验证派生：row14（大华摄像头 .77）expire=2026-12-31→in_warranty、row12（大华人脸识别 .76）expire=2025-01-01→expired，接口返回正确。**② Hamburger 收起按钮配色**——用户报"收起/打开侧边栏按钮未按整套配色"。根因：`src/components/Hamburger/index.vue` 的 SVG path 无 fill 属性 → 默认黑色图标，与深蓝顶栏 #0B2A6B 冲突。修复：path 加 `fill="currentColor"` 继承 `.hamburger-container` 的 `color: rgba(255,255,255,0.85)`（Navbar.vue 已定义）。bu 验证（.55 PASS）：pathFillComputed=rgba(255,255,255,0.85)、点击收起 sidebarWidth 54 / 展开 200、功能正常。**构建/部署坑（勿重踩）**：本机删 node_modules/.cache 与 dist 的 Remove-Item/cmd rmdir 多次超时（RPC timeout）→ 跳过手工清理直接 build（构建会重写 dist）；PowerShell 直接跑 build 偶发 tool timeout → 用 `Start-Process powershell -File deploy\_build_ui.ps1` 后台跑 + 轮询 `deploy\_build_ui.log`；build 后必须重新 `tar -czf dist.tar.gz dist`（deploy_ui.py 依赖预打包 tar，否则传旧包）；deploy_ui.py 末尾 WS 探测 paramiko socket.timeout exit 1 是已知坑，用 paramiko 脚本复验 index.html mtime（21:36:58 新）/ app.7f184945.js 含 hamburger / 首页·prod-api·edge 代理 200 全部 PASS。**验证数据说明**：row12/14 的 warranty_expire 为验证派生命名保留值（12 过保 / 14 在保），如需还原可 UPDATE 置 NULL。
+
+* **2026-09-16 监控大屏全屏溢出修复（V1.1.11，已部署 .55 验证通过）**：用户报 `/dashboard/overview` 全屏模式下板块位置错乱、内容溢出。**根因**：`.screen.is-full` 只做了 `position:fixed; inset:0`，内部仍是纵向文档流 + 固定高度（图表 `chart-md height:200px`、面板堆叠），视口高度不足或比例不同时底部板块被截断；且 `toggleFullscreen()` 每次点击都 `addEventListener('fullscreenchange',...)` 从不 remove（监听器随点击累积）。**修复**（`views/dashboard/index.vue`，后端零改动）：① 全屏改 flex 弹性布局——`.screen.is-full` 加 `display:flex; flex-direction:column; height:100vh; overflow:hidden`，`.screen-header/.metric-grid/.screen-footer{flex:none}`、`.screen-main{flex:1;min-height:0}`、`.panel{flex:1;min-height:0;display:flex;flex-direction:column}`、`.chart-md{flex:1;min-height:0;height:auto}`、`.panel-live .live-list{flex:1;min-height:0;max-height:none}`、小卡片 grid（gateway/spare/order/sev）`{flex:1;align-content:center}`；② fullscreenchange 监听移入 created 统一注册 + beforeDestroy 移除，新增 `onFullscreenChange()` 方法（isFull=!!document.fullscreenElement + 200ms resizeCharts），toggleFullscreen 简化不再嵌套注册。**部署坑（本轮，勿重踩）**：**deploy_ui.py 依赖预打包的 `dist.tar.gz`**——只 build 不重新 `tar -czf dist.tar.gz dist` 就会上传旧包（服务器 index.html mtime 停留在旧时间、新 chunk 不存在）；正确流程：build → 删旧 tar → 重新打包 → deploy_ui.py（WS 握手探测 paramiko PipeTimeout 是已知坑，exit 1 不影响部署主体，部署后用 paramiko 脚本复验 dist mtime/新 chunk/nginx -t/各代理 200）。**bu 验证（.55 全 PASS）**：点全屏后 `isFullCls=True`、**三列等高 1057px（top85/bottom1142 完全一致）**、footer 1142-1169 在视口内、scrollH==screenH==1187 无溢出、图表弹性 290/412/290（原 200 固定）、live-list 412、overflowX/Y 均 false；bu 环境 `requestFullscreen` 被浏览器拒绝（realFullscreen 恒 false）只能验证 .is-full 类布局本身，真全屏视口由 100vh+flex 自适应保证不溢出。非全屏模式样式未受影响。
+
+* **2026-09-16 登录页 401 排查（根因=JWT 过期，已修复调长有效期并部署 .55）**：用户报"访问登录页面提示 401 Unauthorized"。**排查过程**：① curl 直接测 health/sms-code/login 全部 200 → 排除后端故障；② bu 浏览器完整登录链路（sms→login→getInfo）无任何 401 → 系统正常；③ 抓 .55 nginx access.log 证实：**401 全部集中在 `GET /prod-api/getInfo` 与 `POST /prod-api/auth/logout` 两条需鉴权接口，UA Chrome/132（用户真机 18:14-18:21）连续出现、referer 为 `/`、`/index`、`/login`**——这是前端路由守卫校验登录态的**标准过期行为**：浏览器 localStorage 里存了超 2 小时（JWT 默认 120 分钟）的旧 token → 打开页面 getInfo 401 → 前端弹"登录状态已过期"并跳 /login。后端日志无任何真实异常。**修复**：`application.yml` 的 `jwt.expire-minutes` 120→**720（12 小时）**，mvn package + deploy_nams.py 部署 .55（systemd 重启 active）。**验证（全 PASS）**：health 200、sms 200、login 200（新 token exp-iat=720 分钟）、getInfo 200。**经验（勿重踩）**：① **登录 401 排查第一步先 curl 直测白名单接口**（health/sms/login），200 即排除后端，再抓 nginx 401 集中在哪条接口——**只有 getInfo/logout 401 且带旧 token 特征（referer 是业务页）就是登录态过期**，引导用户重新登录即可；② **验证码一次性消费**——curl 连续 login 会遇 5003"验证码错误或已过期"，必须先 sms-code 再 login；③ 本地 python 脚本里 curl `-w '%{http_code}'` 与 `% token` 格式化串冲突（ValueError: unsupported format character），用写 .py 文件方式规避 PowerShell 转义地狱；④ 改 JWT 有效期只需改 yml 重新打包，**部署后旧 token 仍有效**（无状态 JWT，secret 未变），用户无需重新登录。
+
+* **2026-09-16 V1.2.7 设备二维码模块完成（demo 功能 5/5，已部署 .55，云端四角色测试全 PASS）**：**需求**——为每台已纳管设备生成专属二维码标签（预览 + 下载 PNG），用于现场扫码识别设备，为后续微信小程序/鸿蒙 APP 扫码打基础；**本期只做 PC 端生成 + 下载，不做扫码解析（留到小程序阶段登录态内解析，不开放公网查询页）**。**关键决策**：二维码内容编码精简 JSON `{"t":"device","c":deviceCode,"n":deviceName,"ty":deviceType,"ip":ip,"loc":location}`——**不含租户信息**（贴标不泄露租户归属）、不依赖系统地址（内网/公网地址变化不影响已打印标签）。**落地**：① 后端 DeviceService 加 `getQrcodeInfo(id)`（selectById + checkTenantPermission 跨租户防探，返回 5 字段 Map）+ DeviceController `GET /device/qrcode/{id}`（权限与 detail 一致 super_admin/tenant_admin/ops）；无 SQL 变更；② 前端 `npm i qrcodejs2`（^0.0.2，Vue2/Node16 兼容）+ api/device/device.js 加 getQrcodeInfo + views/device/index.vue：操作列加"二维码"按钮（el-icon-camera，列宽 160→230）+ 二维码弹窗（:close-on-click-modal="false" 点击外部不关闭；左二维码 180px + 右侧信息描述 + 下载标签按钮），handleQrcode 调接口→`$nextTick` 后**清空 #qrContainer innerHTML 再 new QRCode**（避免重复实例叠加），downloadQrcode 取容器内 img.src 生成 a[download] 下载。**前端构建坑（本轮，勿重踩）**：**device/index.vue 的代码在独立 chunk（动态 import），搜 app.js 找不到属正常**（搜全 dist/static/js）；**webpack 编译缓存导致改完 vue 后 dist 内容不更新**——之前 node 进程占用 node_modules/.cache 文件删除失败（Remove-Item 报拒绝访问/目录非空），`npm run build:prod` 显示 DONE 但 dist 仍是旧 hash 无新代码；修复：`Get-Process node | Stop-Process -Force` 结束遗留 node 进程 → 删 node_modules/.cache → **删 dist 全量重建** → 新 chunk-498f64b5.eb0cd03d.js 含 qrContainer/device/qrcode。**四角色云端测试（.55 全 PASS）**：admin（租户1 超管）设备列表 10 台（**超管全租户总览**：租户1 8 台 + 租户7 大华 2 台，与待办/知识库一致）二维码按钮/弹窗 img 生成（srcLen 6994 dataURL）/右侧信息正确/下载按钮无报错 ✓；sunyang21（租户7 tenant_admin）本租户 2 台（id12 人脸识别主机 192.168.1.76 + id14 大华摄像头 192.168.1.77）二维码弹窗正常、**跨租户访问租户1 设备 id=1 二维码被拦截（返回"设备不存在"防探）** ✓；ops_test（租户7 ops）本租户 2 台 + 二维码按钮/弹窗 IMG_OK ✓；repairer_test（租户7 repairer）**无设备资产菜单**（侧边栏无设备管理/边缘网关）+ 接口 403 ✓。**遗留**：二维码弹窗无批量生成/打印模板（后续可按需扩展）；扫码解析待小程序阶段。**V1.2 demo 功能 5/5 全部完成**（通知公告/点检巡检/知识库故障库/统一待办/设备二维码）。
+
+* **2026-09-16 V1.2.6 统一待办模块完成（demo 功能 4/5，已部署 .55，云端四角色测试全 PASS）**：**需求**——聚合中心（不建业务表）：① 工单待处理（status=0，仅 super_admin/tenant_admin 可见，待派单）；② 派给我的维修工单（status in 1,2）；③ 待执行点检任务（assignee_id=当前用户且 status=0）；Navbar 顶部待办铃铛角标 + 待办列表页（统计卡/类型筛选/去处理跳转）。**落地**：① SQL `netsight-upgrade-v1.1.15.sql`——权限 131 统一待办顶级（/todo Layout icon=el-icon-s-order）、132 待办列表（path='list' component='todo/index'）、133 待办查询（todo:list）、134 待办处理（todo:view），**4 角色全绑 4 条**（super_admin/tenant_admin/ops/repairer 都能用待办——查+去处理）；② 后端 `com.netsight.modules.todo.*` 2 文件（TodoService：stats/page/workOrderItems/inspectionItems/isTenantAdmin/faultTypeText/currentRepairerIds；TodoController /todo/stats、/todo/page @PreAuthorize hasRole('super_admin') or hasAuthority('todo:list')）；③ 前端 3 文件（api/todo/todo.js + views/todo/index.vue 四统计卡+el-radio-button 类型筛选+表格+去处理跳转 /workorder/order 或 /inspection/task + Navbar.vue 待办铃铛 id=todo-bell el-icon-s-order + todoTotal 角标 60s 轮询 + goTodo）。**关键 BUG 修复（本轮，勿重踩）**：**"派给我的维修工单"不能用 repairer_id=当前用户 id 匹配**——work_order.repairer_id 存的是 repairer 表（维修人员库）主键，不是 sys_user.id；维修人员账号与维修人员库通过 **phone 关联**（repairer.phone 唯一）。修复：TodoService 注入 RepairerMapper，新增 `currentRepairerIds(user)`——按 `LoginUser.getPhone()` 查 repairer（status=1 在岗）id 列表，工单查询改 `.in(repairerId, ids)`。验证：SQL 造 repairer（tenant7 phone 15700000002）+ 工单 86 派单后，repairer_test 登录看到"我的维修工单 1"（修复前 0）。**测试要点**：超管 admin（租户1）看全租户待办（7 条工单待派单=租户1 3 条+租户7 4 条）；tenant_admin（sunyang21 租户7）只见本租户 4 条（数据隔离 ✓）；ops_test 0 条无越权（看不到待派单工单）✓；repairer_test 只见派给自己的 1 条 ✓。**多租户实现**：TodoService 不写 tenant 条件，依赖 TenantLineInnerInterceptor 自动注入；超管 isSuperAdmin 时 TenantLine 忽略租户 → 全租户总览（与既有 DeviceService 一致）。**四角色测试（.55 全 PASS）**：admin 菜单/统计 7/0/0/7/角标 7/工单待办 tab 7 条/去处理跳转 /workorder/order ✓；sunyang21 菜单/统计 4/0/0/4/点检待办 tab 暂无数据（租户7 任务已执行完）✓；ops_test 菜单/统计 0/0/0/0/暂无数据 ✓；repairer_test 菜单/统计 0/1/0/1/已派单列表+角标 1 ✓（phone 关联修复验证）。测试数据已还原（工单 86 回 status=0/repairer_id=NULL，repairer 测试记录已删回 2 条）。**遗留**：待办"去处理"目前为整页跳转（工单管理/点检任务），未做行内快捷操作（如快速开工/完成），交互体验待后续优化。**下一个模块：设备二维码（demo 功能 5/5，开发前 brainstorming 定稿需求）。**
+
+* **2026-09-16 V1.2.5 知识库故障库模块完成（demo 功能 3/5，已部署 .55，云端四角色测试全 PASS）**：**需求**——故障知识条目库（标题/分类（设备离线/链路异常/视频故障/门禁故障/性能问题/其他）/适用设备类型（all|network|camera|nvr|door_controller）/品牌/型号/故障现象/可能原因/处理步骤/关键词/参考级别（critical|warning|info）/浏览计数/状态/创建人），提供**工单详情联动推荐**（按设备类型+故障类型匹配、浏览量优先 LIMIT 5）。**落地**：① SQL `netsight-upgrade-v1.1.14.sql`——fault_article 表（tenantId+公共列）+ 权限 124-130（124 知识中心顶级 /knowledge Layout icon=el-icon-reading、125 故障库 path='fault' component='knowledge/fault/index'、126-130 按钮 knowledge:fault:list/add/edit/remove/view）+ role1/2 全绑 7 条 + **role3/4 只绑 124+125+126+130（只读可查列表/详情，无增删改）** + 演示数据 3 条（设备离线排查指南 all/视频画面黑屏 camera 大华,海康/门禁刷卡无响应 door_controller）；② 后端 `com.netsight.modules.knowledge.*` 4 文件（FaultArticle entity、FaultArticleMapper、KnowledgeService（pageFault 多租户隔离/getDetail 浏览计数原子+1（UPDATE view_count=view_count+1 后重查）/addFault/updateFault/deleteFault 带 checkTenantPermission 跨租户防探/stats 分类统计/recommend 推荐：deviceType 空=通用不过滤，否则 wrapper 加 `(device_type='all' or device_type=? )`，kw 映射 offline→离线、line_abnormal→链路 后 category like、浏览量降序 LIMIT 5/options 枚举）、KnowledgeController REST）+ 工单详情联动（前端 workorder/order/index.vue handleDetail 调 recommendFault 填充 detail.knowledge）；**编译期坑**：lambda 捕获 `kw` 非 effectively final——改 `final String kw; if(..) kw=..; else kw=null;` 后通过。**前端 2 文件**：api/knowledge/fault.js（8 接口 .then(res=>res.data)）+ views/knowledge/fault/index.vue（四统计卡（知识总数/已启用/已停用/累计浏览）+ 搜索 + 表格 + 新增/修改弹窗 + 详情弹窗）+ workorder/order/index.vue 追加「相关故障知识」区块（含内嵌知识详情 dialog，openKnowledge/recommendFault 填充 detail.knowledge）。**前端 Vue2 响应式坑（关键，勿重踩）**：`this.detail.knowledge = [...]` 对已存在的响应式对象新增属性**不触发视图更新**（弹窗显示 0 条但接口有数据）→ 必须 `this.$set(this.detail,'knowledge',...)`；且注意**异步竞态**——recommend 先于 getOrder 返回时 detail 被整体替换丢 knowledge，正确顺序：getOrder().then(data=>{this.detail=data; this.loadKnowledge(row)})。**四角色云端测试（.55 全 PASS）**：admin（租户1）菜单/统计/列表/新增（链路丢包排查测试）/详情浏览 0→1/修改/删除全通过、工单详情联动推荐 1 条（设备离线排查指南）+ 内嵌知识详情弹窗打开正常；sunyang21（租户7 tenant_admin）菜单✓、租户1 数据完全隔离（0 条）✓、新增权限✓（租户7 归属正确，测试条目已清理）；ops_test（租户7 ops）菜单✓ 只读（无新增知识按钮）✓；repairer_test（租户7 repairer）菜单✓ 只读✓。测试数据已清理回租户1 3 条。**测试要点**：el-select 下拉项 bu.ref 点不到——先 click select 再用 `bu.js` 查 `.el-select-dropdown__item`（textContent 匹配 + offsetParent!==null）click；必填校验失败时 `.el-form-item__error` 列出缺项；Form 校验通过后保存成功 toast + 列表刷新。**下一个模块：统一待办（demo 4/5）。**
+
+* **2026-09-16 V1.2.4 点检巡检模块完成（demo 功能 2/5，已部署 .55，云端四角色测试全 PASS）**：**需求**——点检项库（check/text 两种结果类型）、点检计划（daily/weekly/monthly 周期、按设备/设备类型对象、执行人快照、生效期）、点检任务自动生成（唯一键 (tenant_id,plan_id,target_id,plan_date) 防重）、任务执行（逐项正常/异常 + 文本结果 + **异常自动生成报修工单**）、任务统计；所有表含 tenant_id 多租户隔离，管理菜单仅 super_admin/tenant_admin（plan/item 权限），**ops/repairer 只见「点检任务」可执行本租户任务**。**落地**：① SQL `netsight-upgrade-v1.1.13.sql`——inspection_item/plan/task/record 4 表 + 权限 110-123（110 点检巡检顶级 /inspection Layout icon=el-icon-date、111 点检任务 path='task'、112 计划、113 项库、114-123 按钮）+ role1/2 全绑 14 条 + **role3/4 绑 110(inspection:menu)+111+114+115 共 4 条**（**坑：只绑子菜单不绑顶级，getRouters 组树缺父级导致侧边栏不显示**——须顶级+子级一起绑）；演示数据 4 点检项+1 计划（daily device_type network）+任务；**MySQL 无 || 连接，编号 SQL 用 CONCAT**；② 后端 `com.netsight.modules.inspection.*` 10 文件（InspectionService：pageItem/pagePlan/pageTask/pageRecord、generateTasks(planId,date) resolveTargets 按 targetType 分支（device→selectBatchIds / device_type→.in 查设备批量建任务，唯一键冲突忽略）、submitTask 批量写记录 + abnormalCount++ + **repairMode=1 时 createRepairOrder 复用 WorkOrderService.addOrder（faultType=manual）**、taskStats、@Scheduled cron 每日 00:10 生成/00:05 标记逾期、genTaskNo、parseStringList/parseLongList、currentUsername；权限注解管理接口 @PreAuthorize("hasRole('super_admin') or hasAuthority(...)")、任务/记录接口 isAuthenticated）；③ 前端 4 文件（api/inspection/inspection.js + task/plan/item 三页：任务页六统计卡+我的任务开关+开始/执行/详情+执行弹窗点检项卡片勾选+异常报修开关+详情弹窗；计划页 CRUD+生成任务 prompt+新增修改弹窗周期/对象 radio-button+targetIds JSON+执行人姓名+ID+生效期 daterange）。**本轮修复 3 处（已重建部署 .55）**：① **plan/index.vue 目标输入框不渲染根因 = placeholder 字符串内 `\"network\"` 的 `\"` 在 Vue 模板属性中破坏解析**（属性提前闭合，剩余当文本，el-input 未渲染）→ 改 `如 network,camera` 去掉转义引号；② task/index.vue el-alert title 内层英文双引号破坏属性 → 改「点检项库」；③ handleGenerate 的 $prompt inputPattern=/^\d{4}-\d{2}-\d{2}$/ 空值（提示"空=今天"）过不了校验 → 改 /^$|^\d{4}-\d{2}-\d{2}$/。**云端四角色测试（.55 全 PASS）**：**admin（租户1 超管）**三页渲染 + 执行核心交换机任务勾异常+开报修 → 工单 #85（WO202609161423443405 manual 核心交换机）；**sunyang21（租户7 tenant_admin）**三页"暂无数据"（租户1 数据隔离）+ 新增点检项 id=6 + 新增计划 id=2（大华设备每日点检 device_type ["camera","door_controller"] assignee sunyang21 id=5）+ 生成任务 2 条（INSP2026091614341071/91）+ 执行大华摄像头任务完成；**ops_test（租户7 ops）**侧边栏只有「点检任务」（无计划/项库）+ 执行大华人脸识别主机任务勾异常+开报修 → 工单 #86（tenant_id=7 归属正确）；**repairer_test（租户7 repairer）**侧边栏只有「点检任务」+ 任务列表/详情可读。测试后保留演示数据：租户1（5 任务 2 计划 5 项库）+ 租户7（2 任务 1 计划 1 项库）。**遗留**：① deploy_all.py 的 NGINX_CONF 仍缺 /alert/ 代理（.55 已手工补 + reload，脚本待回修）；② 点检计划 targetIds 目前手填 JSON（无设备选择器），交互体验待后续优化。**下一个模块：知识库故障库（demo 功能 3/5）。**
+
+* 系统名 **NetSight**（代号 **NAMS**）：云边协同的物联网设备状态采集 / 分析与异常报警平台，统一纳管网络设备、视频监控、门禁安防设备；Prometheus/Alertmanager 下沉边缘网关（指标不出内网，仅告警上云）。
+
+* 版本：V1.1 骨架版已就绪（能登录、能建租户、前端页面跑通）。三维 / Three.js 可视化留待后续版本。
+
+* 当前阶段完成：第 1 周工程骨架（登录认证闭环、前端骨架、6 张系统表、Node16、生产构建）；**第 2 周系统管理模块**（用户 / 角色 / 菜单 / 租户 CRUD、手机号验证码登录、JWT 认证、多租户数据隔离已验证通过）；**第 3 周边缘网关 + 设备资产**（网关注册 / Token 鉴权 / 心跳、设备录入、拓扑主备三路维护、SNMP 指标接收接口、数据库动态路由）；**第 4 周监控告警链路**（事件中心 + 通知通道中心 SPI+AlertManager webhook 对接 + 前端告警中心四页面，全链路联调通过；**V1.1.6 租户级 Webhook Token 已落地部署联调通过**）；**第 5 周工单闭环 + 备品备件**（告警事件自动生成联系单、报修派单自动通知维修人员、维修全流程状态机、备件统一管理 + 出入库 + 返修流转 + 工单绑定，后端 30 项联调 + 前端四页面实测通过）；**第 6 周监控大屏 + 拓扑可视化 + WebSocket 实时推送**（运维大屏 /dashboard/overview、SVG 拓扑页 /device/topology、原生 WebSocket /ws/push 实时推送、备件低库存预警、云端 .55 二进制部署完成、边缘网关模拟器部署 .60 周期上报）；**前端体验定制**（方案 8.4 年轻现代风主题落地、首页云边协同数据流动图替代技术选型、顶部栏账号替代头像 + 帮助中心，见下方章节）；**V1.1.8 告警/派单通知内容已含租户名称**（2026-09-16 部署验证通过）；**V1.1.9 告警链路修复：去重 24h + @Async 代理修复，解决 PushPlus 风控拒收**（2026-09-16 部署验证通过）；**V1.1.10 租户名模板补齐 + 新租户自动复制默认模板 + buildVars 补 device_location**（2026-09-16 部署验证通过：租户7 pushplus 推送含"租户：大华设备示范租户"、新租户复制 10 条模板全含租户名占位符）。微信小程序暂停，待 PC 全量测试后推进。**V1.2 前端风格改造：参照 demo（saas.windasoft.com 风塔 WindaEDM）工业蓝白风落地**（主色 #205CF5、顶栏深蓝 #0B2A6B、登录渐变 #041445、白底卡片式侧边栏 + 浅蓝选中态、新 Logo"慧眼"替换默认 logo、多页签浅蓝选中 + 主蓝底条、登录页深蓝科技背景，已部署 .55 云端验收通过，见下方"V1.2 前端风格改造"章节）。
+
+* **2026-09-16 V1.2.3 通知公告模块（demo 功能 1/5，已部署 .55 四角色测试全部 PASS）**：**后端**（com.netsight.modules.notice.*）——entity Notice/NoticeRead、mapper 2、service NoticeService（pageNotice 管理端分页/非超管按租户、listPublished 用户端已发布+已读标识+置顶优先+过期过滤、unreadCount、getDetail 详情+可见时 markRead 幂等、addNotice/updateNotice/deleteNotice 级联清理已读、publish/offline/stats 四状态计数、checkTenantPermission）、controller NoticeController（GET /notice/list、/published、/unread-count、/{id}、/stats；POST /notice、/{id}/publish、/{id}/offline；PUT /notice；DELETE /notice/{id}）。**编译 tip**：LambdaQueryWrapper 无 setSql，需用 LambdaUpdateWrapper。**增量 SQL v1.1.12**（已在 .55 执行）：notice（tenantId/title/content/noticeType/level/status/isTop/publishTime/expireTime/publisherId/publisherName/readCount + 公共列）、notice_read（唯一键 uk_notice_user(tenant_id,notice_id,user_id)）；权限 103 通知公告顶级（/notice,Layout,icon=el-icon-message）、104 公告管理子菜单（path='list',component='notice/index'）、105-109 按钮（notice:list/add/edit/remove/publish）；演示数据 2 条。**坑**：notice_read 表首版 SQL 漏 update_time（实体继承 BaseEntity 查询报 Unknown column），已 ALTER TABLE 补列并回修 SQL 文件。**前端**：api/notice/notice.js（10 接口，分页字段 `rows` 非 records——曾踩 res.records 导致列表空）、views/notice/index.vue（四统计卡/搜索/CRUD/详情/发布下线确认）、Navbar.vue 铃铛 id=notice-bell + el-badge 未读数 60s 轮询 + 通知中心弹窗 + 公告详情弹窗（viewNotice 调 getNotice 自动标记已读刷新角标）。**部署**：前端 3.2MB dist、后端 54MB jar、deploy_all.py 全量部署 .55（首页 200、/prod-api 200；WS 握手探测 socket.timeout 不影响部署）。**四角色测试（云端 .55 全 PASS）**：admin（租户1 超管）公告管理 CRUD+发布/下线/搜索/详情全通过、铃铛角标 2→1→0 已读生效；sunyang21（租户7 tenant_admin）初无公告菜单 → **按多租户原则给 tenant_admin 角色（role_id=2）补绑 103-109 权限**（INSERT...SELECT 幂等）后出现菜单、只看到租户7 公告（1 条）、租户1 公告完全隔离、铃铛 1→0；ops_test（15700000001 租户7 ops）无公告菜单、铃铛看到租户7 公告 1→0；repairer_test（15700000002 租户7 repairer）无公告菜单、铃铛看到租户7 公告 1。**测试账号**：.55 新增 sys_user id=6 ops_test、id=7 repairer_test（租户7，密码同 admin123 BCrypt，绑定角色 3 ops / 4 repairer），供后续模块四角色测试复用。**演示数据**：notice 保留租户1 上线公告（已发布）+ 点检通知（已下线）+ 租户7 专属公告（已发布，readCount 2）。**坑（勿重踩）**：① 云端页面改版后浏览器会缓存旧 index.html——验证新功能必须带时间戳访问（?ts=xxx）否则看不到铃铛/新菜单；② bu 清 cookie 时 document.cookie 跨域报 SecurityError——用 try/catch 包裹逐条置过期；③ login 后 page_info 偶发 page not found——bu.resync() 后重观察。
+
+* **2026-09-16 V1.1.10 租户名通知修复（已部署 .55 验证通过，用户审核后实施）**：用户反馈"新收到的告警仍无租户内容"。根因=**V1.1.8 只 UPDATE 了租户1 的 6 条内置模板，租户7 的 3 条 pushplus 模板（id 11/12/13）与租户1 manual（id 5/6）、stock_low（id 9/10）共 7 条未补 `{{tenant_name}}`**，模板渲染只替换模板中存在的占位符，故租户7 用户推送无租户名。**落地**：① 增量 SQL `netsight-upgrade-v1.1.10.sql`——7 条存量模板 UPDATE 加 `{{tenant_name}}`（offline/line/recovered/manual/stock_low 各通道）+ 末尾"缺占位符"校验查询；② **新租户自动复制默认模板**（防复发）——`NotificationTemplateMapper.copyTemplatesFromDefault(newTenantId)`：`@InterceptorIgnore(tenantLine="true")` + 单条 `INSERT...SELECT`（源租户1 公共模板、目标新租户，均与当前租户上下文无关，必须绕过 TenantLineInnerInterceptor），`SysTenantController.add()` 创建租户后调用，失败仅 log.error 不阻断；③ `EventCenterService.buildVars()` 补 `device_location` 兼容变量。**部署验证（3 项 PASS）**：全模板无缺占位符；租户7 webhook（X-Netsight-Webhook-Token=c9e8c10ed0a4480ebf0354c112bc435e）→ pushplus success=1 内容含"租户：大华设备示范租户"；新建临时租户（id 9）自动复制 10 条模板全部含租户名占位符，删除临时租户验证清理正常。测试数据（租户名验证设备事件/log/工单 83）已清理。**坑（勿重踩）**：① **/auth/sms-code 的 phone 是 @RequestParam Query 参数**（`POST /auth/sms-code?phone=13800000000`），用 JSON body 会 MissingServletRequestParameterException 500；login 才是 JSON body 且必须 Content-Type: application/json；② **work_order 源事件列名是 event_id（不是 source_event_id）**，V1.1.4 文档记录名与实现不符，按 event_id 用；③ mysql -e 中文条件必须 `--default-character-set=utf8mb4`，否则 LIKE 中文匹配不到（客户端默认 latin1）；④ paramiko 脚本内 curl `-w '%{http_code}'` 在 `%` 格式化串中必须写 `%%{http_code}`。
+
+* **2026-09-15 nams-agent 本地管理密码 Bug 修复（已修复并部署 .60 验证）**：根因是 `LocalAuthService.persistAdmin` 用 `local.path("admin")` 后强转 ObjectNode——config.json 缺 admin 段时返回 MissingNode 抛 ClassCastException，改密"内存已生效但写回失败"，重启后恢复出厂，且再登 admin123 会报"用户名或密码错误"（内存哈希已变）。**修复**：`node.has("local")&&node.get("local").isObject()` 判断，缺失时 `node.putObject("local")`/`local.putObject("admin")` 自动创建再写入。已重新打包（target/nams-agent.jar 20069937 字节）部署 .60（旧 jar 备份 .bak_20260915_143756），**全链路验证 6 项 PASS**：删 admin 段后 admin123 可登 → 改密 Admin@2026 成功且 config.json 写入 BCrypt（len 60）→ 重启后新密码仍有效 / admin123 失效 → 已改回 admin123（force_change_pwd=false）。**当前 .60 管理页（:8081）密码 = admin123**，用户可登录后自行修改。**遗留**：同样强转模式若出现在其它写回代码（暂无），改密接口 LocalApiController.changePassword 返回体无"写盘失败"明细，建议后续在 ResultCode 增加提示。
+
+## 环境（实测）
+
+
+
+| 项         | 值                                                                                                                                                                                                                                  |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| JDK       | 21.0.10（C:\Program Files\Java\jdk-21.0.10）                                                                                                                                                                                         |
+| Maven     | 3.6.3（D:\maven\apache-maven-3.6.3），**本地仓库 D:\maven\maven-repository**（conf/settings.xml 配置，非～/.m2）                                                                                                                                 |
+| MySQL 客户端 | D:\mysql\mysql-8.0.19-winx64\bin\mysql.exe（`$env:MYSQL_PWD` 方式免交互）                                                                                                                                                                 |
+| Node      | 16.20.2 = D:\node16（PATH 前置使用）；系统 Node22 保留不动（webpack4 必须 Node16）                                                                                                                                                                  |
+| 远端测试机     | 192.168.1.55（Ubuntu 20.04）：MySQL 8.0.42（库 netsight）、Redis 5.0.7（6379，**无认证、不支持 RESP3/HELLO，仅 db0**）、SSH 22。**Nginx 1.18.0 已装**（80 监听中，前端 /opt/nams-ui/dist + /prod-api→8080 + /ws/ 反代）。**云安全组 80 未放行**（需控制台放行后外网可访问）。凭据通过环境变量注入，见下 |
+
+## 构建与运行命令（PowerShell）
+
+
+
+```
+\# 后端（需注入环境变量；密码/密钥不落配置文件）
+
+cd E:\gitee\NetSight1.0\netsight-server
+
+\$env:MYSQL\_PASSWORD="<见会话/开发规范>"; \$env:JWT\_SECRET="NetSightDevSecretKey2026ForLocalDevOnly!"
+
+mvn spring-boot:run          # 8080 端口
+
+\# 前端（必须 Node16）
+
+cd E:\gitee\NetSight1.0\netsight-ui
+
+\$env:Path="D:\node16;"+\$env:Path; \$env:NODE\_OPTIONS="--max-old-space-size=4096"
+
+npm run dev                  # 80 端口，代理 /dev-api -> http://localhost:8080
+
+npm run build:prod           # 生产构建（脚本名是 build:prod，无 build）
+```
+
+## 架构
+
+
+
+* 后端 `netsight-server`：分层 `com.netsight.{common,config,framework.security,modules.system.*}`（Controller→Service→Mapper→Entity）。Spring Boot 4.0.8 + MyBatis-Plus 3.5.17（多租户插件 TenantLineInnerInterceptor）+ Spring Security 7（无状态 JWT）+ HikariCP + JJWT 0.12.6 + Hutool + Lombok。
+
+* 前端 `netsight-ui`：若依 Vue2 3.9.1 分离版骨架改造（Element UI + Vuex + Router），登录页已改手机号 + 验证码；已删 monitor/tool 模块页面与路由。
+
+* SQL：`netsight-server/sql/netsight.sql`（6 张系统表 + 初始化数据）；`netsight-server/sql/netsight-upgrade-v1.1.1.sql`（系统管理菜单 / 按钮权限 19 条 + super\_admin 全绑定，已执行）；`netsight-server/sql/netsight-upgrade-v1.1.2.sql`（**第 3 周**：edge\_gateway/device/device\_topology 三表 + sys\_permission 加 path/component/icon 列 + 权限 40-55 + super\_admin 绑定 32 条，已执行）；`netsight-server/sql/netsight-upgrade-v1.1.3.sql`（**第 4 周**：event\_record/notification\_rule/notification\_template/notification\_log 四表 + 6 模板 + 4 规则 + 权限 60-75 + 绑定 16 条，已执行）；`netsight-server/sql/netsight-upgrade-v1.1.4.sql`（**第 5 周**：work\_order/repairer/work\_order\_record/work\_order\_part/spare\_part/spare\_part\_record 六表 + 派单模板 2 条 (tpl\_order\_dispatch 双通道) + 权限 76-97 + super\_admin 绑定 22 条，已执行）；`netsight-server/sql/netsight-upgrade-v1.1.5.sql`（**第 6 周**：库存预警模板 2 条 (tpl\_stock\_low 双通道)+ 路由规则 1 条 (stock\_low→双发)+ 权限 98-102 (98 监控大屏顶级 /dashboard+Layout、99 大屏子菜单 path=**overview**(勿改回 index，与首页 name=Index 冲突致动态路由注册失败 404)、100 网络拓扑、101/102 按钮)+ 绑定 5 条，已执行）；`netsight-server/sql/demo_v115.sql`（第 6 周演示数据：网关 4 + 设备 8 + 拓扑 7，幂等，已执行）。
+
+## 第 3 周：边缘网关 + 设备资产（已完成并验证）
+
+
+
+* **增量 SQL v1.1.2**：新建 `edge_gateway`（gateway\_code/gateway\_name/location/link\_type(wired|wifi|4g5g)/gateway\_token/ip\_address/online\_status/last\_heartbeat\_time/status）、`device`（device\_code/device\_name/device\_type (network|camera|nvr|door\_controller)/brand/model/ip\_address/location/status (1 在线 0 离线)/line\_status (1 链路异常)/gateway\_id）、`device_topology`（device\_id/parent\_main\_id/parent\_backup1\_id/parent\_backup2\_id，**一台设备最多 3 个上级 = 1 主 2 备**，主必填备可空）。均含 tenant\_id/create\_time/update\_time/del\_flag，device\_code 与 gateway\_code 唯一。
+
+* **权限**：40 设备资产顶级 (/device,Layout)、41 设备管理 (device/index)、42-46 按钮 (device:list/add/edit/remove/topology)、50 边缘网关 (edge/gateway/index)、51-55 按钮 (gateway:list/add/edit/remove/resetToken)。**INSERT 必须显式 id**（此前 auto\_increment 错位导致 parent\_id 错乱，已修复重跑）。
+
+* **后端新增**（com.netsight.modules.system.\*）：EdgeGatewayService（code=GW + 时间戳 + 4 随机；token=UUID 去横线 32 位；列表按 last\_heartbeat\_time 超 5 分钟实时算离线；**网关下有设备禁删**；resetToken 旧 token 失效）、DeviceService（编码 DEV + 时间戳 + 4 随机；saveTopology 先删后插 1 主 2 备；删除设备级联清理自身及被引用拓扑；topologyTree 返回 {nodes:\[{id,name,status,lineStatus}],links:\[{from,to,lineType:main|backup1|backup2}]}；updateStatusBatch 按 deviceCode 批量更新 status/line\_status；checkTenantPermission 跨租户防探）、GatewayReportController（`POST /edge/report/status` + Header `X-Gateway-Token`，body `{ipAddress, devices:[{deviceCode,up,lineAbnormal}]}`，网关鉴权后刷新心跳并批量更新设备状态；`POST /edge/report/heartbeat` 同鉴权）。SecurityConfig 白名单加 `/edge/report/**`（网关 Token 鉴权不走 JWT）。
+
+* **GetRoutersController 改为数据库动态路由**：超管查全部 menu 型权限，非超管走 SysPermissionMapper.selectMenusByUserId（联表角色取菜单），按 parent\_id 组树；sys\_permission 需含 path/component/icon 列，component='Layout' 顶级 / 其余为 views 路径。**权限数据现状**：/system (租户 / 用户 / 角色)+/device (设备管理 / 边缘网关) 两组顶级。
+
+* **三色状态派生**（前端渲染）：status=0 → 红（离线故障）；status=1 且 line\_status=1 → 灰（链路 / 业务异常）；status=1 且 line\_status=0 → 绿（正常）。前端圆点颜色 #f56c6c / #909399 / #67c23a。
+
+* **前端新增**：api/device/device.js（listDevice/getDevice/addDevice/updateDevice/delDevice/getTopologyTree）、api/edge/gateway.js（listGateway/listGatewayOptions/addGateway/updateGateway/delGateway/resetGatewayToken），均带 `.then(res=>res.data)` 解包；views/device/index.vue（三色状态圆点 + 上级设备标签 + 新增修改弹窗含 "基本信息 + 拓扑关系 (1 主 2 备)" 两组 divider + 拓扑维护弹窗内联 SVG 分层布局：主实线蓝 #409eff / 备虚线橙 #e6a23c）、views/edge/gateway/index.vue（CRUD + 重置 Token + 新增后 Token 一次性弹窗 + 超管可选租户 + 链路 radio + 启用开关）。超管判断统一 `roles.includes('super_admin')`（getters 无 isSuperAdmin）。
+
+* **联调验证**（全通过）：登录→getRouters 返回 /system+/device→新增网关返 token (32)→新增设备自动生成 DEV 编码→拓扑 PUT 200→拓扑树 nodes+links→状态上报后 SW 绿 / CAM 灰 / 红 正确→网关心跳 online=1→网关下有设备禁删正确拦截→清理后 device=0/gateway=0。**前端已验证**：登录、侧边栏（设备资产菜单）、设备列表三色圆点、新增设备弹窗、拓扑弹窗 SVG、网关 CRUD+Token 弹窗均浏览器实测通过；`npm run build:prod` 编译通过。
+
+## 第 5 周：工单闭环 + 备品备件（已完成并验证）
+
+
+
+* **增量 SQL v1.1.4**：新建 `work_order`（order\_no 唯一 /source\_type (event|manual)/device\_name/device\_ip/device\_type/device\_location/fault\_type (offline|line\_abnormal|manual)/severity/description/status (0 待处理 1 已派单 2 维修中 3 已完成 4 已关闭 5 已自动恢复)/repairer\_id/repairer\_name/dispatch\_time/repair\_start\_time/repair\_end\_time/repair\_result/remark/source\_event\_id）、`repairer`（name/phone 唯一 /region/device\_types (JSON)/skills/status (1 在岗 0 休假)）、`work_order_record`（order\_id/action(auto\_create|dispatch|repair\_start|complete|close|recover)/operator/content/create\_time）、`work_order_part`（order\_id/part\_id/part\_no/part\_name/quantity/unit，**备件与工单绑定**）、`spare_part`（part\_no 唯一 /part\_type/brand/model/serial\_no/quantity/unit/status (new|repairing|repaired|scrapped)/location/safe\_stock/remark）、`spare_part_record`（part\_id/part\_no/part\_name/record\_type (in|out|return\_in|repair|scrap|adjust)/quantity 带符号 /order\_id/order\_no/operator/remark）。均含 tenant\_id/create\_time/update\_time/del\_flag。新增 2 条派单模板（tpl\_order\_dispatch 双通道："⚠️ 新工单派发 工单号：{{orderNo}} 设备：{{deviceName}}（{{deviceIp}}） 类型：{{deviceType}} 位置：{{deviceLocation}} 故障：{{description}} 请 {{repairerName}} 尽快处理并回填维修结果"）+ 权限 76-97（76 运维工单顶级 /workorder+Layout、77 工单管理 (workorder/order/index)、78 维修人员 (workorder/repairer/index)、88 备品备件顶级 /spare+Layout、89 备件管理 (spare/part/index)、90 出入库记录 (spare/record/index)，78-87/91-97 为 order:*/repairer:*/part:*/record:* 按钮，super\_admin (role\_id=1) 绑定 22 条）。**INSERT 一律显式 id**。
+
+* **后端新增**（com.netsight.modules.workorder.\* / com.netsight.modules.spare.\*）：**WorkOrderService**（genNo WO + 时间戳 + 4 随机；autoCreateFromEvent—— 离线 / 链路异常按 24h 去重（Redis `netsight:order:dedup:{bizId}`，复用事件 bizId）自动生成联系单（sourceType=event、faultType 映射 offline/line\_abnormal、快照设备信息、状态待处理），handleRecover—— 设备恢复事件把该设备未完成工单（status 0/1/2）置 5 并加 recover 记录；dispatch—— 报修派单（选维修人员 + 备注，状态→1，**自动发送 tpl\_order\_dispatch 模板通知（短信 + 公众号）**，通知不落 event\_record 只落 notification\_log）；repairStart/complete（填维修结果，状态→2/3）；close（状态→4）；手动建单 / 分页 / 统计（按状态分组 pending/dispatched/repairing/completed/total）/ 详情返回 records+parts）、**RepairerService**（CRUD+options 在岗列表）、**SparePartService**（CRUD + 唯一校验 + checkTenantPart；**stock 出入库**：in/return\_in/adjust 加库存、out/scrap 扣库存、repair 只流转状态库存不变，out 必绑工单，库存不足抛 500，流水落库带符号；addRecord 记录操作人；低库存统计）+ SpareRecordService（分页）+ 控制器 5 个（WorkOrderController /workorder/order CRUD+dispatch+repairStart+complete+close+stats、RepairerController /workorder/repairer CRUD+options、SparePartController /spare/part CRUD+stats+types+available+stock、SpareRecordController /spare/record/list）。权限注解 `@PreAuthorize("hasRole('super_admin') or hasAuthority('order:*')")` 等按模块。
+
+* **事件联动（Spring 事件解耦，避免 alert↔workorder 循环依赖）**：新建 `com.netsight.modules.alert.event.AlertEvent`（持有 EventRecord）；EventCenterService 注入 ApplicationEventPublisher，asyncProcess 开头 publishEvent（try-catch 包裹）；WorkOrderService 加 `@EventListener onAlertEvent(AlertEvent)`，按 eventType 路由 ——device\_offline/device\_line\_abnormal→autoCreateFromEvent、device\_recovered→handleRecover、其余忽略。
+
+* **编译期坑（勿重踩）**：① `R.ok("中文")` 会匹配 `ok(T)` 泛型得 R\<String>，赋值 R\<Void> 编译错 —— 一律 `R.ok(msg, null)`；② SecurityUtils **没有 getUsername ()**—— 用 `getLoginUser().getUsername()`，且异步线程 / 未登录会 NPE，统一封装 `currentUsername()` 判空兜底返回 "系统"；③ 循环依赖不可用 ——alert 服务若注入 workorder 服务会构造循环，用 Spring 事件（ApplicationEventPublisher+@EventListener）解耦。
+
+* **联调验证（30 项全 PASS）**：登录→getRouters 返回 /workorder+/spare→新增维修人员 2 人→webhook 离线告警→**自动生成工单**（status=0、记录 auto\_create、设备快照）→报修派单（status=1、repairerName = 张师傅、**派单通知日志 sms+wechat 各 1 条、模板渲染含 WO 编号**）→开始维修→完工（status=3、repairResult）→工单统计→新增备件 2 条→**领用出库 2 台（库存 5→3、工单绑定 work\_order\_part=1）**→出入库记录 5 条（+10 入库 /+5 入库 /-2 领用）→返修（status=repairing）→返修入库（库存 3→4、status=repaired）→**库存不足拦截**（HTTP200+code500）→外线事件建单→**恢复事件自动归档**（status=5）→手动建单 + 关闭。测试数据清理后保留：3 张工单（SW-05 完成 / CAM-09 自动恢复 / 门禁手动关闭）、2 维修人员、2 备件（POE 4 台 repaired / 光纤模块 10 个 new）、出入库记录 5 条。
+
+* **前端**：api/workorder/{order,repairer}.js + api/spare/{part,record}.js（`.then(res=>res.data)` 解包）+ 四页面。工单页：五统计卡（待处理 / 已派单 / 维修中 / 已完成 / 总数）+ 搜索 + 表格（来源告警 / 手动标签、级别标签、状态彩色标签、记录 / 备件计数）+**新增工单弹窗（设备信息 + 故障信息两组 divider）**+**报修派单弹窗（维修人员下拉带区域技能、自动通知警告条）**+ 完工 / 关闭弹窗 +**详情弹窗（el-descriptions 全字段 + 处理记录 el-timeline 时间轴 + 备件使用表）**；维修人员页：CRUD + 设备类型多选 + 状态开关；备件页：四统计卡（种类 / 库存总量 / 返修中 / 低库存）+ 搜索 + 表格（低库存行标红 + 库存红绿标签）+ 新增修改弹窗 +**出入库弹窗（5 种操作类型 radio、领用出库必选工单、关联工单下拉）**；出入库记录页：搜索 + 表格（数量 +/- 红绿、返修显示 "送修 N" 橙色）。浏览器逐页实测通过（侧边栏出现 运维工单 / 备品备件 两组菜单）；`npm run build:prod` 通过。
+
+* **遗留**：维修人员首页显示最新创建在前（无 sort 字段，方案后续可加）；备件 "返修" 库存模型为状态流转（数量不变），报废才扣库存。
+
+## 第 6 周：监控大屏 + 拓扑可视化 + WebSocket 实时推送（已完成并验证）
+
+
+
+* **增量 SQL v1.1.5 + 演示数据**：权限 98 监控大屏顶级 (/dashboard Layout)、99 大屏子菜单 (path='overview' component='dashboard/index'，**name 必须避开 'index'**—— 若 path='index' 则 name=Index 与首页 constantRoutes name='Index' 冲突，Vue Router 重复 name 时新路由被跳过 → /dashboard 404)、100 网络拓扑 (/device/topology)、101/102 按钮权限 (topology:view、dashboard:view)；库存预警模板 tpl\_stock\_low 双通道 (短信 / 公众号)、路由规则 stock\_low→双发；demo\_v115.sql 幂等入库：网关 id=4「厂区边缘网关」(token e3f2a1b4c5d6e7f8091a2b3c4d5e6f70)+ 设备 id1-8 (核心交换机 / 汇聚 A/B/ 接入 (链路异常)/ 球机 / 枪机 (离线)/NVR/ 门禁)+ 拓扑 id1-7 (接入←汇聚 A 主 + 汇聚 B 备 1、枪机←接入主 + 汇聚 B 备 1 等 1 主 2 备样例)。
+
+* **后端新增**：**DashboardController**(GET /dashboard/overview，需 dashboard:view；返回 device {total/online/offline/lineAbnormal/onlineRate/byType}、event {today/critical/warning/info/ 近 7 日 trend/TOP5}、order {六状态}、gateway {online/offline/total}、spare {partTypes/totalQuantity/lowStock}；**groupCount 需传列名参数**：device/order 用 "status"、gateway 用 "online\_status")、**PushWebSocketHandler**(原生 WS /ws/push，消息 {type,data,time}，静态广播 + 在线计数)、**GatewayWebSocketHandler**(/ws/gateway 预留，网关当前走 HTTP 上报)、**WebSocketConfig 重写**（见下方关键修复）、SparePartService 注入 EventCenterService 加 **checkLowStockAndNotify**(quantity<=safeStock 且 safeStock>0 → stock\_low 事件，labelsJson 合并 partName/partNo/partType/quantity/unit/safeStock/location，**bizId 按天去重** `stock_low:{partId}:{yyyy-MM-dd}`，初版按 partId 撞 5 分钟去重已改)、EventCenterService.receiveEvent 改 `@Transactional(propagation=REQUIRES_NEW)`(否则业务事务未提交异步处理读不到)、asyncProcess 后广播 event、GatewayReportController 上报后广播 device-status、WorkOrderService 状态变更广播 order (pushOrder 私有方法)。
+
+* **关键修复（勿重踩）**：
+
+  ① **WebSocket 200/404 根因**：`@EnableWebSocketMessageBroker`(STOMP) 与 `WebSocketConfigurer`(原生 handler) **共存时原生 handler 注册被忽略**（/ws/push 落入 DispatcherServlet 静态资源，NoResourceFoundException）。修复：WebSocketConfig 改为 `@EnableWebSocket`**&#x20;+ 只 implements WebSocketConfigurer**，注册 /ws/push (推送)+/ws/gateway (预留) 两个原生 handler；全项目无 SimpMessagingTemplate/STOMP 残留。手测 ws://[localhost:8080/ws/push](https://localhost:8080/ws/push) OPEN、云端 .55 同 jar 握手 101。
+
+  ② **dev server 代理 ws 不稳**（Node16+Windows webpack-dev-server 3.x，代理 ws 升级触发 unhandled ECONNRESET 崩 node 进程）：**前端 utils/websocket.js getWsUrl 开发环境直连&#x20;**`ws://localhost:8080/ws/push`，生产走同源 /ws/push（Nginx 反代）；vue.config.js '/ws' 代理保留作兜底。dev server 另加 `hot:false, inline:false` + `watchOptions:{poll:1000}`（E 盘 fs.watch 也不稳）。
+
+  ③ **dashboard 404 根因**：动态路由子菜单 name 由 path 末段生成，'index'→'Index' 与首页 constantRoutes name='Index' 冲突 → addRoutes 跳过 → /dashboard 404。修复：SQL 改 path='overview'（v1.1.5 文件已同步），大屏 URL=/dashboard/overview。
+
+  ④ **/auth/sms-code 500 根因**：JwtAuthenticationFilter 对无效 / 过期 token 未捕获（jjwt parseToken 抛错），**白名单接口也 500**（浏览器一直 401/500 无法登录）。修复：try-catch 包裹 + @Slf4j，无效 token 仅 log.debug 放行（受保护接口由 Security 兜底 401）。
+
+  ⑤ 前端 alert/template/index.vue 的 placeholder 含 `{{device_name}}` 会被 Vue 模板编译器当插值报错 —— 改 `:placeholder="'支持占位符：{{...}}'"`（JS 字符串绑定）。
+
+* **前端新增**：views/dashboard/index.vue（深蓝科技风大屏：ECharts 类型分布堆叠柱 / 近 7 日趋势折线 / 状态占比环形饼、实时告警 LIVE 闪烁列表、指标网格 + 网关 + 备件 + 工单 + 告警级别面板、WS 三事件驱动刷新 + 30s 轮询兜底 + 全屏切换，echarts 5.4.0 已在 package.json）、**views/topology/index.vue（已由手写 SVG 迁移到 AntV G6，见下方"拓扑页 G6 改造"）**、src/utils/websocket.js（原生 WS 封装：30s 心跳探测 + 5s 重连 + 按 type 订阅）、src/api/dashboard.js。
+
+* **2026-09-16 删除独立拓扑图页面（V1.1.7，已部署 .55 验证通过，后端零改动）**：用户最终裁决——G6 节点图与架构图模式均不满意，**从系统删除拓扑展示页与相关代码，保留①设备上下级关系维护②JSON 拓扑树输出能力**，后期用第三方工具导入 JSON 生成拓扑图。**落地**：① 前端删 `src/views/topology/` 整目录（G6 架构图版 index.vue），G6 依赖随之不再打包（dist 7.6MB→3MB）；② 增量 SQL `netsight-upgrade-v1.1.7.sql`：删权限 100（perm_key='device:topology:menu', path='topology', component='topology/index'）+ 101（perm_key='device:topology:view'）+ 角色关联（JOIN 式子查询先删 sys_role_permission 再删 sys_permission），**保留 98/99/102 dashboard 权限**；③ **后端零改动**：topologyTree 接口权限是角色级注解 `@PreAuthorize("hasRole('super_admin') or hasRole('tenant_admin') or hasRole('ops')")`（DeviceController 83-87 行），**不依赖 topology:view 按钮权限**，删菜单不影响 JSON 输出；④ 前端 `api/device/device.js` 的 getTopologyTree（url `/device/topology/tree`）保留，`views/device/index.vue` 的"拓扑维护"弹窗（1 主 2 备上级下拉 + 内联 SVG 预览）是设备上下级关系维护入口**保留不动**。**权限表结构备忘（勿再踩）**：sys_permission 列是 `perm_name`/`perm_key`（权限标识，UNI）/`perm_type`（menu|button）/`path`/`component`/`icon`，**没有 perm_flag/menu_type/name 列**（首版 SQL 用 sp.perm_flag 报 Unknown column 1054，已按 perm_key 重写）。**已验证（.55 浏览器 + curl 全 PASS）**：SQL_OK、topology 权限记录空、角色关联 0、dashboard 98/99/102 保留、设备资产菜单树只剩 40 设备资产/41 设备管理/50 边缘网关；登录后侧边栏无"网络拓扑"、直接访问 /device/topology 路由守卫重定向 /404、设备列表页拓扑维护按钮 + 上级设备列（主汇聚/备汇聚）正常、topologyTree curl 200（nodes 10/links 11）、/edge/ 代理 200。**第三方工具对接输入**：GET /device/topology/tree 返回 `{nodes:[{id,name,status,lineStatus,deviceType}], links:[{from,to,lineType:main|backup1|backup2}]}`。
+
+* **2026-09-15 拓扑页 G6 改造（AntV G6 4.8.19，已部署 .55 验收通过，后端零改动）**：用户原拓扑为手写原生 SVG，要求用 AntV G6 提升专业度。**方案**：版本锁定 **G6 4.8.x（4.8.19）** 避开 5.x 新架构（webpack4/Vue2/Node16 兼容）；**renderer: 'svg'**（关键！canvas renderer 在 bu 自动化环境 requestAnimationFrame 冻结 → canvas 全透明无法验证，SVG 是 DOM 渲染自动化可测、用户端同样正常）；`G6.registerNode('topo-node')` 自定义节点（圆角矩形 + 左侧状态圆点 + 名称 12px + 类型 10px）；dagre 布局 `{rankdir:'TB', nodesep:40, ranksep:90, controlPoints:true}`；主实线 #6366F1 / 备虚线 #e6a23c `[6,4]` 带"主/备1/备2"边标签；三色状态沿用 #67c23a 绿 / #f56c6c 红 / #909399 灰；交互 drag-canvas/zoom-canvas + node:click 复用 getDevice+el-dialog；工具栏适应/放大/缩小/满屏 + ResizeObserver 防抖 200ms。**核心实现要点（勿重踩）**：① **数据流用 `graph.data({nodes, edges}) + graph.render()`**，勿用 addItem 先加边后加节点（G6 对不存在 source/target 的边静默丢弃导致图空）；② **自动加载需双 $nextTick + try/catch 包裹 initGraph**（loading=false 后 v-else-if 容器挂载需两帧稳定，否则 graph 未创建）；③ **bu 自动化对 G6 canvas 是截图盲区**（rAF 冻结），判定渲染用实例状态 + SVG 元素数量 + bu.screenshot OCR（SVG renderer 下 OCR 可读节点文字）；④ 节点 id 统一 String()，详情再 Number() 转回；⑤ 设备页拓扑预览弹窗**保留手写 SVG 不迁移**（轻量不引 G6 实例）；后端 topologyTree/getDevice 接口零改动。**部署坑（新）**：`tar -czf dist.tar.gz -C dist .` 打的包**不含 dist 前缀**，deploy_ui.py 解压到 /opt/nams-ui 后无 dist 子目录 → **首页 500**（Nginx root 指向 /opt/nams-ui/dist）；正确打包 `tar -czf dist.tar.gz dist`（含前缀）。已验证：本地 dev 全链路（自动渲染/详情弹窗/缩放/适应/刷新/维护跳转）、生产构建 140 文件 7.6MB、.55 部署（首页 200、/device/topology 200、/edge/ 代理 200、G6 chunk 1.5MB chunk-d7210816、云端 SVG 10 节点 9 边 OCR 验证）。
+
+* **2026-09-15 拓扑页架构图模式升级（同日二次改造，已部署 .55 验收，后端零改动）**：用户反馈 G6 节点连线图"还是不好看"，要求改"架构图模式"。**方案（纯前端渲染层）**：① **节点升级为架构图卡片**（NODE_W=170/NODE_H=64）：白底圆角卡 rx10 + 顶部状态色条（4px 全宽，状态色）+ 左侧类型图标区 + 右上角状态点 + 名称 13px 加粗（超 12 字截断…）+ 类型小字 11px；**设备图标用 G6 基础 shape 组合绘制**（drawIcon 函数按 deviceType 分发：network=机身 rect+4 端口圆点、camera=镜头圆+支架、nvr=硬盘盒+3 硬盘槽线、door_controller=门框+门缝线+锁点、默认通用圆），SVG renderer 下转 <g> 内 shape；② **分层分区背景（架构图核心特征）**：graph.on('afterlayout') → drawZones()，按节点 y 坐标聚类成层（同层 y 差 <60），每层画虚线框（stroke #a5b4fc lineWidth 1.5 lineDash [8,5] radius 10 + 浅色底 ZONE_FILLS rgba 0.08/0.10）+ 区域标题（ZONE_NAMES=['核心层','汇聚层','接入层','终端设备层']，13px #64748b 加粗，多余层用 L{n} 层兜底）；**背景框必须 toBack() 置于节点层之下**（根 group addShape 默认在最上层会盖节点），全部 shape 依次 toBack 后 paint()；③ dagre ranksep 90→130、nodesep 40→50（给分区留空间）、fitViewPadding 顶部 24→46（分区标题不被裁）；④ 主备线/三色/交互/工具栏全部保留。**G6 4.8 坑（勿重踩）**：SVG renderer 下 shape 的 name 属性**不输出到 DOM**（`svg.querySelector('[name=...]')` 查不到），验证必须从 graph 实例取（`graph.getGroup().getChildren().map(k=>k.get('name'))` / 节点 `getContainer().getChildren()`）；rect shape 在 SVG renderer 渲染为 <path>（DOM 查 rect 数量为 0 属正常）。已验证：本地 dev（实例 zone-bg×4/zone-title×4 在 children 索引 1 位于节点层之下、10 节点图标 shape 全部正确 [交换机5/摄像头2/NVR4/门禁3]、OCR 可见卡片文字）、生产构建+部署 .55（首页/拓扑路由//edge/ 均 200）、云端验收（10 节点 11 边、4 分区、图标正确、OCR 读出"核心汇聚层/接入汇聚层"分区标题——云端生产数据层级自动适配）。
+
+* **边缘网关模拟器**（deploy/gateway-sim/，已部署 .60 运行）：gateway\_sim.py 周期上报 /edge/report/status (devices 数组)+/edge/report/heartbeat，带 X-Gateway-Token+X-Netsight-Tenant-Id，设备状态从 devices.json 读取可热改（改文件模拟离线 / 恢复→云端事件 / 工单联动）；config.json target=[http://192.168.1.5:8080](http://192.168.1.5:8080)、status\_interval 15、heartbeat\_interval 30；systemd 单元 nams-gateway-sim.service enable + 自启动。**PowerShell 不支持 heredoc**（python - <<'PY' 报错），须写 .py 脚本再执行。
+
+* **云端部署**（deploy/deploy\_nams.py paramiko 版 + deploy\_nams.sh systemd 版）：jar→/opt/nams-server/，nams.env (EnvironmentFile 存 MYSQL\_*/REDIS\_*/JWT\_SECRET/WEBHOOK\_TOKEN，**无 --spring.profiles.active=prod**，application.yml 默认 dev profile 即可，env 变量覆盖 MYSQL\_HOST=127.0.0.1)，systemd unit Restart=always + 健康检查轮询 /actuator/health。**已部署验证**：192.168.1.55:8080 health UP、ws 握手 101、服务 enable 自启。
+
+* **2026-09-11 全量部署（后端 + 前端 + Nginx，已验证）**：`deploy/deploy_all.py`（jar 上传→备份旧 jar .bak→重启 systemd→健康检查）+ `deploy/deploy_ui.py`（dist 上传 /opt/nams-ui + Nginx 配置）。**Nginx 站点&#x20;**`/etc/nginx/conf.d/nams.conf`：listen 80、root /opt/nams-ui/dist（history 路由 try\_files）、`/prod-api/`→`proxy_pass http://127.0.0.1:8080/`（去前缀）、`/edge/`→`proxy_pass http://127.0.0.1:8080`（**网关统一走 80 入口**，.60 模拟器 target 已切 [http://192.168.1.55](http://192.168.1.55)）、`/ws/`→8080（Upgrade/Connection 反代 WebSocket）。**坑（勿重踩）**：① Ubuntu 默认站点 `/etc/nginx/sites-enabled/default` 会抢占 80（server\_name \_ default\_server），必须 `rm -f` 否则请求全落默认页；② .55 apt 源含失效 docker 源（GPG 错误 / 无 Release），`apt-get update &&` 链会中断 ——apt 装包前先禁用 `/etc/apt/sources.list.d/*docker*`（nginx 已装好，勿再动）；③ paramiko 脚本里 curl `-w '%{http_code}'` 的 `%` 在 Python 字符串中勿写 `%%`（不经 % 格式化时 `%%` 会原样传远端导致 health 误判）；④ sftp.open 读文件返回 **bytes**，改 JSON 需 `.decode("utf-8")` 再 replace（str.replace 对 bytes 报 TypeError）；⑤ **deploy\_ui.py 的 NGINX\_CONF 曾缺&#x20;**`/edge/`**&#x20;location**—— 每次用 deploy\_ui.py 重写 nams.conf 都会丢掉网关上报入口，导致 .60 模拟器 `POST /edge/report/status` 落入 try\_files 返回 405（2026-09-12 V1.1.6 前端部署后实测踩中：心跳停在 17:22:51、日志满屏 405）。已修复 deploy\_ui.py（补回 `/edge/`→8080 代理）+ 云端 nams.conf 已手工恢复并 reload，恢复后 .60 上报 HTTP 200、心跳 15s 实时刷新。**部署前端后必须验证&#x20;**`/edge/`**&#x20;代理存在**（curl -X POST /edge/report/heartbeat 带合法网关 Token 应返回 200 JSON）。**前端生产接口前缀&#x20;**`/prod-api`（.env.production VUE\_APP\_BASE\_API），标题已改 `NetSight 网络资产监控管理系统`。**验证结果**：首页 200 + 标题正确、/prod-api/actuator/health 200、/ws/push 握手 101、80 监听中。
+
+* **2026-09-11 云边端到端联动验证（.60→.55，全 PASS 后已清理）**：① .60 config.json target 改 `http://192.168.1.55`（走 Nginx 80 /edge/ 反代）→ 重启 nams-gateway-sim → 网关心跳实时更新（last\_heartbeat\_time 刷新）、8 设备状态与 devices.json 一致；② 改 devices.json 置 DEV-NVR-01 up=0 → 下个周期设备 status 变 0（**网关上报只更新设备状态，不触发事件**）；③ POST /alert/push（AlertManager webhook，X-Netsight-Webhook-Token/tenant）推送 NVR 离线告警 → 事件 device\_offline sent + **工单自动生成**（WO…531 待处理）+ **短信 + 公众号双通道通知 success=1**；④ 恢复 up=1 + resolved webhook → 事件 device\_recovered sent + **工单自动归档 status=5**。测试数据已清理（events=7/orders=3/logs=8 回演示基线）。**结论**：完整云边链路 = 网关 HTTP 上报（设备状态 / 心跳）+ AlertManager webhook（告警事件），两条通道职责清晰。
+
+* **联调验证（14 项 test\_v115.py 全 PASS + 浏览器实测）**：低库存预警触发（调高 safeStock→adjust 入库→触发→恢复 safeStock，通知日志含 "⚠️ 备件库存预警 备件：光纤模块…"）→登录→侧边栏 12 菜单→/dashboard/overview 大屏渲染（8 设备 / 87.5% 在线率 / 三图数据正确）→/device/topology 拓扑渲染（分层 + 主备连线标签）→**WebSocket 实时推送**（页面开大屏→POST webhook 离线告警→大屏实时告警列表 LIVE 自动出现新告警 SW-TEST-01、工单看板待处理 0→1、严重统计 2→3，无需手动刷新）→测试数据已清理（events=7/orders=3/logs=8 回到演示基线）→`npm run build:prod` 通过（41 个 JS 产物）。
+
+* **遗留**：dev server 偶发 ECONNRESET 崩溃（已用 poll+no-hmr+ws 直连规避，若再崩重启即可）；菜单管理页面（sys\_permission 可视化）仍未开发；服务器 80/443 未放行（Nginx 反代前置）；微信小程序暂停待 PC 全量测试。
+
+## V1.2 前端风格改造（demo 风工业蓝白，2026-09-16 已部署 .55 云端验收通过）
+
+* **背景与授权**：用户参照 demo「https://saas.windasoft.com/page/back/index/index.html#devAccept/index」（风塔 WindaEDM 工业数字化后台）要求整体风格升级：顶部标题栏 / 侧边栏 / 多页签 / 主界面表单 / 登录页 / 新 logo。方案经 `/Frontend Design`（`C:\Users\Administrator\.agents\skills\frontend-design\SKILL.md`）流程输出并确认，用户要求"先备份可回滚，完成备份后实施"。**备份**：`E:\gitee\NetSight1.0\backup\pre-style-v20260916\`（netsight-ui 284 + netsight-server 128 文件）+ `pre-style-v20260916.zip`（1.78MB）——回滚直接从此恢复；项目仍非 git 仓库。
+
+* **设计 Token（已落地）**：主色 `#205CF5`、hover `#1A4FD8`、顶栏/品牌深蓝 `#0B2A6B`、登录渐变 `#041445→#0B2A6B→#12377E`、内容底 `#F5F6FA`、表头浅蓝 `#EAF0FB`、文字 `#1F2937/#6B7280`、边框 `#E5E7EB`；语义色绿 #10B981 / 红 #EF4444 / 灰 #909399 保留。
+
+* **改动文件（9 个源 + 4 个资源，均 UTF-8 无 BOM）**：`src/assets/styles/{element-variables.scss（primary→#205CF5、圆角 6px）、theme.scss（全量重写：白卡片 + 浅蓝表头 + 主蓝按钮实色 + 输入聚焦光晕）、variables.scss（侧边栏白底：menuBackground #FFF、color-active #205CF5、logoTitle #0B2A6B）、sidebar.scss（卡片式菜单 margin 2px 12px 圆角 6px + 选中浅蓝底 #EAF0FB !important + 左侧 3px 主蓝条 ::before）}`、`src/layout/components/{Navbar.vue（新增 .navbar-brand 左侧 28px logo-a-eye + "NetSight" 白字、右侧 1px 分隔线；顶栏实色深蓝 #0B2A6B）、TagsView/index.vue（activeStyle 删内联背景改 CSS 控制：浅蓝底 + 主蓝字 + ::after 底部 2px 主蓝条）}`、`src/views/login.vue（重写：深蓝渐变 + SVG 背景动效（网格/云朵/网络节点/信号波纹/三色呼吸点）+ 白卡 + 顶部 64px logo + 主蓝按钮；表单逻辑零改动）`、`src/store/modules/settings.js（theme 默认 #205CF5）`、`src/views/index.vue（首页动图配色批量替换：#6366F1→#205CF5 等 8 对）`。**新资源**：`src/assets/logo/logo-a-eye.png`（慧眼：同心环 + 扫描弧 + 瞳孔 + 拓扑节点 + 红灰绿三状态点，9299B，顶栏/登录页用）、`logo.png`（A 缩放 256px，侧边栏默认）、`logo-b-cloud.png`（云脉备选，6852B）、`public/favicon.ico`（14885B）；生成脚本 `deploy/_gen_logo.py`（PIL）。
+
+* **关键坑（勿重踩）**：① **el-menu 的 `:background-color` 绑定会给 menu-item 写内联 background-color（白），与 sidebar.scss 的 is-active 浅蓝冲突**——且 `#app .sidebar-container .theme-dark .el-submenu .el-menu-item`（白 !important）specificity (1,4,0) 高于 `.el-menu-item.is-active` (1,3,0)，白底压过浅蓝。修复：is-active 规则提权为 `.el-menu .el-menu-item.is-active` + theme-dark 子菜单规则改 `:not(.is-active)` 排除；② **TagsView 的 activeStyle() 给激活 tab 注入内联 `background-color: theme`（主蓝），覆盖 scoped CSS 的浅蓝**——改 activeStyle 直接 `return {}`，样式全交给 CSS；③ 登录页白屏/401 根因=旧 cookie token 使 getInfo 401（`/login?redirect=%2Findex` 前先清 cookie+localStorage，`document.cookie` 逐条置过期 + localStorage.clear()）；④ bu 会话 location.href 偶发 about:blank 但实际页面正常（读 `document.title`/#app innerHTML 判断真实状态）；⑤ dist 打包必须 `tar -czf dist.tar.gz dist`（含前缀）；⑥ deploy_ui.py 已含 `/edge/` 与 `/alert/` 代理（勿再丢）。
+
+* **验证（本地 + 云端全 PASS）**：本地 dev——登录页深蓝渐变+SVG+白卡+logo、顶栏品牌区（title NetSight + imgOk true）、侧边栏白底 rgb(255,255,255)、选中项 bg rgb(234,240,251) + color rgb(32,92,245) + ::before 主蓝条、多页签 active bg 浅蓝 + ::after 主蓝、设备管理表格/新增设备弹窗（基本信息+拓扑关系）/事件记录页渲染正常；生产构建 135 文件 5.7MB（app.*.css 含 205cf5、chunk 含 041445 登录色）；**云端 .55 部署验证**：首页 200 + 标题正确、/edge/ 200、/alert/ 200、/prod-api 200、favicon/logo 资源就位、浏览器登录 admin 后首页（NetSight 品牌 + 云端在线 + 侧边栏 7 组菜单 + 云边协同图）+ 设备管理页（10 条数据 + 选中浅蓝 + 上级设备列）截图验收通过。**后端零改动**。
+
+* **待用户确认项**：demo 功能推荐（V1.2 点检巡检/知识库故障库/设备二维码/统一待办/通知公告；V1.3 报表/保养）是否纳入排期待用户表态；后续如需回滚用 backup 目录恢复。
+
+* **2026-09-16 V1.2.1 弹窗统一"点击外部不关闭"（已部署 .55 验证通过）**：用户要求设备弹窗点击弹窗外区域不退出，随后"统一更改为同样模式"。**落地**：① 首轮改 `src/views/device/index.vue` 两个弹窗加 `:close-on-click-modal="false"`；② 统一轮用 PowerShell 正则 `(append-to-body)(\s*>)` → `$1 :close-on-click-modal="false"$2` 批量处理 21 个含 `<el-dialog` 的 .vue 文件（跳过已含 close-on-click-modal 的 device），全项目 34 处 el-dialog 全覆盖（MISSING_COUNT=0），单行（`append-to-body :close-on-click-modal="false">`）与多行组件（HeaderSearch/ImageUpload 的 `append-to-body :close-on-click-modal="false"` 换行 `>`）均正确。**验证（本地 + 云端 .55 全 PASS）**：网关新增弹窗/工单新增弹窗/租户新增弹窗/备件新增弹窗——打开 → 点 `.v-modal` 遮罩 → wrapper 保持 block → 点 X → 关闭。**注意**：`src/utils/generator/html.js` 的代码生成器模板（无 append-to-body，纯字符串模板不参与运行）未改。**验证要点**：`querySelector('.el-dialog__wrapper')` 只返回第一个（display:none 的），须遍历全部 wrapper 找非 none 者判断弹窗状态。
+
+* **2026-09-16 V1.2.2 侧边栏菜单图标修复（已部署 .55 验证通过）**：用户反馈云端侧边栏多个菜单图标不显示，要求"更换前确认图标库包含目标图标"。**根因**：`sys_permission.icon` 三个顶级菜单值 `bell`（告警中心）/`tickets`（运维工单）/`box`（备品备件）在本地 svg 图标库 `src/assets/icons/svg/` 不存在 → `svg-icon` 渲染空白（图标缺失不报错）。**方案（已确认图标存在后实施）**：改用 **Element UI 内置字体图标**（`el-icon-bell`/`el-icon-tickets`/`el-icon-box` 已在 node_modules/element-ui theme-chalk CSS 中确认存在）——① `src/layout/components/Sidebar/Item.vue`（functional render）加分支：icon 以 `el-icon-` 开头渲染 `<i class={icon}/>`，否则走 `<svg-icon>`；② `sidebar.scss` 加 `.el-icon { font-size:15px; margin-right:10px !important; vertical-align:middle }` 与 svg-icon 对齐；③ 增量 SQL `netsight-upgrade-v1.1.11.sql` UPDATE 三个菜单 icon（已上云执行 + 校验 3 行）。**验证（本地 + 云端 .55 全 PASS）**：getRouters 返回 el-icon-bell/tickets/box；DOM 顶级菜单 `<i class="el-icon-bell">` 等渲染；云端登录后侧边栏 6 顶级菜单图标全部可见（监控大屏/设备资产/系统管理 svg 正常 + 3 个 el-icon 修复）；首页 200、构建 3.19MB 部署完成。**坑（勿重踩）**：① **Element 字体图标类名是 `el-icon-bell`（无 `el-icon` 基类）**，bu 验证选择器要写 `i[class^="el-icon-"]` 而非 `i.el-icon`（后者匹配不到误判 NONE）；② 本地后端连的是 .55 MySQL（application.yml MYSQL_HOST 默认 192.168.1.55），本地库改菜单要改 .55 才生效；③ 本地后端偶发退出（8080 DOWN）→ 重启需注入 MYSQL_PASSWORD/JWT_SECRET 环境变量；④ curl.exe 在 PowerShell 里 `-d '{"phone":...}'` 引号会坏 → JSON 解析 500，登录验证用 bu 页面或写文件方式。
+
+## 前端主题定制（方案 8.4 年轻现代风，已落地并验证）
+
+
+
+* **已落地（2026-09 依方案第 8 章 8.4）**：`src/assets/styles/theme.scss`（新建，全局覆盖，index.scss 末尾 import）：
+
+
+  * 主背景 `#F8FAFC`（html/body/#app/.app-main）；卡片 `.el-card` 圆角 12px + 柔影 `0 2px 12px rgba(0,0,0,.04)` 无边框；`.el-dialog`/`.el-message-box` 圆角 12px。
+
+  * 主按钮 `.el-button--primary` 蓝紫渐变 `linear-gradient(135deg,#6366F1,#8B5CF6)` + 圆角 8px + hover `translateY(-1px)` + 阴影；输入框 / 文本域圆角 8px + 聚焦边框 #6366F1 + 外发光 `0 0 0 3px rgba(99,102,241,.1)`。
+
+  * 表格：去掉单元格竖线（td/th border-right:none）、表头浅紫底 #F8F9FC、行 hover 浅紫 `rgba(99,102,241,.05)`；el-tag 胶囊圆角 16px；分页 active 渐变；下拉选中 / 步骤条 process 色统一 #6366F1；`.navbar` backdrop-filter blur (12px)（配合 Navbar.vue background 改 rgba (255,255,255,.85)）。
+
+* **侧边栏**：`variables.scss` 改深紫灰主题 ——`$base-menu-background:#1E1B4B`、`$base-menu-color:rgba(255,255,255,.68)`、`$base-menu-color-active:#fff`、`$base-sub-menu-background:#181541`、`$base-sub-menu-hover:#26215C`（settings.js sideTheme 保持 theme-dark）；`sidebar.scss` 加 `.el-menu-item.is-active` 渐变背景 + `::before`**&#x20;左侧 3px 蓝紫渐变高亮条**（linear-gradient(180deg,#6366F1,#8B5CF6)）。
+
+* **多页签**：`TagsView/index.vue` `.tags-view-item` 圆角 **16px** 胶囊，active 蓝紫渐变底白字（替代原 #42b983 绿）。
+
+* **拓扑页**：`views/topology/index.vue` 主连线 #409eff → **#6366F1**（主实线），备线保持橙 #e6a23c，背景网格线 #E3E7F5。
+
+* **登录页**：`views/login.vue` 背景改蓝紫渐变 `linear-gradient(135deg,#4338CA,#6366F1,#8B5CF6)`（替代 jpg），表单卡圆角 12px + 深紫影。
+
+* **主色变量**：`element-variables.scss` \$--color-primary **#1890ff→#6366F1**、success #10B981、warning #F59E0B、danger #EF4444、按钮 / 输入框圆角 8px。
+
+* **编译坑**：改 SCSS 后 `variables.scss` 的 `:export` 块必须有闭合 `}`（曾漏掉导致 SassError expected "}"，dev 页面红屏 Failed to compile）；改完需等 poll 编译（约 2.5-3.5 分钟）再浏览器验证；浏览器精确取色验证用 `bu.js` 读 `getComputedStyle`（渐变在 backgroundImage，backgroundColor 会读成 transparent 属正常）。
+
+* **浏览器实测（bu plane 全通过）**：登录页渐变背景 → 侧边栏 rgb (30,27,75)=#1E1B4B、选中 3px 渐变条、白色毛玻璃顶部栏 rgb (255,255,255,.85) → 主背景 #F8FAFC → 设备列表按钮渐变 / 圆角 8px / 表头浅底 → 新增设备弹窗圆角 12px → 拓扑主连线 rgb (99,102,241) → 多页签胶囊 16px 渐变。`npm run build:prod` 通过。
+
+## 首页与顶部栏定制（2026-09-11，已落地并验证）
+
+
+
+* **首页&#x20;**`src/views/index.vue`**&#x20;改造**：
+
+
+  * 删除 "技术选型" 区块（后端 / 前端技术列表）与版本号（"当前版本 v1.1.0"、"V1.1 骨架版" 标签，script 中 version data 已删）。
+
+  * 替换为**云边协同数据流动图**（内联 SVG + CSS/SMIL 动画，无第三方依赖）：三段式 —— 内网设备（交换机 / 摄像头 / 门禁）→ 边缘网关（自研采集引擎・指标不出内网）→ NetSight 云平台（事件中心 / 告警中心 / 工单 + 规则路由・多租户隔离 + WebSocket 双向通信・AI 实时分析）→ 通知通道（短信 / 公众号 / 监控大屏）。动画：10 个 SMIL `animateMotion` 数据点（采集蓝 #6366F1 / 告警橙 #F59E0B）+ 2 组虚线流动（CSS stroke-dashoffset）+ 网关绿灯呼吸 pulse。布局左文右图（lg:10/14），下方四张功能卡保留。
+
+  * **去 Prometheus 化**（为国产化自研采集软件预留）：动图网关标注与 "统一监控" 功能卡均改 "自研采集引擎"，全页无 Prometheus 字样；云平台 "WebSocket 实时推送"→"WebSocket 双向通信・AI 实时分析"。
+
+* **顶部栏&#x20;**`src/layout/components/Navbar.vue`**&#x20;改造**：
+
+
+  * 删除若依原生头像功能（user-avatar 图片、个人中心 / 布局设置下拉项）与 RuoYiGit/RuoYiDoc（若依官方链接）组件及 import；`avatar`/`nickName` getter 不再引用，改 `name`（=userName 登录账号）显示右上角，点击账号下拉仅剩 "退出登录"（LogOut 逻辑保留，登出后 location.href='/index'）。
+
+  * 新增**帮助中心**：问号按钮（id=help-center）→ el-dialog + el-descriptions 展示 helpInfo 数组（系统名称 / 版本号 v1.1.0 / 开发者 / 备案号 / 使用文档），部署时直接改 data 维护；**帮助中心按钮必须在&#x20;**`device!=='mobile'`**&#x20;v-if 之外**（否则窄视口 / 移动端隐藏 ——bu 视口 871px 即触发 mobile，桌面正常）。
+
+* **运维经验（本轮实测）**：① bu 浏览器登录态过期会整页 401 toast——`bu.js` 清全部 cookie（document.cookie 置过期）后访问 /login 重登（获取验证码→123456→登录，mock 限流 10s）；② 本地后端进程偶发退出（8080 DOWN，boot6.log 停在最后请求无异常）——health 探测发现即重启 `mvn spring-boot:run`；③ dev server 改 vue 文件后偶发崩溃（浏览器 ERR\_CONNECTION\_REFUSED）—— 清 node\_modules/.cache 后重启 `npm run dev`。
+
+## Spring Boot 4 兼容要点（已实测踩坑，勿回退）
+
+
+
+* `spring-boot-starter-aop` → `spring-boot-starter-aspectj`；`spring-boot-starter-web` → `spring-boot-starter-webmvc`。
+
+* JDBC 拆分为 `spring-boot-jdbc` 模块：`DataSourceProperties` 类在 `org.springframework.boot.jdbc.*`；`druid-spring-boot-3-starter`**&#x20;不兼容 Boot4，禁用**，用内置 HikariCP。
+
+* MyBatis-Plus 必须用 `mybatis-plus-spring-boot4-starter`**&#x20;3.5.17**（配 `mybatis-plus-jsqlparser`）。
+
+* **字符集双保险**：JDBC URL 用 `characterEncoding=UTF-8&connectionCollation=utf8mb4_general_ci` + hikari `connection-init-sql: SET NAMES utf8mb4`（Connector/J 9.x 行为变化）。
+
+## 操作日志切面 + 日志体系（2026-09-11 已落地并验证）
+
+
+
+* **方案依据**（2.3/2.4 节）：业务切面共 3 个 —— 操作日志切面（@Log）、接口限流切面（@RateLimit）、Web 请求日志切面；**多租户隔离不写 AOP**（由 MyBatis-Plus TenantLineInnerInterceptor 在 SQL 层处理）；日志规范业务类统一 @Slf4j（= LoggerFactory.getLogger (类.class)）。
+
+* **新建 4 文件**：`framework/aspectj/Log.java`（@Target (METHOD)，参数 module/action）、`OperLogAspect.java`（@Aspect @Order(1)，`@Around("@annotation(logAnno)")`——**方法参数名勿与 Lombok @Slf4j 字段&#x20;**`log`**&#x20;同名**，否则 Maven 报 `Cannot resolve method error(String,String,String,String)`）、`WebRequestLogAspect.java`（@Aspect @Order(2)，`execution(* com.netsight.modules..controller..*(..))`，仅打 INFO 日志不落库，记录 method/uri/ip/code/ 耗时 / 异常）、`resources/logback-spring.xml`。
+
+* **操作日志落库规范**：复用 `event_record` 表不建新表 ——event\_type=user\_operation、event\_source=system、severity=info、deviceName = 模块名、deviceIp = 客户端 IP、location=URI、content=「操作人：X 操作：Y 参数：\[...] IP：... 结果：... 耗时：...」、labels\_json 含 operator/module/action/method/uri/ip/result/costTime；经 EventCenterService.receiveEvent 写库（异步处理，无匹配规则仅记录不发送，状态 sent）。登录成功 / 失败、增删改均自动记录；**未登录场景（登录接口等）tenant 兜底&#x20;**`tenantId>0?tenantId:1L`（否则 tenant\_id=0 落库）。参数脱敏：密码等字段名（password/pwd/code/token）值替换为 `***`（登录接口的 code 验证码除外 —— 白名单脱敏校验）。
+
+* **@Slf4j 已补齐 23 类**：NetsightApplication、config 8 个（AsyncConfig/GatewayWebSocketHandler/MybatisPlusConfig/MyMetaObjectHandler/PushWebSocketHandler/SecurityConfig/WebSocketConfig 等）、framework/security LoginUser+SecurityUtils、AlertEvent、system 7 个 Controller + 3 个 Service/UserDetailsServiceImpl。12 个 Controller 写方法已加 @Log（用户 5 / 角色 3 / 租户 3 / 设备 3 / 网关 4 / 认证 2 / 工单 7 / 维修 3 / 备件 4 / 手动告警 1 / 通知规则 3 / 模板 3）。
+
+* **logback-spring.xml**：CONSOLE（`%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{40} - %msg%n`）+ FILE `${LOG_PATH:-logs}/netsight.log`（按天滚动保留 30 天）+ ERROR\_FILE `netsight-error.log`（LevelFilter 仅 ERROR，保留 90 天）；logger com.netsight=INFO、mapper=DEBUG（SQL 打印）、第三方 WARN 降噪。application.yml logging 段：`config: classpath:logback-spring.xml` + `file.path: logs`。**落盘位置**：本地 = 项目目录 logs/，云端 = systemd WorkingDirectory=/opt/nams-server 下 logs/（与 stdout.log 并存）。ERROR\_FILE 首查可能 0 字节属正常（刚启动无 ERROR）。
+
+* **云端部署已更新**（deploy 脚本临时文件 \_probe55.py/\_deploy\_logs.py 已删）：新 jar 已部署 .55（备份 .bak. 时间戳 + systemctl restart），健康 UP、日志文件 netsight.log 生成、Web 请求日志含 .60 网关上报 `POST /edge/report/status` 记录。验证后 user\_operation 测试事件已清理（event\_record 回基线 7）。
+
+* **接口限流切面（2026-09-11 已实现）**：`framework/aspectj/RateLimit.java`（@Target (METHOD)，参数 key/limit/window/message）+ `RateLimitAspect.java`（@Aspect @Order (0) 最先拦截，`@Around("@annotation(rateLimit)")`）。**Redis 计数器**：key=`netsight:rate:limit:{维度}:{维度值}:{类.方法}:{窗口秒}`，INCR 原子自增 + 首次设窗口过期（无竞态）；超限抛 ServiceException (5006, "请求过于频繁，请稍后再试")；**Redis 异常降级放行**（限流是防护手段不成为可用性单点，log.error 记录）。**维度解析**：key 逗号分隔多维度任一超限即拒；`ip`= 客户端 IP（X-Forwarded-For→X-Real-IP→RemoteAddr）；其它 = 方法参数名匹配（@RequestParam 注解 value 优先 → -parameters 参数名 → @RequestBody 对象属性反射，三种兜底）。**已标注**：AuthController.sendSmsCode `@RateLimit(key="ip", limit=30, window=60)`（手机号维度已有 AuthService 内 Redis 1 分钟限流，双保险）、AuthController.login `@RateLimit(key="phone,ip", limit=5, window=60, message="登录尝试过于频繁，请1分钟后再试")`、AlertEventController.manual `@RateLimit(key="ip", limit=20, window=60)`。**ResultCode 新增 RATE\_LIMIT\_EXCEEDED (5006)**。**验证（本地 + 云端全 PASS）**：登录连续 5 次 5003 → 第 6 次 5006；换手机号同 IP 仍 5006（IP 维度独立）；sms-code 第 31 次触发 5006（limit=30）；云端 /prod-api 链路同验证通过；测试事件已清理回基线 7。
+
+## 第 4 周：监控告警链路（已完成并验证）
+
+
+
+* **增量 SQL v1.1.3**：新建 `event_record`（biz\_id 去重指纹 /event\_type/event\_source/severity/device\_name/device\_ip/device\_type/device\_location/rule\_id/rule\_name/channels\_json/status (0 待处理 1 已发送 2 部分失败 3 失败)/content/manual\_flag）、`notification_rule`（rule\_name/event\_type/condition\_json(severity/device\_type/device\_ip/event\_source+labels)/template\_id/channels\_json/receivers\_json/enabled）、`notification_template`（template\_code/template\_name/channel\_type/content/enabled，**唯一键 (tenant\_id,template\_code,channel\_type)**—— 初版 (tenant\_id,template\_code) 导致同 code 不同通道 INSERT 冲突，已改联合唯一并重建索引）、`notification_log`（event\_id/rule\_id/rule\_name/event\_type/channel\_type/receivers\_json/content/biz\_id/success/error\_msg/third\_party\_msg\_id/cost\_time/retry\_count）。初始化 6 条消息模板（tpl\_device\_offline 双通道 /tpl\_device\_line/tpl\_device\_recovered/tpl\_manual 双通道）+ 4 条路由规则（离线 critical 双发 / 离线 warning 仅公众号 / 外线异常 / 故障恢复）+ 权限 60-75（60 告警中心顶级 /alert+Layout，61 事件记录、62 通知规则、63 消息模板、64 发送日志，65-75 按钮 alert:\*，super\_admin (role\_id=1) 绑定 16 条）。**INSERT 一律显式 id**。
+
+* **后端新增**（com.netsight.modules.alert.\*）：entity 4 + mapper 4；channel 层 **NotificationChannelSender 接口**（getChannelType/getChannelName/send/healthCheck，注释含新增通道开发规范 6 条）+ SendRequest/SendResult + **ChannelRegistry**（构造注入 List\<NotificationChannelSender> 自动建路由表）+ SmsChannelSender/WechatChannelSender（`${netsight.alert.channel.sms.mock-mode:true}`，mock 仅打日志返回 MOCK- 前缀 id，异常包装为 SendResult 不抛出）；service 层 6 个 ——NotificationTemplateService（分页租户隔离 + 模板编码唯一校验 + render 用 `\{\{\s*(\w+?)\s*}}` 正则替换）、NotificationRuleService（CRUD+parseChannels/parseReceivers/parseCondition+listEnabledRules）、NotificationLogService（分页 + listByEventIds 批量避免循环查库）、**NotificationChannelService**（dispatch 按通道逐个渲染 + 发送 + 落日志；失败重试 3 次间隔可配；**短信失败自动降级公众号**；手动场景无模板兜底取 vars.content）、**EventCenterService**（receiveEvent 同步入库 + 异步处理；asyncProcess 异步匹配规则→Redis 5 分钟去重 `netsight:event:dedup:{bizId}:{eventType}`→通道中心分发→状态回写 sent/part\_failed/failed；manualEvent 手动发送不走规则；pageEvent 批量回显 logCount）、**AlertPushService**（webhook 报文双重兼容：AlertManager v4 原生 alerts \[] 与标准 event\_type 格式；alertname→event\_type 映射含 "网络设备离线故障 / 设备外线状态异常 / 故障恢复"；alertname+ip+generatorURL 指纹生成 bizId；resolved→severity=resolved 且 event\_type=device\_recovered）。
+
+* **控制器 5 个**：AlertPushController（`POST /alert/push`，Header **X-Netsight-Webhook-Token** 校验 + **X-Netsight-Tenant-Id**（默认 1））、AlertEventController（/alert/event/list + /alert/event/manual）、NotificationRuleController（/alert/rule CRUD）、NotificationTemplateController（/alert/template CRUD + /options）、NotificationLogController（/alert/log/list）。权限注解统一 `@PreAuthorize("hasRole('super_admin') or hasAuthority('alert:*')")`。SecurityConfig 白名单加 `/alert/push`。
+
+* **application.yml 新增**：`netsight.alert.webhook-token/retry-intervals/fallback-enabled/channel.sms/wechat` 配置段（**密钥走环境变量** WEBHOOK\_TOKEN）；AsyncConfig 新增 eventExecutor 线程池（4/8/1000，CallerRunsPolicy）。
+
+* **编译期两大坑（勿重踩）**：① Spring Boot 4.0.8 内置 **Jackson 3**—— 包名 `tools.jackson.*` 非 `com.fasterxml.*`（后者仅 jjwt runtime 依赖），import 用 tools.jackson；② PowerShell `Set-Content -Encoding UTF8` 写 BOM 导致 javac 报 `\ufeff 非法字符`，必须 `[System.IO.File]::WriteAllText(path, content, (New-Object System.Text.UTF8Encoding($false)))`。
+
+* **联调验证（全通过）**：登录→getRouters 返回 /alert 顶级 + 四个子菜单→三条 webhook（critical 离线 /warning 外线 /resolved 恢复）全 200 入库→异步处理后 **critical 双通道 logs=2、warning 仅公众号 logs=1、恢复 logs=1**，模板渲染正确（短信带【运维告警】前缀 / 公众号带 ⚠️✅ emoji）→手动发送、规则 CRUD、模板 options 复测通过→**去重**：5 分钟内同告警 logCount=0。手动发送第一版 failed（dispatch 里 rule=null 空指针）已修复（判空 + 内容兜底）并复测 content 正确。
+
+* **前端**：api/alert/{event,rule,template,log}.js 四个（`.then(res=>res.data)` 解包）+ views/alert/{event,rule,template,log}/index.vue 四页（事件页：搜索 / 手动发送弹窗 / 详情 el-descriptions / 级别彩色徽标 / 事件类型标签 / 匹配规则列 /logCount 列；规则页：CRUD + 开关 + 新增弹窗条件 severity 下拉 / 模板下拉 / 通道 checkbox / 接收人 JSON 解析；模板页：CRUD + 占位符提示；日志页：搜索 + 成功失败标签 + 第三方 ID + 耗时）。浏览器逐页验证通过（**旧 token 无 60-75 权限时侧边栏缺告警中心，退出重登后正常**）；`npm run build:prod` 通过（9 个 warning 均为第 1-2 周遗留：menu/index.vue、register.vue 骨架残留页与 chunk 体积）。
+
+* **测试数据已清理**：event\_record 保留 3 条（SW-01 离线 / CAM-02 外线 / SW-01 恢复演示数据）、notification\_log 保留 4 条、notification\_rule 4 条内置、notification\_template 6 条；测试规则 "测试规则 - 外线" 与去重 / 手动测试数据已删。
+
+* **事件接入策略决策（2026-09-12）**：用户曾提议 "事件与通知中心独立成服务，用 HTTP 替代 receiveEvent ()"。**结论：不采用服务级拆分，采用 "接口化 + HTTP 端点共存"**（已同步进 V1.1 方案 5.5 第 6 小节）。理由：① 现有三层已解耦（业务→事件→通道，业务联动走 Spring 事件 AlertEvent+@EventListener）；② 唯一跨系统入口（AlertManager webhook POST /alert/push）本就是 HTTP，拟 HTTP 化对象是应用内部调用，无跨系统收益；③ 同步 HTTP 在告警风暴时阻塞调用方，削峰由异步线程池（现有）或 MQ（未来）承担；④ REQUIRES\_NEW 本地事务跨服务后失效，多一进程多一套运维。**落地不变更**：应用内模块继续调 `receiveEvent()`，外部系统走 webhook / 标准事件端点（Token 鉴权 + bizId 幂等），两类入口汇聚同一 `asyncProcess()`。**演进信号**：出现第 2 个业务系统上报 / 告警风暴常态化 → 抽 EventFacade 接口 + 对外 HTTP 端点；事件量级到线程池扛不住 → 独立服务 + MQ（RocketMQ/Kafka，HTTP 仅作接入网关）。
+
+* **Webhook 租户鉴权升级决策（2026-09-12）**：原 `AlertPushController` 信任模型为 "全局一份 X-Netsight-Webhook-Token + 客户端自报 X-Netsight-Tenant-Id（缺省 1）"，多租户下可伪造租户。**结论：升级为租户级 Webhook Token（服务端权威反查）**（已写入 V1.1 方案 5.5 第 7 小节）—— 每个租户独立 Token，`sys_tenant` 加 `webhook_token`/`webhook_token_time` 字段，Redis 缓存 `netsight:webhook:token:{token}`→tenant 加速校验；鉴权顺序：Redis→DB→回填缓存→解析 tenant\_id，事件归属该租户；401 拒绝并记来源 IP；过渡期兼容 Tenant-Id 头（Token 命中以 Token 为准）。**与网关 Token 职责分离**：网关 Token（X-Gateway-Token）管 /edge/report/\* 设备上报，租户 Webhook Token 管 /alert/push 告警接入，统一 "凭证绑定租户、服务端反查" 信任模型。租户管理页新增查看 / 复制 / 重置（`POST /system/tenant/{id}/webhook-token/reset`），重置即旧 Token 失效。
+
+* **V1.1.6 租户级 Webhook Token（2026-09-12 已落地并部署联调）**：增量 SQL `netsight-upgrade-v1.1.6.sql`（sys\_tenant 加 webhook\_token/webhook\_token\_time，AFTER expire\_time；存量租户初始化 UUID 去横线 32 位；唯一索引 uk\_webhook\_token，已上云执行）。后端新建 `WebhookTokenService`（genToken=UUID 去横线 32 位；resolveTenantId 按 Redis `netsight:webhook:token:{token}`→DB 反查 (webhook\_token+status=1)→回填缓存，TTL 24h，缓存异常降级查库不阻断；resetToken DB+Redis 双清）；SysTenant 实体加两字段；`SysTenantController` 重写（list 脱敏 maskToken 前 6 后 4、add 自动 initToken 并返回、update 强制置空 token 防覆盖且禁用时清缓存、delete 清缓存、GET /{id}/webhook-token 查看、POST /{id}/webhook-token/reset 重置）；`AlertPushController` 鉴权改造（①租户 Token 反查优先→命中直接 push；②未命中回退全局 webhook-token + Tenant-Id 头（过渡兜底）；③均失败 401 + clientIp 记录）；application.yml webhook-token 注释改 "仅本地开发 / 过渡兜底"。前端 `api/system/tenant.js` 加 getWebhookToken/resetWebhookToken；`views/system/tenant/index.vue` 重写（Token 脱敏列 / 查看弹窗含说明 + 复制 + 重置 / 新增后一次性弹 token 提示保存 / 修改时 delete webhookToken 防覆盖）。**部署**：jar 已部署 .55（systemd，健康 UP）、dist 已部署 Nginx（首页 200 标题正确、/prod-api 200）。**云端联调 14 PASS + 1 断言笔误**（test\_v116.py）：登录→租户列表脱敏 238ca3\*\*\*\***f201→明文 32 位→租户 Token 推送 200 事件归属租户 1 (status=sent)→重置后旧 Token 401 / 新 Token 200→全局 Token 兜底 200→错误 / 缺失 Token 401→Redis 新 token 缓存 = 1 旧 token 已清。坑（勿重踩）：①&#x20;**`/auth/sms-code`**&#x20;是 @RequestParam（query 参数&#x20;**`?phone=`**），发 JSON body 得 5003；② event\_record.status 返回**字符串 "sent"\*\* 非数字 1（实体 String 类型），断言用 `=="sent"`；③ deploy\_all.py 健康检查 `%%{http_code}` 在 paramiko 中不转义成 `%`（输出字面 `%{http_code}` 误判超时）—— 健康验证用 curl 直测 `-w '%{http_code}'`；④ WS 探测 curl 升级后挂起超时属正常。测试数据已清理（event\_record=7/work\_order=3/notification\_log=8 回演示基线，联调产生的 4 条 user\_operation 操作日志已删）。
+
+## 认证与多租户关键逻辑
+
+
+
+* 登录：POST /auth/sms-code（开发 mock 固定 123456，Redis 存 5 分钟；**mock 模式限流 10 秒，生产 60 秒**）→ POST /auth/login → JWT（HS256，`${jwt.secret}`，roles/permissions **写入 claims**）→ GET /getInfo、GET /getRouters。
+
+* **roles/permissions 必须写进 JWT claims**（JwtUtils.createToken），过滤器从 claims 恢复（JJWT 反序列化为 List，需转 Set）；否则方法级权限 403。
+
+* 权限注解用 `@PreAuthorize("hasRole('super_admin')")`（LoginUser.getAuthorities () 给角色加 `ROLE_` 前缀；hasAuthority 写法会 403）。内置角色：super\_admin（超管，权限 `*:*:*`）、tenant\_admin（租户管理员）、ops（运维）、repairer（维修）。
+
+* 多租户：`TenantLineHandler.ignoreTable()`—— 未登录时全部 true；*已登录忽略 sys\_dict/sys\_config/sys\_tenant/sys\_role/sys\_permission/sys\_user\_role/sys\_role\_permission 七类公共表；超管 isSuperAdmin () 时全部 true*\*（超管不受租户隔离，可管理全部数据）。租户 ID 来自 SecurityUtils。
+
+* **跨租户操作防护**：SysUserService/SysRoleService 内 checkTenantPermission—— 先按租户条件查目标记录，查不到直接返回业务错误（"用户不存在"/"角色不存在"），不泄露跨租户数据存在性（多租户隔离验证第 7 项实测：跨租户改 admin 返回 "用户不存在" 而非 403，行为正确）。
+
+* 逻辑删除 del\_flag：0 = 正常，2 = 已删（deleteById 走 UPDATE）。
+
+* 登出：Token 加入 Redis 黑名单 `netsight:token:blacklist:`（2h 过期）。
+
+## 系统管理模块（第 2 周新增）
+
+
+
+* **控制器**：SysUserController（/system/user CRUD+resetPwd+changeStatus）、SysRoleController（/system/role CRUD+bindPerms+listOptions）、SysMenuController（/system/menu/tree 权限树）、SysTenantController（/system/tenant CRUD）。
+
+* **服务层**：SysUserService（分页 / 新增 / 修改 / 删除 / 重置密码 / 状态切换 / 角色绑定 + checkTenantPermission）、SysRoleService（CRUD + **先删后插 bindPerms** + 内置角色（super\_admin/tenant\_admin/ops/repairer）禁删保护 + **updateRole 支持 "仅分配权限" 场景**）。
+
+* **实体透传字段**：SysUser 有 @TableField (exist=false) roleIds；SysRole 有 permIds（列表 / 详情回显用）。
+
+* **登录权限加载**：AuthService 从 sys\_user\_role→sys\_role→sys\_role\_permission→sys\_permission 加载真实角色 / 权限；super\_admin 角色直接 `*:*:*`。
+
+* **权限树接口**：GET /system/menu/tree 返回全量菜单 + 按钮树（前端角色分配权限 el-tree 用）。
+
+## 前端（第 2 周新增 / 改造）
+
+
+
+* api/system/{user,role,menu}.js 重写对齐后端；**页面直接取 response.rows/total 时 API 层需&#x20;**`.then(res => res.data)`**&#x20;解包**。
+
+* 用户管理页 views/system/user/index.vue：搜索（用户名 / 手机号 / 状态）+ 分页 + 新增修改弹窗（角色多选 el-select multiple、超管可选租户）+ 状态开关 + 重置密码 + 删除。
+
+* 角色管理页 views/system/role/index.vue：搜索 + CRUD + 分配权限弹窗（el-tree 勾选菜单 / 按钮）。
+
+* store/modules/user.js + getters.js 增加 tenantId 存取。
+
+* 已删除若依死组件：user/authRole.vue、role/authUser.vue、role/selectUser.vue、user/profile 目录及对应 dynamicRoutes / 路由 / Navbar 个人中心链接。
+
+* 内置角色分配权限时前端提示 "内置角色不可删除"（后端同样保护）。
+
+## 前端接口取数约定
+
+
+
+* 后端统一返回 `{code, msg, data}`；前端 `request.js` 拦截器返回 `res.data`（即 `{code,msg,data}`）。
+
+* 登录 token 存在 **cookie**（js-cookie，Admin-Token），清 token 要清 cookie 而非仅 localStorage。
+
+* `el-form.validateField("field", cb)` 回调参数是**错误字符串**（通过时为空串），不是布尔值 —— 判断用 `if (error) return`。
+
+## 联调 / 测试脚本已知坑（重要）
+
+
+
+* **PowerShell Invoke-WebRequest 发送 JSON 中文必须用&#x20;**`$utf8.GetBytes($json)`**&#x20;+&#x20;**`Content-Type: application/json; charset=utf-8`，否则中文在发出前按 ISO-8859-1 变问号（MyBatis 日志 Parameters 层显示 `????D` 即此坑，后端 / 数据库本身无字符集问题）。返回中文显示乱码（`æµ‹è¯•ç§Ÿæˆ·E`）是 PowerShell 显示问题，实际数据正常。
+
+* 短信验证码 mock 模式限流 10 秒：连续联调脚本需 `Start-Sleep -Seconds 11` 再发码。
+
+* 验证码一次性使用（登录后即删）。
+
+## 边缘网关部署方案与设备采集对应（2026-09-12）
+
+
+
+* **新增文档《边缘网关应用部署与配置方案.md》**（仓库根目录）：12 章 + 2 附录，含 config.json/mapping.json/prometheus.yml/ 告警规则 /alertmanager.yml 完整示例、即插即用部署五步、云边通信三通道 + 下行 WebSocket、标签注入规范、安全加固、国产化自研采集预留。附录 B 与 V1.1 方案章节逐条对照。
+
+* **设备原始数据收集表（部署阶段）**：飞书表格 [https://my.feishu.cn/sheets/E9izstXwhhEQurtEfrcc8YkynOb](https://my.feishu.cn/sheets/E9izstXwhhEQurtEfrcc8YkynOb) —— 6 张子表（使用说明 / 设备主数据 / 采集配置 / 边缘网关部署信息 / 指标模板参考 / 字段字典），实施人员部署阶段填写，作为设备录入 + 采集清单下发的依据。
+
+* **设备↔Prometheus 对应机制（已确认）**：三层 ——① 录入层业务系统 device\_code 为唯一主键；② 采集层 Prometheus 以「管理 IP + 采集端口」为 instance 指纹，mapping.json 经 static\_configs.labels 注入 device\_code/device\_name/device\_ip/device\_type/device\_location/tenant\_id/gateway\_code 等业务标签（SNMP-Exporter 只带技术指标，业务标签必须清单注入）；③ 归属层云端 /alert/push 按 device\_code 优先、device\_ip 兜底反查。**云端只联动 AlertManager（webhook）+ 网关状态快照（/edge/report/status 30s）两条通道，不直连 Prometheus、不读指标库**。device\_code 永不改变（改 IP 只动采集清单）。
+
+* **mapping.json 定位**：不是 "网关↔云端匹配"（那是 config.json + 网关 Token 的职责）；是「设备台账→采集目标 + 标签」的映射清单，云端录入自动生成下发。config.json = 连接配置 /mapping.json = 设备映射 /prometheus.yml = 采集骨架，三者职责分离。
+
+* **设备增删零重启**：云端录入 / 删除 → 重新生成 mapping.json 下发 → nams-agent 转 targets 文件 → Prometheus file\_sd\_configs（refresh\_interval 60s）自动生效，无需重启；仅组件级配置（prometheus.yml/ 规则 /alertmanager.yml）热重载，仅 config.json 变更需重启 nams-agent。
+
+* **nams-agent 设计决策（2026-09-12 已更新，部署方案 4.7/4.8）**：网关通信中枢，六项职责 = 状态快照 30s（/edge/report/status）+ 心跳 30s（/edge/report/heartbeat）+ 告警转发（本地 :18080 收 AlertManager webhook→转投云端 /alert/push）+ 断网缓存补传（cache/ 落盘 FIFO）+ 清单同步（mapping.json→targets）+ 下行 WebSocket 指令（/ws/gateway 预留）。**技术栈定为 Java（Spring Boot 4.0.8，与云端同栈）**—— 可复用 netsight-common、统一维护；JVM 内存 -Xms256m -Xmx768m 单进程（含管理页面）；轻量演进预案 Quarkus 原生镜像；gateway\_sim.py（Python）仅测试模拟，**生产 Java 版以独立工程 netsight-gateway-agent 落地**。快照数据源二选一：Prometheus HTTP API 查 device\_up 或自研探针内存上报。**新增 4.8 本地管理页面（路由器风格）**：内嵌 nams-agent（:8081，仅内网），左侧分区菜单 = 状态总览 / 设备采集 / 链路设置 / 云端设置 / 系统；本地管理员账号（admin 出厂密码首登强制改密，BCrypt），与云端账号体系独立；配置权威在云端（mapping.json/Token 以下发为准，本地改标记 "待同步"），本地仅可改链路 / 探测 / 日志 / 本地密码等现场项；前端 Vue2+Element UI 精简版打进 jar。
+
+## netsight-gateway-agent Java 工程骨架（2026-09-12 已落地并验证）
+
+
+
+* **工程位置**：`E:\gitee\NetSight1.0\netsight-gateway-agent`（与 netsight-server 平级，独立 jar，不并入云端工程）。**构建**：`cd netsight-gateway-agent; mvn clean package`（JDK21 + Spring Boot 4.0.8，产物 `target/nams-agent.jar` \~20MB）。
+
+* **模块划分（8 包，对应方案 4.7）**：`connector`（上行 HTTP：心跳 / 快照 / 告警 / 清单拉取）、`wsclient`（下行 WS 骨架预留）、`sync`（mapping.json→Prometheus file\_sd targets）、`snapshot`（查 Prometheus device\_up/device\_line\_abnormal→批量上报）、`alerter`（本地 :18080 收 AlertManager webhook→转投云端）、`queue`（断网补传 cache/\*.json FIFO retry\_max=5）、`link`（多链路探测，wired>wifi>4g5g 按 priority）、`localapi`+`web`（本地管理页面）。核心类：ConfigHolder（config.json 热重载，**Jackson 3 必须&#x20;**`propertyNamingStrategy(SNAKE_CASE)`，否则 gateway\_code/base\_url 映射为 null）、RuntimeState（运行时统计 + 设备状态）、CloudClient（HTTP 上报 + markConnected）、SnapshotCollector（30s @Scheduled）、AlertReceiver（18080）/AlertForwarder（转投 + 失败入队）、CacheQueue（重试补传）、MappingSync（mapping.json 解析 + targets 生成，mtime 变更检测）、LinkManager（探测云端连通性切链路，当前链路写入 RuntimeState）。
+
+* **本地管理页面（方案 4.8 落地）**：`/local/api/*`（login/logout/password/overview/devices/sync/links/logs/restart），**cookie 会话 + BCrypt**（LocalAuthService，本地管理员密码存 config.json `local.admin.password_hash`，**首登强制改密**—— 未改密时业务接口返回 4002 被 LocalAuthFilter 拦截，改密后 200）；本地会话与云端账号体系独立；登录失败 Redis 不可用降级内存限流（5 次 / 分钟）。管理页面静态资源（login.html/index.html/app.css/app.js，原生 JS 无第三方依赖，路由器风格：深蓝侧栏分区菜单 + 顶部状态条）。`LocalApiController.restart` 调 systemctl restart nams-agent。
+
+* **配置**：`conf/config.json`（gateway\_code/gateway\_name/cloud{base\_url,gateway\_token,tenant\_id,alert\_webhook\_token,heartbeat\_interval,status\_interval}/links\[]/prometheus{base\_url,source=prometheus|probe}/local{web\_port:8081,alert\_port:18080,sync\_interval,admin}）、`conf/mapping.json`（设备清单，字段 deviceCode/deviceName/deviceIp/deviceType/location/collectType/collectPort/labels {tenant\_id,gateway\_code,...}）、`deploy/nams-agent.service`（systemd，WorkingDirectory=/opt/nams-gateway，ExecStart java -Xms256m -Xmx768m -Dnams.home -Dnams.conf -DLOG\_PATH -jar）。
+
+* **冒烟验证（本地全 PASS）**：login 200→未改密 overview 4002→改密 200→overview 200（gatewayCode=GW00000001/cloudUrl/tenant=1/link=wired/cloudConnected 按实际连通性）→devices.count=2（mapping.json 2 台）→sync 返回 "本地清单无变更"→logs 尾部正常；login.html 200、alert/push 200。**坑（勿重踩）**：① Jackson 3 不自动映射 snake\_case，ConfigHolder 的 mapper 必须 builder+propertyNamingStrategy；② ConfigHolder 用 `R.fail(ResultCode.BAD_REQUEST,...)` 而非 `R.BAD_REQUEST`（常量在 ResultCode）。
+
+* **待办**：云端 `/edge/config/mapping` 下发接口（v1.1.7 候选，当前 mapping.json 走本地文件）、下行 WS 指令落地、probe 快照源、告警来源 IP 白名单、多链路自动切换增强。**本地冒烟后已停实例**（防占位 Token 持续上报污染 .55 云端 Web 请求日志）。
+
+## 已知缺口（后续开发接续点）
+
+
+
+* 前端用户 / 角色页面已完成 CRUD，但**菜单管理页面**（sys\_permission 的可视化管理界面）尚未开发 —— 当前菜单 / 按钮权限靠 SQL 维护。
+
+* WebSocket（/ws/gateway、/ws/dashboard STOMP）通道未专项验证；登出黑名单未专项验证。
+
+* Redis 在 192.168.1.55 仅 db0 可用（db6/db7 有他系统数据）。
+
+* **云安全组 80 端口未放行**（2026-09-11 已部署 Nginx + 前端，80 在服务器内监听中；外网访问需在云控制台放行，放行后访问 [http://192.168.1.55](http://192.168.1.55)）。
+
+* .60 网关模拟器已对接云端（config.json target=[http://192.168.1.55](http://192.168.1.55) 走 Nginx /edge/，端到端验证通过，测试数据已清理）；config.json/devices.json 均在 /opt/nams-gateway-sim/（.bak 备份保留）。
+
+* **第 6 周已完成**：驾驶舱总览（/dashboard/overview，WebSocket 实时推送已验证）、SVG 拓扑页（/device/topology）、备件低库存预警（走事件中心 + 通知规则，按天去重）、边缘网关模拟器部署 .60 周期上报、云端 .55 二进制部署（systemd）。
+
+* **后续待办（第 7 周起）**：前端菜单管理页面（sys\_permission 可视化维护）、微信小程序端（PC 全量测试后启动）、事件 / 日志 / 操作日志归档清理定时任务、告警升级 / 静默策略、**云安全组放行 80**（当前部署已完成只差放行）、帮助中心 "使用文档" 在线链接（当前为文本占位）、AI 实时分析模块（首页仅展示规划，后续版本落地）。
+
+## nams-agent Java 化部署（2026-09-12 已落地 .60 并验证）
+
+* **决策**：nams-agent（边缘网关通信中枢，Java 技术栈）替换 Python 模拟器 gateway_sim.py 正式部署 .60（模拟边缘网关服务器）。工程 `E:\gitee\NetSight1.0\netsight-gateway-agent`（独立 jar，Spring Boot 4.0.8 + JDK 21，~20MB）；本地管理页 :8081 路由器风格（admin 首登强制改密，改密接口 **`POST /local/api/password`** 参数 oldPwd/newPwd，**不是** /change-password）；告警接收 :18080。
+
+* **.60 环境**：Ubuntu 20.04 无 Java → 本机清华镜像下载 Temurin 21 JRE（`mirrors.tuna.tsinghua.edu.cn/Adoptium/21/jre/x64/linux/OpenJDK21U-jre_x64_linux_hotspot_21.0.12.1_1.tar.gz`）上传安装到 `/opt/java21`（adoptium 官方源 .60 与本机均超时，华为云只有 JDK 203MB 可选；清华 TUNA JRE 52MB 可用）。
+
+* **部署**：`deploy/deploy_nams_agent.py`（paramiko，GW60_PASSWORD 环境变量注入）→ 停用并禁用 nams-gateway-sim（防双上报）→ systemd `nams-agent.service`（ExecStart=/opt/java21/bin/java，WorkingDirectory=/opt/nams-gateway）→ **必须 `systemctl restart`（`enable --now` 对已运行服务不重启，会残留旧 jar 进程）**。配置文件：`conf/config.json`（snake_case，Jackson 3 需 `propertyNamingStrategy(SNAKE_CASE)`，否则 gateway_code/base_url 映射为空）、`conf/mapping.json`（8 台设备真实数据）、`data/device_status.json`（probe 探针状态文件，热可改）。
+
+* **probe 探针数据源**：.60 无 Prometheus（模拟网关），SnapshotCollector 补 `prometheus.source=probe` 分支——每 30s 读 `data/device_status.json`（`{"devices":[{"deviceCode","up","lineAbnormal"}]}`）→ 上报 /edge/report/status。与国产化自研采集探针同路径（指标不出内网）。
+
+* **重大坑（勿重踩）：云端 `GatewayReportController.toInt()` 原实现只接受 Number**——nams-agent 上报布尔 `"up":true` 触发 `(Number)true` ClassCastException 被 catch 转 0，**8 台设备全被置离线**（Python 模拟器上报数字 1/0 所以之前联调通过）。已修复：`toInt` 兼容 Boolean（true→1）/Number/String，云端重部署 .55 后设备状态正确（7 在线 / CAM-02 离线 / ACC-01 链路异常，update_time 每 30s 刷新）。
+
+* **云端 .55 部署坑（沿用）**：deploy_all.py 健康检查 `%%{http_code}` 在 paramiko 中不转义成字面 `%{http_code}` 误判超时——部署本身成功，验证用 curl 直测 `-w '%{http_code}'`。
+
+* **已验证**：.60 nams-agent active（PID 135313），本地管理页 login 200、改密 Admin@2026 后 overview/devices 正常（total 8 / online 7 / offline 1 / lineAbnormal 1，snapshotCount 持续增长、snapshotFailCount=0）；云端 .55 心跳 22:29:47 刷新、设备状态三色正确、Web 请求日志含 `POST /edge/report/status ip=192.168.1.60 code=200`。
+
+## 第 7 周：真实生产环境（2026-09-13 已落地并全链路验证）
+
+* **背景**：.60 已真实部署 Prometheus 3.5.0（9090）/node_exporter（9100）/夜莺 n9e（17000）/categraf（**用户否决，不用**），**无 Alertmanager（此前已由云端 .55 侧 nams-agent 替代 AM 职责——本轮把 AM 职责落到 nams-agent :18080 + 云端 webhook 链路）**。用户要求"采集器不用 categraf"，走方案 4.8 国产化自研采集探针路径。
+
+* **新增云端接口 `EdgeConfigController`（/edge/config/mapping，v1.1.7）**：独立 Controller（**勿放 /edge/report 下**——类级 @RequestMapping("/edge/report") 会拼出 /edge/report/config/mapping 导致 404 NoResourceFoundException）。鉴权 X-Gateway-Token；返回 `{version, devices:[{deviceCode,deviceName,deviceIp,deviceType,location,collectType,collectPort,labels{tenant_id,gateway_code,gateway_name}}]}`（R 包装）。**nams-agent MappingSync.parseAndApply 已加 R 包装解包**（code=200 且 data 存在 → 取内层），否则 devices 解析为 0 台。
+
+* **新增自研采集探针 nams-collector.py**（国产化替代 categraf）：`/opt/nams-gateway/collector/nams-collector.py`，systemd `nams-collector.service`。读 targets/snmp.json（mapping 下发生成）→ ICMP ping 探测（`ping -c 2 -W 1`，平均 RTT>150ms 判外线异常）→ 暴露 **:9258/metrics**（纯 Python 文本格式，无第三方依赖）→ Prometheus scrape job `nams_device` 已配（15s）。指标契约：`device_up{device_code,device_name,device_ip,device_type,device_location,tenant_id,gateway_code}` / `device_line_abnormal`，与 nams-agent SnapshotCollector source=prometheus 查询完全对齐。
+
+* **真实生产切换（config.json）**：`prometheus.source: "probe"→"prometheus"`（base_url http://127.0.0.1:9090）+ `alert_webhook_token` 占位符→云端租户真实 token（`63c50a35b31943b497355daa5b988f2b`，sys_tenant 查得）。**部署坑：deploy/prod/config.json 与 .60 实际 conf/config.json 必须同步改**（deploy_nams_agent.py 只上传不覆盖 conf 已有文件？本轮手动上传）。
+
+* **Nginx /alert/ 反代（关键坑）**：nams-agent 转投云端 `POST /alert/push` 走 `base_url`（http://192.168.1.55:80）——**Nginx 只有 /prod-api//edge//ws/，无 /alert/ 时 POST 落入 try_files 返回 405**（nams-agent 缓存队列补传机制自动重试）。已加 `location /alert/ { proxy_pass http://127.0.0.1:8080; ... }` 并同步进 deploy_ui.py NGINX_CONF（**每次 deploy_ui.py 重写 nams.conf 都会丢非内置 location，必须手工确认 /edge/ 与 /alert/ 都在**）。
+
+* **全链路验证（PASS）**：探针 8 台探测（3 在线：.1/.3/.20；5 离线：.2/.10/.21/.30/.40，与实测一致）→ Prometheus `device_up` 8 条、规则「网络设备离线故障 firing」→ nams-agent 查 device_up 上报 → 云端设备状态与探针完全一致（11:56:48 刷新）→ 5 条离线告警经 AM→nams-agent→/alert/push 转投成功（**缓存补传 5 条 alert 成功**，405 期间缓存的自动补传）→ 云端 5 条 device_offline 事件 sent + 短信/公众号双通道通知 success=1 + **4 张新工单自动生成**（CAM-02 24h 去重不重复建）→ 完整闭环。
+
+* **deploy_all.py 修复**：健康检查 `%%{http_code}` 改 `%{http_code}`（paramiko 内不经 % 格式化时 %% 原样传远端导致误判）。
+
+* **设备探测改用 blackbox_exporter（2026-09-13，用户稳定性诉求落地）**：用户要求"前端采集使用 node_exporter（Prometheus 全家桶更稳定）"——**经分析 node_exporter 是主机指标采集器（装在被监控 Linux 主机上），无法探测交换机/摄像头/NVR/门禁；Prometheus 官方做设备连通性探测的组件是 blackbox_exporter（ICMP probe）**，采用之。**过程与坑（勿重踩）**：
+  * 清华镜像 github-release 路径**无 blackbox_exporter 目录**（0.25.0/0.26.0 均 404）→ 本机 GitHub 官方直连下载 0.26.0（12.4MB）→ 上传 /opt/blackbox_exporter/。
+  * **apt 版 prometheus-blackbox-exporter 0.13.0 ICMP 有 bug**（对任何目标含 127.0.0.1 均 probe_success=0、rtt phase=0）——必须 ≥0.16，已 disable。
+  * systemd `blackbox_exporter.service`（root 运行，ICMP probe 需 raw socket；--web.listen-address=:9115）；blackbox.yml modules.icmp（preferred_ip_protocol ip4、timeout 5s）。
+  * **prometheus.yml `nams_device_probe` job**：metrics_path=/probe + params module=[icmp] + file_sd（targets/snmp.json，refresh 60s）+ relabel 三连（去端口 `^([^:]+):\d+$`→__param_target、instance=IP、__address__=127.0.0.1:9115）。
+  * **关键坑①（规则文件）**：recording rules 追加时误加第二个顶层 `groups:` → Prometheus 启动失败 `mapping key "groups" already defined`——**告警与 recording 必须合并为单 groups 列表**（两个 group 项）。
+  * **关键坑②（file_sd meta 覆盖）**：targets/snmp.json 自带 `__metrics_path__=/snmp`、`__param_module=netsight_if_mib`（为未来 SNMP exporter 预留）——file_sd 的 meta 标签**覆盖 job 级 metrics_path/params** → Prometheus 抓 `:9115/snmp?module=netsight_if_mib` → blackbox 404 返回 HTML → **target down `unsupported Content-Type "text/html"`**。修复：relabel 里 `target_label: __metrics_path__/replacement: /probe` + `__param_module→icmp`（**必须先于 __address__ 处理**）。
+  * **recording rules**（nams_device_recording group）：`device_up = probe_success{job="nams_device_probe"}`；`device_line_abnormal = probe_icmp_duration_seconds{job="nams_device_probe",phase="rtt"} > 0.15`。告警规则（device_up==0 / device_line_abnormal==1）**零改动**。
+  * **nams-collector 已停**（`systemctl disable --now nams-collector`，代码保留 /opt/nams-gateway/collector/ + deploy/nams-collector.py 作国产化备选）。
+  * **验证全 PASS**：8 target 全 up；device_up 8 条与自研探针一致（3 在线/5 离线）；5 条离线告警 firing→AM(:9093)→nams-agent(:18080/alert/push)→云端事件 sent+通知 success=1+新工单 5 张（24h 去重）；设备状态/心跳 30s 实时刷新。测试期 3 次 Prometheus 重启产生 70 条重复事件已清理（每设备保留最新 1 条）。
+## 第 7 周（续）：配置文件自动化生成 Skill（2026-09-13 已交付并验证）
+
+* **新 Skill：nams-config-generator**（`C:\Users\Administrator\AppData\Local\Doubao\User Data\Default\.doubao\agent_mode\workspace\.user_skills\nams-config-generator`，quick_validate 已通过）：读《NetSight设备原始数据收集表（部署阶段）》三张数据子表 → 生成边缘网关全套配置。scripts/fetch_sheets.py（lark-cli 导出三表 CSV）+ scripts/generate_configs.py（确定性生成：targets/snmp.json、prometheus.yml、blackbox.yml、nams_device_rules.yml、config.json、summary.txt，参数对齐 .60 生产基线，含 promtool 校验命令）。字段映射/规格/下发流程见 Skill 内 references/config-spec.md。
+
+* **飞书收集表已更新**（revision 89，token E9izstXwhhEQurtEfrcc8YkynOb）：设备主数据表 B1 改「设备编码*」、3 条示例行补 DEV-SW-CORE-01/DEV-SW-ACC-01/DEV-CAM-01；采集配置表示例采集方式 snmp/video_probe → icmp（blackbox 生产默认）、指标模板列改「连通性模板(icmp)」；网关表新增 O「云端WebhookToken(系统生成回填)」/P「租户ID」两列（已刷表头加粗居中+边框样式）；使用说明 7 行重写（含采集方式枚举、配置文件自动生成说明、敏感信息提示）。
+
+* **端到端验证通过**：fetch_sheets.py 导出 → generate_configs.py 生成 → 3 台示例设备配置正确（labels 完整、拓扑 1主2备、rules 单 groups、webhook_token 占位 CHANGE_ME 待替换）。验证产物保留于 `netsight-gateway-agent/deploy/gateway-sheets`（真实导出 CSV）与 `gateway-out`（生成示例）。
+
+* **坑（勿重踩）**：① lark-cli 文件参数白名单仅 CWD/临时目录/home-files，跨盘绝对路径被拒 → 载荷文件放 CWD（实际 CWD = netsight-gateway-agent\deploy）；② PowerShell 裸 @path 触发展开语法错 → 用 --writes=@tmp_writes.json 等号形式；③ --border-styles 内联 JSON 被 PS 拆引号 → 写 payload 文件传 --border-styles "@./x.json"（必须带引号）；④ quick_validate.py 依赖 pyyaml（已 pip 安装）。
+
+## V1.1.7：租户级 PushPlus 通知通道（2026-09-14 已落地并全链路验证）
+
+* **背景**：用户要求通知渠道统一接入 PushPlus（免短信签约），各租户在云端租户管理配置 PushPlus token，通知由云端发出（PushPlus ChannelSender SPI 接入），保留短信/公众号通道与降级。已同步 V1.1 方案 5.8「通知通道 SPI + 租户级密钥模型」。
+* **后端新增**：
+  * `PushplusChannelSender.java`（com.netsight.modules.alert.channel，@Component 自动注册进 ChannelRegistry）：channelType="pushplus"、channelName="PushPlus 消息推送"；**send() 租户级取 token**——构造注入 SysTenantMapper，按事件 tenantId 查 sys_tenant.pushplus_token（未配置返回失败 SendResult "租户未配置 PushPlus Token"）；支持真实/模拟双模式 `${netsight.alert.channel.pushplus.real-mode:false}`，mock 仅打日志返回 MOCK-PP- 前缀 id；调用官方 API `POST https://www.pushplus.plus/send`（JSON token/title/content/template，HttpClient 超时 10s）；healthCheck 探测 URL 可达性。**未改任何通道中心/渲染/降级逻辑（SPI 零侵入）**。
+  * `SysTenant` 实体加 pushplusToken/pushplusTokenTime 字段；`SysTenantController` 新增 `PUT /system/tenant/{id}/pushplus-token`（超管，body {"token":"..."}，写 token 与当前时间，可为空串清空）。
+  * 增量 SQL `netsight-upgrade-v1.1.7.sql`：sys_tenant 加 pushplus_token varchar(64)/pushplus_token_time datetime（AFTER webhook_token_time，无唯一索引——同 token 跨租户复用属配置问题）。
+* **租户2 全链路测试（20/20 PASS，已清理中间态）**（注：文中「租户2」=「大华设备示范租户」id=7 的口语称呼，**系统不存在独立"租户2"**，勿混淆）：云端建租户「大华设备示范租户」(id=7，webhook token c9e8c10ed0a4480ebf0354c112bc435e) → PUT pushplus-token（pp_test_token_2_20260914_dahua）→ 建网关5「租户2-大华网关」(token ec77aa977b0e48b196eba902965e03ab，**2026-09-15 已改名「大华设备示范网关」**消除"租户2"命名误导，云端 DB + .60 config.json 同步) → **设备 id=12（大华人脸识别主机 .76）/id=14（大华摄像头 .77，原 id=13 已删除重建为 14）转移至租户7+网关5**（超管 PUT /device 传 tenantId/gatewayId）→ 建 3 条 pushplus 模板 + 1 条规则（device_offline→pushplus，**必须绑定 templateId=11**）→ 模拟网关上报（X-Gateway-Token=网关5 token）→ webhook 离线告警（X-Netsight-Webhook-Token=租户2 token）→ 事件 1552(device_offline,sent,tenant7) + pushplus 日志 2884（success=1，内容完整渲染"MOCK-PP-658bbba4"）→ 工单 38(WO…580) 自动生成 → 恢复告警 → 事件 1553(device_recovered) + **工单自动归档 status=5**。**数据隔离验证通过**：设备/事件/日志/工单全部归属 tenant_id=7，租户1 不受影响；工单去重为"同设备未完成工单"维度（_1/_2 两轮事件只建一张工单，恢复后归档，符合设计）。
+* **坑（勿重踩）**：① **expireTime 必须 ISO 格式**（"2027-12-31T23:59:59"），Jackson 3 LocalDateTime 默认 ISO，空格格式 500（tools.jackson InvalidFormatException）；② **通知规则必须绑定 templateId**，否则 findTemplate 返回 null → 渲染 content 为空串（通知仍发送但落库 content 空）；③ mysql -N 判断列存在时 stderr 的"password insecure" warning 会污染输出 → `2>/dev/null` 丢弃再 strip 判断；④ **work_order 表列名是 event_id**（不是 source_event_id），SELECT 写错列名报 Unknown column 且被 2>/dev/null 吞掉显示空结果；⑤ webhook 报文标准格式必须含 event_type 字段（或 AlertManager v4 alerts[] 数组），仅 commonLabels 会 500"无法识别的 webhook 报文格式"；恢复报文 event_type=device_recovered + status=resolved。
+* **测试/部署脚本**（deploy/，_ 前缀）：`_test_pushplus_p1.py`（建租户/配token/建网关，已含 ISO 修复）、`_test_pushplus_p1b.py`（设备转移+模板+规则，复用已建资源幂等）、`_test_pushplus_p2.py`（全链路 20 项断言）、`_verify_pp_final.py`（最终数据链确认）、`_test_pp_real.py/_test_pp_real2.py/_test_pp_real3.py`（真实推送测试轮）、`_probe_pp_api.py`（PushPlus API 参数对比定位）。一次性诊断/清理脚本（_diag_pp*、_probe_*、_clean_pp*、_deploy_v117/_check_v117）已删除。
+* **真实推送验证（2026-09-15 全 PASS）**：租户2 token 更换为真实 token（787ed5ed4fbc4797b7a77202d908a733），云端 nams.env 注入 `NETSIGHT_ALERT_CHANNEL_PUSHPLUS_MOCK_MODE=false`（无需改 yml/重打包，Spring relaxed binding 环境变量覆盖）。**三轮排障**：① 未实名 → PushPlus 平台要求微信绑定+实名认证（用户完成）；② `服务端验证错误` → **根因：PushPlus 的 `topic` 是"群组名称"而非接收人标识**，原代码把 receivers 首项（手机号 13900000002）当 topic 传 → 平台 code=999"群组信息不存在"。已修复 PushplusChannelSender：接收人列表不再映射 topic，仅 `extra.topic` 显式设置时传；③ 修复后真实推送成功——事件 1557(device_offline,sent) → 通知日志 2887（pushplus success=1、third_party_msg_id=`10058e45dc3d41768cf47517292f92e7`（平台真实消息ID，非 MOCK-PP- 前缀）、cost_time=1290ms 真实 HTTP 耗时）→ 工单 40 自动生成 → 恢复事件 1558 → 工单归档 status=5。**PushPlus 最小可用参数：token+title+content（template=html 可选）；topic 仅用于群组推送**。租户2 最终演示链保留：事件 1552-1558、日志 2884/2885/2887、工单 38/40（均归档）。
+
+## V1.1.8：网关级 PushPlus Token（2026-09-15 已落地部署并全链路验证）
+
+* **背景**：用户要求 PushPlus Token 配置放到「边缘网关管理页面」（每台网关独立配置），实现**网关级 token 优先 → 租户级兜底**发送模型；已同步 V1.1 方案 5.8（SPI + 网关级/租户级两级密钥模型）。
+* **SQL `netsight-upgrade-v1.1.8.sql`（已上云）**：`edge_gateway` 加 `pushplus_token VARCHAR(64)` + `pushplus_token_time DATETIME`（AFTER gateway_token，无唯一索引——同 token 跨网关复用属配置问题）。
+* **后端 6 文件**：`EdgeGateway` 实体 +2 字段；`SendRequest` +gatewayCode；`NotificationChannelService.sendOne()` 填 `.gatewayCode(parseGatewayCode(event.getLabelsJson()))`（tools.jackson ObjectMapper 解析 labels_json 取 gateway_code，失败返回 null）；`PushplusChannelSender` 注入 EdgeGatewayMapper、`resolveTenantToken(tenantId, gatewayCode)` 两级解析（①网关级：按 gateway_code+tenant_id 查 edge_gateway 且 status=1 且有 token → 命中直接用；②租户级兜底：sys_tenant status=1）；`EdgeGatewayService` +getPushplusToken（脱敏 maskToken 前 4 后 4）/setPushplusToken；`EdgeGatewayController` +GET/PUT `/{id}/pushplus-token`（@Log"配置PushPlus Token"，参数脱敏 token=***）；`pageGateway` 列表对 pushplusToken 脱敏。
+* **关键 bug（勿重踩）**：**MyBatis-Plus `updateById` 默认忽略 null 字段**——setPushplusToken 清空（set null）不生效，DB 残留旧 token 导致"清空后"仍走网关级错误 token。修复：清空分支用 `LambdaUpdateWrapper` 显式 `.set(EdgeGateway::getPushplusToken, null)`。**实体加 @TableField(updateStrategy=ALWAYS) 不可行**——会让 updateGateway 把未 set 的 token 字段强制清空。
+* **回归验证（云端 .55 全 PASS）**：A 网关级错误 token → PushPlus 推送失败（success=0，"用户令牌不正确"，证明网关级优先生效）；B 清空（DB=NULL）→ 租户级真实 token 推送成功（success=1、PushPlus code=200、真实消息ID）——修复后复跑 `_dbg_rp.py` 确认 [1] DB 现值 NULL + [2] 租户级兜底链路日志完整；C 恢复真实 token → 查看/列表接口脱敏 `787ed5****a733`。
+* **前端**：`api/edge/gateway.js` +getGatewayPushplusToken/setGatewayPushplusToken；`views/edge/gateway/index.vue` +PushPlus 表格列（已配置=蓝紫 tag 脱敏值 / 未配置=灰 tag）+ 操作列"PushPlus"按钮（弹窗：提示语"该网关产生的告警将优先使用本网关的 PushPlus Token 推送；未配置时自动沿用租户级 Token。"+ 当前Token 脱敏+复制 + 新Token 输入 + 清空/保存）。浏览器实测云端页面通过（PushPlus 列、按钮、弹窗齐全）。
+* **部署坑（勿重踩）**：**deploy_ui.py 上传的是 `netsight-ui\dist.tar.gz`（打包文件）而非 dist 目录本身**——每次前端改完必须重新 `tar -czf dist.tar.gz dist` 再跑 deploy_ui.py，否则云端永远是旧 dist（本次即因此云端 static/js 停留 9-12 旧版、页面无 PushPlus 列）。验证部署生效：`grep -rl 'PushPlus' /opt/nams-ui/dist/static/js/`。
+* **遗留**：网关列表 `gatewayToken` 仍明文返回（前端未展示，resetToken 流程成熟，暂不改）；事件→渠道的 gateway_code 取自 labels_json（AlertManager/手动事件需在 labels 带 gateway_code 才能命中网关级 token，云端 webhook 报文 labels 已含）。
+
+## 云边上行认证机制（2026-09-15 代码事实 + 文档沉淀）
+
+* **信任模型**：凭证绑定身份、服务端权威反查；网关主动出站，内网设备零入站端口。
+* **两类上行凭证（nams-agent `CloudClient.post(path,body,gatewayAuth)` 自动选择）**：
+  * `X-Gateway-Token`（网关级）→ /edge/report/status、/edge/report/heartbeat、/edge/config/mapping；Token=UUID 去横线 32 位，存在 edge_gateway.gateway_token；resetToken 重生成即旧 Token 失效；`EdgeGatewayService.getByToken`（~197 行）查库，status=0（禁用）返回 null → 抛 GATEWAY_TOKEN_INVALID。
+  * `X-Netsight-Webhook-Token`（租户级）→ /alert/push；sys_tenant.webhook_token（V1.1.6），Redis 缓存 `netsight:webhook:token:{token}`→tenant。
+  * 两个通道都带 `X-Netsight-Tenant-Id`，但仅辅助，以凭证反查出的租户为准（防伪造）。
+* **云端白名单**：SecurityConfig `permitAll` 放行 /edge/report/**、/edge/config/**（不走 JWT），控制器内 `@RequestHeader` 自行校验。
+* **告警两段式（勿误解）**：AlertManager **不直连云端**——alertmanager.yml webhook url=`http://127.0.0.1:18080/alert/push`（nams-agent 本地 AlertReceiver，JDK HttpServer，只校验 POST+非空 body，无鉴权）；AlertForwarder 原样转投云端 /alert/push 时才带 Webhook Token，失败落 CacheQueue 补传。
+* **MappingSync**：`@Scheduled(fixedDelay=60000)` 每 60s 拉 mapping；云端只返回该网关名下（tenant 一致）设备 → 云端删设备后网关自动取消采集目标。
+* **技术答疑沉淀文档**：飞书文档 `https://feishu.doubao.com/docx/Bb7sdtGyOoKpokxlQW8cpWI9n6d`（标题：Prometheus 配置解析/小白部署/alertmanager-实体对应方案）。2026-09-15 已补三处认证内容：①配置解析部分末尾新增「八、云边通信认证机制」；②小白部署新增「第 10.5 步｜两个 Token 从哪来、怎么用」；③alertmanager 匹配机制第六章末尾补充「Webhook Token 由 nams-agent 转投携带，非 AlertManager 直连」。
+* **lark-cli 编辑坑（勿重踩）**：`--content @file` 文件白名单仅 CWD/临时/home-files；**实际 CWD=`E:\gitee\NetSight1.0\deploy`**（非 netsight-gateway-agent\deploy，之前记录有误），跨目录文件须先复制到该 CWD 再用 `@./xxx.xml`；PowerShell 中 `@./` 会被当 splatting 解析，必须写成 `"--content" "@./xxx.xml"`；PowerShell 单次只跑一条外部命令。
+* **教程文档持续补充（飞书 https://feishu.doubao.com/docx/Bb7sdtGyOoKpokxlQW8cpWI9n6d）**：2026-09-15 新增「第 10.6 步｜nams-agent 内部 HTTP 架构：为什么用 JDK 自带 HttpServer 收告警（开销最小）」（revision 240，插在第 10.5 步后）—— 核心结论：nams-agent 双容器（:8081 Spring Tomcat 管理页 + :18080 JDK HttpServer 收 webhook），JDK HttpServer 零依赖/毫秒启动/内存可忽略/4 线程可控，双容器隔离告警风暴（Tomcat 默认 200 线程会被 webhook 打满拖垮管理页）；升级信号：webhook 需复杂鉴权/高并发（QPS 上千）才考虑接回 Spring MVC，改动仅一个类。
+
+## .60 网关切绑至网关5/租户7（2026-09-15，.76/.77 无告警根因修复）
+
+* **问题**：用户报 .76（大华人脸识别主机）离线无通知。根因：`.76/.77 归属租户7/网关5，但 .60 物理网关 config.json 一直绑定网关4（租户1）`——mapping 只下发租户1 的 8 台 demo 设备，.76/.77 从未被 Prometheus/blackbox 探测 → 无 device_up → 无告警 → 无事件 → 无通知；网关5 心跳自 09-14 21:55 停止（.60 用网关4 token 上报，网关4 心跳实时）。
+* **修复**：.60 config.json 切绑网关5（gateway_token=ec77aa977b0e48b196eba902965e03ab、tenant_id=7、alert_webhook_token=c9e8c10ed0a4480ebf0354c112bc435e），重启 nams-agent；原配置已备份 `conf/config.json.bak_20260915_082939`。
+* **验证全 PASS**：mapping 同步 2 台（.76/.77）→ Prometheus device_up 2 条（.76=0 真实离线 ping 不通、.77=1 时通时断）→ AlertManager firing（.76 critical）→ nams-agent 转投 → 云端事件 1708 device_offline sent → **PushPlus 真实推送 success=1（消息 ID f742751335bc4386a3cd734e37b331ee，非 MOCK）** → 工单 67 自动生成待处理。云端 .76 status=0、.77 status=1，网关5 心跳实时刷新。
+* **副作用（已告知用户）**：租户1 的 8 台 demo 设备停止采集（状态冻结 3 在线/5 离线、切换瞬间产生一批 device_recovered 事件=告警因停止采集自动消除、网关4 心跳停将显示离线）；要同时监控 demo+大华需第二台物理网关或后续版本支持 nams-agent 多网关清单。
+* **遗留**：工单45（.77 06:47 测试残留 event_id=1564 事件已清理、status=0 待处理）建议关闭；.77 网络时通时断建议排查物理链路；device 表 .76=id12/.77=id14（tenant7/gateway5），旧记录 id11/13 del_flag=2 残留。
+* **数据库列名坑（重踩）**：device 表是 `ip_address` 不是 device_ip；work_order 是 `event_id` 不是 source_event_id；notification_rule 是 `receiver_strategy_json` 不是 receivers_json——查错列名报 Unknown column 被 2>/dev/null 吞成空结果。
+## V1.1.7 云端前端四类问题修复（2026-09-15 已部署 .55 并验证）
+
+* 用户反馈：拓扑上下级无法删除与修改、拓扑图标不随页面比例、增删改查页面字体颜色、登录页获取验证码按钮同问题。
+* 根因与修复（三处）：
+  1. **拓扑删除/修改**：后端 DeviceService.saveTopology() 主上级为 null 时直接 return 跳过删旧拓扑 → 改为**先删后插**（tenantId 兜底）；前端 device/index.vue parentOptions 改从 getTopologyTree() 全量节点（loadParentOptions/allDevices）加载，label 用 item.name（此前取 deviceList 分页 10 条，跨页设备选不到）。
+  2. **SVG 响应式**：设备页预览 SVG 改 viewBox + preserveAspectRatio + .topo-preview-svg{width:100%;height:auto;min-width:780px}；拓扑页 .topo-svg{width:100%;height:auto;min-width:600px;min-height:300px}（去掉固定 460px）。
+  3. **按钮颜色**：theme.scss .el-button--primary 补 color:#fff；新增 .el-button--primary.is-plain 覆盖（浅紫底 rgba(99,102,241,.08) + 紫字 #6366F1 + 浅紫边框，hover/disabled 变体）。
+* 部署：后端 netsight-server.jar（53999037 字节）+ 前端 dist（app.55851036.css md5 8cca6e7e）已上 .55；systemd 单元 **netsight-server.service**（勿用 nams-server）；部署前端后**必须验证 /edge/ 代理**（本轮保留未重写 nginx，/edge/ 200）。
+* 验证（浏览器实测 PASS）：①大华摄像头设主上级=接入交换机 → 列表"主:接入交换机"；清空 → "未配置"且 topologyTree links 无残留；②上级下拉全量 9 台可选（排除自身）；③SVG 容器 700→682 / 1200→1182 随比例缩放；④设备/备件/工单页"新增XX"按钮浅紫底紫字；⑤登录页"获取验证码"同款修复。
+* **超管账号更正**：登录手机号 = **13800000000**（sys_user.id=1 admin，AGENTS.md 此前误记 13800138000）。
+* **bu 浏览器登录经验**：bu.type/bu.click 对 Element 组件**不触发 Vue v-model / @click**（表现为点"获取验证码"无反应、登录不跳转）——改用 **JS 操作**：设值用 inp.value='x'; inp.dispatchEvent(new Event('input',{bubbles:true}))，点击用 btn.click()；或直接 fetch 登录（POST /prod-api/auth/sms-code?phone= & /auth/login → 种 cookie Admin-Token=token）。
+## V1.1.8 内置角色权限绑定 + 防越权加固（2026-09-15 已部署 .55 并验证）
+
+* **问题**：用户 sunyang21（tenant_admin）登录后 roles 有值但 permissions=[]、getRouters=[]（无菜单），表现为"选择的角色未生效"。
+* **根因**：历史 SQL（v1.1.1~v1.1.5）权限绑定**只针对 super_admin（role_id=1，75 条）**，内置角色 tenant_admin(2)/ops(3)/repairer(4) 在 sys_role_permission **零绑定**；AuthService.loadPermissions 对非 super_admin 角色从 sys_role_permission 实时加载 → 空 → 无权限无菜单。
+* **修复（增量 SQL netsight-upgrade-v1.1.8.sql）**：为三个内置角色绑定合理权限集——tenant_admin 70 条（本租户全业务：系统管理下用户/角色管理 + 设备资产 + 告警中心 + 运维工单 + 备品备件 + 监控大屏，**不含跨租户"租户管理"10-14**）、ops 37 条（运维：设备查询/新增/修改/拓扑 + 网关查询 + 告警事件/手动发送 + 规则/模板/日志查询 + 工单查询/新增/派单/完工 + 备件查询/出入库 + 大屏）、repairer 13 条（工单查询/完工关闭 + 备件查询/领用 + 大屏）。已上云执行（先 DELETE role_id IN(2,3,4) 再 INSERT，幂等）。
+* **防越权加固（代码，已重新打包部署）**：
+  ① SysRoleService.listAll() 非超管 
+e(role_key,'super_admin')——**角色下拉不暴露 super_admin**（此前 tenant_admin 可把人分配成 super_admin 角色，登录 loadPermissions 命中 super_admin 返回 *:*:* + hasRole('super_admin') 全接口越权）；
+  ② SysUserService.bindRoles() 非超管分配含 super_admin 角色直接 	hrow ServiceException(FORBIDDEN)（事务回滚，双保险）。
+* **验证（API + 浏览器全 PASS）**：sunyang21 登录 permissions=70、getRouters=6 顶级（Dashboard/System/Device/Alert/Workorder/Spare）+ 子菜单全、workorder 列表 200；浏览器侧边栏 6 大模块完整显示（含用户/角色/设备/网关/拓扑/事件/规则/模板/日志/工单/维修/备件/记录）；加固：tenant_admin role/all 仅 3 角色（无 super_admin）、PUT 用户带 roleIds=[2,1] → 403、超管 role/all 4 角色正常；sunyang21 绑定未被破坏（user_id=5 → role_id=2）。
+* **坑（勿重踩）**：①登录验证码 mock 限流 10s，连续 curl 登录会 5003 无 data——验证脚本先发码 sleep 再登录；②部署前 mvn clean 会因 target 文件占用失败（本地可能有进程锁 jar），用 mvn package -DskipTests 跳过 clean；③getRouters 组树需绑定**顶级菜单**（parent_id=0 的 1/40/60/76/89/98），否则子树挂不上（role 3/4 已含各自顶级）。
+## V1.1.8 补充：告警/派单通知包含租户名称（2026-09-16 已部署 .55 并验证）
+
+* **需求**：用户收到的告警信息缺少租户名称，要求通知内容体现租户名（多租户 SaaS 下区分告警归属）。
+* **后端改动（两处，均编译 + 部署验证通过）**：
+  ① `EventCenterService.buildVars()` 注入 `SysTenantMapper`，vars 增加 **`tenant_name`**（下划线风格，与既有 device_name/device_ip 一致），新增私有 `resolveTenantName(tenantId)` 查 sys_tenant 取 tenantName，异常兜底空串不阻断。sys_tenant 在 MybatisPlusConfig ignoreTable 列表（系统表不受租户拦截），selectById 直接可行，alert 模块注入 system mapper 无循环依赖。
+  ② `WorkOrderService.notifyRepairer()` 同样注入 SysTenantMapper，vars 增加 **`tenantName`**（驼峰，配合工单模板 orderNo/deviceName 风格）。
+* **SQL `netsight-upgrade-v1.1.8.sql`**：UPDATE 租户1 六个内置模板追加租户名占位符——tpl_device_offline(sms/wechat)、tpl_device_line(wechat)、tpl_device_recovered(wechat) 用 `{{tenant_name}}`；tpl_order_dispatch(sms/wechat) 用 `{{tenantName}}`。已上云执行。**模板渲染链**：业务→EventCenterService(规则/去重/路由)→NotificationChannelService.dispatch→NotificationTemplateService.render(`\{\{\s*(\w+?)\s*}}` 正则)→ChannelSender，buildVars 注入即全通道生效。租户自定义模板在消息模板页自行加占位符即可。
+* **命名约定（勿混）**：告警链路 buildVars 下划线 `tenant_name`；派单通知 WorkOrderService vars 驼峰 `tenantName`。两处模板占位符必须对应各自风格。
+* **部署验证**：jar 54,000,042 字节 → /opt/nams-server（备份 .bak_v118）→ systemctl restart netsight-server → 健康 UP（第5次）→ SQL_OK → 模板 6 条含占位符确认 → webhook 离线告警（租户1 token 63c50a35b31943b497355daa5b988f2b）→ 事件 2011 接入 → notification_log sms+wechat 两条 content 均渲染 **"租户：NetSight 默认租户"** → 断言 PASS → 测试数据已清理（event/log 回基线）。
+* **版本号冲突（勿重踩）**：`netsight-upgrade-v1.1.8.sql` 文件名曾被 V1.1.8 角色权限绑定（2026-09-15）占用且无本地副本，本轮模板更新覆盖了同名文件（云端角色绑定已执行不受影响，文件头已加注释说明）。后续增量 SQL 建议从 v1.1.9 起编号避免同名覆盖。
+## V1.1.9 告警通知链路修复：PushPlus 风控 + @Async 失效（2026-09-16 已部署 .55 并验证）
+
+* **问题**：用户反馈"增加了租户属性后收不到告警信息"（实际与租户名改造无关）。诊断（SSH 只读检查 .55+.60 全链路）：
+  ① **事件链路正常**：.76/.77（租户7）离线告警事件 2012~2017 全部正常入库；
+  ② **通知失败根因 = PushPlus 平台风控**：notification_log 全部 success=0，错误 "PushPlus 返回异常: 服务端验证错误"，PushPlus 原始响应 `{"code":999,"data":"请勿频繁推送相同内容"}` / `{"code":999,"data":"推送频率过快,请降低推送频率"}`；时间线 09-15 23:34 两台设备持续离线 → 07:20 前推送成功 → 07:26 起 PushPlus 拒收 → 07:31 后全部失败；
+  ③ **放大隐患 = @Async 内部调用失效**：`receiveEvent()` 内直接 `asyncProcess(eventId)` 是同类内部调用，绕过 Spring AOP 代理 → @Async 未生效，**事件处理在 http-nio 线程同步执行**（日志证实），/alert/push 耗时 11s+，.60 网关 "request timed out" 触发缓存补传 → 重复告警堆积 → 加速触发 PushPlus 风控。
+* **修复（EventCenterService.java，无 SQL）**：
+  ① **去重窗口 5 分钟 → 24 小时**（`DEDUP_TTL = Duration.ofHours(24)`）：设备持续离线期间只通知一次，避免周期性重复推送触发第三方通道风控；
+  ② **设备恢复清除去重键**：asyncProcess 处理 `device_recovered` 事件时，按 bizId 删除 `netsight:event:dedup:{bizId}:device_offline` 与 `:device_line_abnormal`，保证"恢复后再离线"能再次通知；
+  ③ **@Async 修复**：注入 `ObjectProvider<EventCenterService> selfProvider`（延迟解析避免循环依赖），receiveEvent 改为 `selfProvider.getObject().asyncProcess(eventId)`，让 /alert/push 立即返回。
+* **部署验证（全 PASS）**：jar 54,000,051 字节 → .55（备份 .bak_v119）→ restart → 健康 UP（第3次）→ 测试 webhook（租户7 token，新 bizId + 不同内容）→ **/alert/push 耗时 0.04s（此前 11s+），响应 200 毫秒级返回** → 事件 2026 入库 → **异步处理在 event-exec-1 线程执行**（此前 http-nio 同步）→ pushplus 通知 success=1（**PushPlus 风控已解除，对新内容放行**）→ 工单自动生成 → 测试数据已清理。
+* **坑（勿重踩）**：① 同类内部调用 this 方法 @Async/@Transactional 注解不生效，必须走 Spring 代理（注入 ObjectProvider 自引用）；② PushPlus 免费 token 对"相同内容频繁推送"有风控（code=999），生产上高频重复告警必须靠云端去重窗口压住，不能依赖 AlertManager repeat_interval；③ 已推送失败的告警同样设置了去重键（setIfAbsent 在发送前），.76/.77 持续离线期间 24h 内不会重复通知（符合预期，用户已知悉离线），设备恢复事件到达后自动清除键，再次离线会重新通知。

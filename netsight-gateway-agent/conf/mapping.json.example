@@ -1,0 +1,36 @@
+{
+  "version": "2026-09-12-v1",
+  "gateway_code": "GW00000001",
+  "devices": [
+    {
+      "deviceCode": "DEV-CORE-SW-01",
+      "deviceName": "核心交换机",
+      "deviceIp": "192.168.10.1",
+      "deviceType": "network",
+      "location": "机房A",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": {
+        "tenant_id": "1",
+        "gateway_code": "GW00000001",
+        "brand": "H3C",
+        "model": "S6850"
+      }
+    },
+    {
+      "deviceCode": "DEV-NVR-01",
+      "deviceName": "视频存储NVR",
+      "deviceIp": "192.168.10.20",
+      "deviceType": "nvr",
+      "location": "机房A",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": {
+        "tenant_id": "1",
+        "gateway_code": "GW00000001",
+        "brand": "海康威视",
+        "model": "DS-9632"
+      }
+    }
+  ]
+}

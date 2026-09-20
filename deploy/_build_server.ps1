@@ -1,0 +1,6 @@
+$ErrorActionPreference = "Stop"
+Set-Location "E:\gitee\NetSight1.0\netsight-server"
+$env:MYSQL_PASSWORD = "Chinaunicom@1358"
+$env:JWT_SECRET = "NetSightDevSecretKey2026ForLocalDevOnly!"
+& "D:\maven\apache-maven-3.6.3\bin\mvn.cmd" -q -DskipTests package *> "E:\gitee\NetSight1.0\deploy\_build_server.log"
+"BUILD_EXIT=$LASTEXITCODE" | Out-File -Append -Encoding utf8 "E:\gitee\NetSight1.0\deploy\_build_server.log"

@@ -1,0 +1,14 @@
+{
+  "version": "2026-09-12-deploy-v1",
+  "note": "probe 探针状态文件：由自研采集探针周期性写入（或运维手工热改模拟），nams-agent 每 30s 读取并上报 /edge/report/status",
+  "devices": [
+    { "deviceCode": "DEV-SW-CORE-01", "up": true,  "lineAbnormal": false },
+    { "deviceCode": "DEV-SW-AGG-01",  "up": true,  "lineAbnormal": false },
+    { "deviceCode": "DEV-SW-AGG-02",  "up": true,  "lineAbnormal": false },
+    { "deviceCode": "DEV-SW-ACC-01",  "up": true,  "lineAbnormal": true },
+    { "deviceCode": "DEV-CAM-01",     "up": true,  "lineAbnormal": false },
+    { "deviceCode": "DEV-CAM-02",     "up": false, "lineAbnormal": false },
+    { "deviceCode": "DEV-NVR-01",     "up": true,  "lineAbnormal": false },
+    { "deviceCode": "DEV-DOR-01",     "up": true,  "lineAbnormal": false }
+  ]
+}

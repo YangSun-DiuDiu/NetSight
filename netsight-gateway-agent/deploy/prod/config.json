@@ -1,0 +1,35 @@
+{
+  "gateway_code": "GW202609110004",
+  "gateway_name": "厂区边缘网关",
+  "mapping_path": "/opt/nams-gateway/conf/mapping.json",
+  "cloud": {
+    "base_url": "http://192.168.1.55",
+    "gateway_token": "e3f2a1b4c5d6e7f8091a2b3c4d5e6f70",
+    "tenant_id": 1,
+    "alert_webhook_token": "63c50a35b31943b497355daa5b988f2b",
+    "heartbeat_interval": 30,
+    "status_interval": 30,
+    "timeout_ms": 5000
+  },
+  "links": [
+    { "type": "wired", "priority": 1, "enabled": true },
+    { "type": "wifi", "priority": 2, "enabled": true },
+    { "type": "4g5g", "priority": 3, "enabled": false }
+  ],
+  "prometheus": {
+    "base_url": "http://127.0.0.1:9090",
+    "query_timeout_ms": 3000,
+    "source": "prometheus",
+    "probe_status_file": "/opt/nams-gateway/data/device_status.json"
+  },
+  "local": {
+    "web_port": 8081,
+    "alert_port": 18080,
+    "sync_interval": 60,
+    "admin": {
+      "username": "admin",
+      "password_hash": "",
+      "force_change_pwd": true
+    }
+  }
+}

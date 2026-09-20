@@ -1,0 +1,36 @@
+/**
+* NetSight 主题色（工业蓝白风 V1.2，参考 WindaEDM 数字化风格）
+* 主色 亮蓝 #205CF5，替代原蓝紫渐变 #6366F1 → #8B5CF6
+**/
+
+/* theme color */
+$--color-primary: #205CF5;
+$--color-success: #10B981;
+$--color-warning: #F59E0B;
+$--color-danger: #EF4444;
+// $--color-info: #1E1E1E;
+
+$--button-font-weight: 400;
+
+// $--color-text-regular: #1f2d3d;
+
+$--border-color-light: #E5E7EB;
+$--border-color-lighter: #EDEFF3;
+
+$--table-border: 1px solid #EEF0F4;
+
+/* 圆角：按钮/输入框 6px、基础 6px（工业风偏直角，比原 8px 更利落） */
+$--button-border-radius: 6px;
+$--input-border-radius: 6px;
+$--border-radius-base: 6px;
+
+/* icon font path, required */
+$--font-path: '~element-ui/lib/theme-chalk/fonts';
+
+@import "~element-ui/packages/theme-chalk/src/index";
+
+// the :export directive is the magic sauce for webpack
+// https://www.bluematador.com/blog/how-to-share-variables-between-js-and-sass
+:export {
+  theme: $--color-primary;
+}

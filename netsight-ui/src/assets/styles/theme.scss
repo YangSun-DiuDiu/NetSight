@@ -1,0 +1,210 @@
+/**
+ * NetSight 全局主题覆盖（V1.2 工业蓝白风，参考 WindaEDM 数字化风格）
+ * 主背景 #F5F6FA / 主色亮蓝 #205CF5 / 顶栏深蓝 #0B2A6B / 表头浅蓝 #EAF0FB
+ * 卡片白底细边框圆角 8px / 主按钮实色 / 表格无竖线 / 输入框聚焦蓝光晕
+ */
+
+/* ===== 主背景 ===== */
+html, body, #app {
+  background-color: #F5F6FA;
+}
+
+.app-main {
+  background-color: #F5F6FA;
+}
+
+.app-container {
+  padding: 20px 24px;
+}
+
+/* 面包屑/页面头 */
+.breadcrumb-container .el-breadcrumb__inner {
+  color: #6B7280;
+}
+
+/* ===== 卡片：白底、细边框、圆角 8px、轻影 ===== */
+.el-card {
+  border-radius: 8px;
+  border: 1px solid #E5E7EB !important;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.04) !important;
+
+  .el-card__header {
+    border-bottom: 1px solid #EEF0F4;
+    font-weight: 600;
+    color: #1F2937;
+  }
+}
+
+/* ===== 按钮：圆角 6px，主按钮主蓝实色 + hover 深蓝 ===== */
+.el-button {
+  border-radius: 6px;
+  transition: all 0.2s ease;
+
+  &.el-button--primary {
+    background: #205CF5;
+    border: none;
+    color: #fff;
+
+    &:hover,
+    &:focus {
+      background: #1A4FD8;
+      color: #fff;
+    }
+
+    /* plain 变体：浅蓝底 + 蓝字 */
+    &.is-plain {
+      background: rgba(32, 92, 245, 0.06);
+      border: 1px solid rgba(32, 92, 245, 0.35);
+      color: #205CF5;
+
+      &:hover,
+      &:focus {
+        background: rgba(32, 92, 245, 0.12);
+        border-color: #205CF5;
+        color: #1A4FD8;
+        box-shadow: none;
+      }
+
+      &.is-disabled {
+        background: rgba(32, 92, 245, 0.05);
+        border-color: rgba(32, 92, 245, 0.2);
+        color: #93B4F5;
+      }
+    }
+
+    &.is-disabled {
+      background: #A9C0F7;
+      color: #fff;
+    }
+  }
+
+  &.el-button--text {
+    color: #205CF5;
+  }
+}
+
+/* ===== 表格：无竖线、hover 浅蓝、表头浅蓝底 ===== */
+.el-table {
+  &::before {
+    background-color: #EEF0F4;
+  }
+
+  th.el-table__cell {
+    background-color: #EAF0FB !important;
+    color: #334155;
+    font-weight: 600;
+  }
+
+  .el-table__cell {
+    border-bottom: 1px solid #EEF0F4;
+  }
+
+  /* 去掉默认竖线分隔 */
+  td.el-table__cell {
+    border-right: none;
+  }
+
+  th.el-table__cell {
+    border-right: none;
+  }
+
+  .el-table__row {
+    transition: background-color 0.2s;
+
+    &:hover > td.el-table__cell {
+      background-color: rgba(32, 92, 245, 0.04) !important;
+    }
+  }
+}
+
+/* ===== 输入框：圆角 6px，聚焦主蓝 + 浅蓝光晕 ===== */
+.el-input__inner,
+.el-textarea__inner {
+  border-radius: 6px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+
+  &:focus {
+    border-color: #205CF5 !important;
+    box-shadow: 0 0 0 3px rgba(32, 92, 245, 0.1);
+  }
+}
+
+.el-select .el-input.is-focus .el-input__inner {
+  border-color: #205CF5 !important;
+  box-shadow: 0 0 0 3px rgba(32, 92, 245, 0.1);
+}
+
+/* ===== 弹窗：圆角 8px ===== */
+.el-dialog {
+  border-radius: 8px;
+
+  .el-dialog__header {
+    border-bottom: 1px solid #EEF0F4;
+    font-weight: 600;
+  }
+
+  .el-dialog__title {
+    color: #0B2A6B;
+    font-weight: 600;
+  }
+}
+
+.el-message-box {
+  border-radius: 8px;
+}
+
+/* ===== 标签：圆角胶囊（语义色保留） ===== */
+.el-tag {
+  border-radius: 16px;
+  border: none;
+}
+
+/* ===== 分页 ===== */
+.el-pagination.is-background .el-pager li:not(.disabled).active {
+  background: #205CF5;
+}
+
+.el-pagination.is-background .el-pager li:not(.disabled):hover {
+  color: #205CF5;
+}
+
+/* ===== 下拉/选项选中色 ===== */
+.el-dropdown-menu__item:not(.is-disabled):hover,
+.el-select-dropdown__item.selected {
+  color: #205CF5;
+}
+
+/* ===== 步骤条/表单校验成功色统一 ===== */
+.el-step__title.is-process {
+  color: #205CF5;
+  font-weight: 600;
+}
+
+.el-step__head.is-process {
+  color: #205CF5;
+  border-color: #205CF5;
+}
+
+/* ===== 开关/单选/复选选中色 ===== */
+.el-switch.is-checked .el-switch__core {
+  background-color: #205CF5;
+  border-color: #205CF5;
+}
+
+.el-radio__input.is-checked .el-radio__inner {
+  background: #205CF5;
+  border-color: #205CF5;
+}
+
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: #205CF5;
+  border-color: #205CF5;
+}
+
+/* ===== 数字等宽（大屏/统计卡更整齐） ===== */
+.stat-num,
+.el-statistic__content,
+.dashboard-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}

@@ -1,0 +1,38 @@
+# NetSight(NAMS) 边缘网关 Prometheus 配置（由 nams-config-generator 生成，勿手改）
+# 生成时间：2026-09-13 16:22:00
+# 覆盖设备数：3
+global:
+  scrape_interval: 15s
+  evaluation_interval: 10s
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['127.0.0.1:9093']
+rule_files:
+  - '/etc/prometheus/rules/nams_device_rules.yml'
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs: [{'targets': ['127.0.0.1:9090']}]
+  - job_name: 'node'
+    static_configs: [{'targets': ['127.0.0.1:9100']}]
+  # 内网设备连通性探测（Prometheus 官方 blackbox_exporter，ICMP）
+  - job_name: 'nams_device_probe'
+    metrics_path: /probe
+    params:
+      module: ['icmp']
+    file_sd_configs:
+      - files:
+          - '/opt/nams-gateway/conf/targets/snmp.json'
+        refresh_interval: 60s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: '127.0.0.1:9115'
+      # 强制覆盖 file_sd 自带 meta（SNMP 预留时 snmp.json 带 /snmp 路径会 404）
+      - target_label: __metrics_path__
+        replacement: '/probe'
+      - target_label: __param_module
+        replacement: 'icmp'

@@ -1,0 +1,35 @@
+# NetSight(NAMS) 设备告警规则与 recording rules（blackbox probe 数据源）
+# 由 nams-config-generator 生成，勿手改；校验：promtool check rules <file>
+groups:
+  - name: nams_device
+    interval: 15s
+    rules:
+      # 规则1：设备离线报警（核心高危告警）
+      - alert: 网络设备离线故障
+        expr: device_up == 0
+        for: 10s
+        labels:
+          severity: critical
+          type: 网络设备故障
+        annotations:
+          summary: "设备{{$labels.device_name}}({{$labels.device_ip}})离线故障"
+          description: "设备部署位置：{{$labels.device_location}}，设备已离线，需立即排查"
+      # 规则2：设备外线异常报警（一般告警）
+      - alert: 设备外线状态异常
+        expr: device_line_abnormal == 1
+        for: 20s
+        labels:
+          severity: warning
+          type: 外线链路异常
+        annotations:
+          summary: "设备{{$labels.device_name}}({{$labels.device_ip}})外线异常"
+          description: "设备外线链路衰减/错包异常，设备在线，建议巡检线路"
+  - name: nams_device_recording
+    interval: 15s
+    rules:
+      # recording: 设备在线状态（probe_success → device_up）
+      - record: device_up
+        expr: probe_success{job="nams_device_probe"}
+      # recording: 外线异常（ICMP RTT 超过阈值 → 1）
+      - record: device_line_abnormal
+        expr: probe_icmp_duration_seconds{job="nams_device_probe",phase="rtt"} > 0.15

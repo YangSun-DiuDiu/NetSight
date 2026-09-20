@@ -1,0 +1,127 @@
+/* ===== NetSight 边缘网关本地管理页（路由器风格）===== */
+:root {
+  --primary: #1e88e5;
+  --primary-dark: #1565c0;
+  --bg: #f2f5f9;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --ok: #10b981;
+  --err: #ef4444;
+  --warn: #f59e0b;
+  --border: #e5e9f0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; background: var(--bg); color: var(--text); }
+
+/* ===== 登录页 ===== */
+.login-body { display: flex; align-items: center; justify-content: center; min-height: 100vh;
+  background: linear-gradient(135deg, #0f3d66 0%, #1565c0 55%, #1e88e5 100%); }
+.login-card { width: 380px; background: var(--card); border-radius: 14px; padding: 36px 32px;
+  box-shadow: 0 12px 40px rgba(9, 30, 66, .35); }
+.login-logo { text-align: center; margin-bottom: 26px; }
+.logo-icon { width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 14px;
+  background: linear-gradient(135deg, #1e88e5, #0f6bd8); color: #fff; font-weight: 700; font-size: 22px;
+  display: flex; align-items: center; justify-content: center; }
+.login-logo h1 { font-size: 20px; }
+.login-logo p { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.form-item { margin-bottom: 16px; }
+.form-item label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.form-item input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 14px; outline: none; transition: border .2s, box-shadow .2s; }
+.form-item input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(30, 136, 229, .15); }
+.msg { font-size: 13px; margin-bottom: 12px; padding: 8px 10px; border-radius: 6px; display: none; }
+.msg.error { background: #fef2f2; color: #b91c1c; }
+.btn-primary { background: linear-gradient(135deg, #1e88e5, #1565c0); color: #fff; border: none;
+  border-radius: 8px; height: 40px; font-size: 15px; cursor: pointer; transition: opacity .2s; }
+.btn-primary:hover { opacity: .9; }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn-block { width: 100%; }
+.login-footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 22px; }
+
+/* ===== 主框架（路由器风格） ===== */
+.app { display: flex; min-height: 100vh; }
+.sidebar { width: 216px; background: #0f2744; color: #cbd5e1; flex-shrink: 0; display: flex; flex-direction: column; }
+.side-logo { padding: 18px 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.side-logo .logo-icon { width: 38px; height: 38px; border-radius: 10px; font-size: 16px; margin: 0 0 8px; }
+.side-logo h2 { font-size: 15px; color: #fff; }
+.side-logo p { font-size: 11px; color: #8ea6c2; margin-top: 2px; }
+.menu { flex: 1; padding: 10px 8px; }
+.menu-title { font-size: 11px; color: #6d87a5; padding: 8px 10px 4px; }
+.menu-item { display: flex; align-items: center; padding: 10px 12px; margin: 2px 0; border-radius: 8px;
+  cursor: pointer; font-size: 14px; transition: background .2s; }
+.menu-item:hover { background: rgba(255,255,255,.08); }
+.menu-item.active { background: linear-gradient(135deg, #1e88e5, #1565c0); color: #fff; }
+.menu-item .ico { width: 20px; margin-right: 8px; text-align: center; }
+.side-foot { padding: 12px 16px; font-size: 11px; color: #6d87a5; border-top: 1px solid rgba(255,255,255,.08); }
+
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.topbar { height: 54px; background: #fff; border-bottom: 1px solid var(--border); display: flex;
+  align-items: center; padding: 0 20px; gap: 16px; }
+.topbar .page-title { font-size: 16px; font-weight: 600; }
+.topbar .spacer { flex: 1; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px;
+  border-radius: 999px; background: var(--bg); color: var(--muted); }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+.dot.ok { background: var(--ok); }
+.dot.err { background: var(--err); }
+.dot.warn { background: var(--warn); }
+.chip.link { background: #e8f1fc; color: var(--primary-dark); }
+
+.content { padding: 20px; overflow: auto; }
+.card { background: var(--card); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, .06); }
+.card h3 { font-size: 14px; margin-bottom: 14px; color: #374151; border-left: 3px solid var(--primary);
+  padding-left: 10px; }
+.grid { display: grid; gap: 14px; }
+.grid.c4 { grid-template-columns: repeat(4, 1fr); }
+.grid.c3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1100px) { .grid.c4 { grid-template-columns: repeat(2, 1fr); } .grid.c3 { grid-template-columns: repeat(2, 1fr); } }
+.stat-card { background: var(--card); border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+.stat-card .label { font-size: 12px; color: var(--muted); }
+.stat-card .value { font-size: 26px; font-weight: 700; margin-top: 6px; }
+.stat-card .value.ok { color: var(--ok); }
+.stat-card .value.err { color: var(--err); }
+.stat-card .value.warn { color: var(--warn); }
+.stat-card .value.blue { color: var(--primary); }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 10px 8px; background: #f7f9fc; color: #6b7280; font-weight: 600;
+  border-bottom: 1px solid var(--border); }
+td { padding: 10px 8px; border-bottom: 1px solid #f0f2f6; }
+tr:hover td { background: #fafcff; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
+.badge.ok { background: #e8faf1; color: #0a7a4d; }
+.badge.err { background: #fef2f2; color: #b91c1c; }
+.badge.warn { background: #fef9e7; color: #a16207; }
+.badge.gray { background: #f1f3f6; color: #6b7280; }
+
+.desc { font-size: 13px; }
+.desc .row { display: flex; padding: 7px 0; border-bottom: 1px dashed #eef1f5; }
+.desc .row:last-child { border-bottom: none; }
+.desc .k { width: 130px; color: var(--muted); flex-shrink: 0; }
+.desc .v { flex: 1; word-break: break-all; }
+
+.log-box { background: #0f172a; color: #a5f3fc; border-radius: 10px; padding: 14px; font-size: 12px;
+  font-family: Consolas, monospace; max-height: 480px; overflow: auto; white-space: pre-wrap; line-height: 1.6; }
+.btn { padding: 7px 16px; border-radius: 8px; border: 1px solid var(--border); background: #fff;
+  font-size: 13px; cursor: pointer; transition: all .2s; }
+.btn:hover { border-color: var(--primary); color: var(--primary); }
+.btn.primary { background: linear-gradient(135deg, #1e88e5, #1565c0); color: #fff; border: none; }
+.btn.primary:hover { opacity: .9; color: #fff; }
+.btn.danger { color: #b91c1c; border-color: #fecaca; }
+.btn.danger:hover { background: #fef2f2; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.dialog-mask { position: fixed; inset: 0; background: rgba(15, 23, 42, .5); display: none;
+  align-items: center; justify-content: center; z-index: 50; }
+.dialog-mask.show { display: flex; }
+.dialog { width: 400px; background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.dialog h3 { font-size: 16px; margin-bottom: 18px; }
+.dialog .form-item input { width: 100%; }
+
+.empty { text-align: center; color: var(--muted); padding: 30px 0; font-size: 13px; }
+.toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 100;
+  padding: 10px 22px; border-radius: 8px; font-size: 13px; color: #fff; display: none; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+.toast.ok { background: #0a7a4d; }
+.toast.err { background: #b91c1c; }

@@ -1,0 +1,12 @@
+{
+  "devices": [
+    { "deviceCode": "DEV-SW-CORE-01", "up": 1, "lineAbnormal": 0 },
+    { "deviceCode": "DEV-SW-AGG-01", "up": 1, "lineAbnormal": 0 },
+    { "deviceCode": "DEV-SW-AGG-02", "up": 1, "lineAbnormal": 0 },
+    { "deviceCode": "DEV-SW-ACC-01", "up": 1, "lineAbnormal": 1 },
+    { "deviceCode": "DEV-CAM-01", "up": 1, "lineAbnormal": 0 },
+    { "deviceCode": "DEV-CAM-02", "up": 0, "lineAbnormal": 0 },
+    { "deviceCode": "DEV-NVR-01", "up": 1, "lineAbnormal": 0 },
+    { "deviceCode": "DEV-DOR-01", "up": 1, "lineAbnormal": 0 }
+  ]
+}

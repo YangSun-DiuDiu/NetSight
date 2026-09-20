@@ -1,0 +1,38 @@
+# ===== 构建产物 =====
+**/target/
+**/dist/
+**/node_modules/
+**/dist.tar.gz
+**/*.jar
+!**/maven-wrapper.jar
+
+# ===== 备份与临时 =====
+backup/
+*.log
+boot.log
+deploy_notice.log
+deploy_notice_err.log
+
+# 临时调试脚本与凭证（不入库）
+_*.py
+_*.json
+_*.txt
+
+# ===== 环境与密钥 =====
+.env
+**/.env
+**/application-local.yml
+**/application-local.yaml
+
+# ===== IDE / OS =====
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ===== 网关 agent 构建 =====
+netsight-gateway-agent/target/
+netsight-gateway-agent/*.jar
+netsight-gateway-agent/deploy/*.tar.gz
+netsight-gateway-agent/deploy/*.zip

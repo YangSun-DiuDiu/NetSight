@@ -1,0 +1,11 @@
+# NetSight(NAMS) blackbox_exporter 探测模块配置
+# 当前生产使用 icmp 模块探测所有设备连通性；tcp_connect 预留
+modules:
+  icmp:
+    prober: icmp
+    timeout: 5s
+    icmp:
+      preferred_ip_protocol: ip4
+  tcp_connect:
+    prober: tcp
+    timeout: 5s

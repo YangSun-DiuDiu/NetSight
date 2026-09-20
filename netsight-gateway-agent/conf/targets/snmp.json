@@ -1,0 +1,31 @@
+[ {
+  "targets" : [ "192.168.10.1:161" ],
+  "labels" : {
+    "tenant_id" : "1",
+    "gateway_code" : "GW00000001",
+    "brand" : "H3C",
+    "model" : "S6850",
+    "device_code" : "DEV-CORE-SW-01",
+    "device_name" : "核心交换机",
+    "device_ip" : "192.168.10.1",
+    "device_type" : "network",
+    "device_location" : "机房A",
+    "__metrics_path__" : "/snmp",
+    "__param_module" : "netsight_if_mib"
+  }
+}, {
+  "targets" : [ "192.168.10.20:161" ],
+  "labels" : {
+    "tenant_id" : "1",
+    "gateway_code" : "GW00000001",
+    "brand" : "海康威视",
+    "model" : "DS-9632",
+    "device_code" : "DEV-NVR-01",
+    "device_name" : "视频存储NVR",
+    "device_ip" : "192.168.10.20",
+    "device_type" : "nvr",
+    "device_location" : "机房A",
+    "__metrics_path__" : "/snmp",
+    "__param_module" : "netsight_if_mib"
+  }
+} ]

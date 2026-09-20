@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetSight 边缘网关管理</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-icon">NS</div>
+      <h1>NetSight 边缘网关</h1>
+      <p>本地管理控制台 · 仅内网访问</p>
+    </div>
+    <form id="loginForm" onsubmit="return doLogin(event)">
+      <div class="form-item">
+        <label>用户名</label>
+        <input type="text" id="username" value="admin" autocomplete="username" required>
+      </div>
+      <div class="form-item">
+        <label>密码</label>
+        <input type="password" id="password" autocomplete="current-password" required>
+      </div>
+      <div id="loginMsg" class="msg error" style="display:none"></div>
+      <button type="submit" class="btn-primary btn-block" id="loginBtn">登 录</button>
+    </form>
+    <div class="login-footer">NetSight nams-agent · 路由器风格本地管理页</div>
+  </div>
+  <script>
+    async function doLogin(e) {
+      e.preventDefault();
+      var msg = document.getElementById('loginMsg');
+      var btn = document.getElementById('loginBtn');
+      msg.style.display = 'none';
+      btn.disabled = true;
+      try {
+        var resp = await fetch('/local/api/login', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({username: document.getElementById('username').value,
+                                 password: document.getElementById('password').value})
+        });
+        var data = await resp.json();
+        if (data.code === 200) {
+          location.href = '/index.html';
+        } else {
+          msg.textContent = data.msg || '登录失败';
+          msg.style.display = 'block';
+        }
+      } catch (err) {
+        msg.textContent = '网络错误: ' + err.message;
+        msg.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+      }
+      return false;
+    }
+  </script>
+</body>
+</html>

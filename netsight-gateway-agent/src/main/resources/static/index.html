@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetSight 边缘网关管理</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <div class="app">
+    <!-- 左侧分区菜单（路由器风格） -->
+    <aside class="sidebar">
+      <div class="side-logo">
+        <div class="logo-icon">NS</div>
+        <h2>NetSight 网关</h2>
+        <p id="gatewayName">边缘网关</p>
+      </div>
+      <nav class="menu">
+        <div class="menu-title">运行状态</div>
+        <div class="menu-item active" data-page="overview"><span class="ico">📊</span>状态总览</div>
+        <div class="menu-title">配置管理</div>
+        <div class="menu-item" data-page="devices"><span class="ico">🖥️</span>设备采集</div>
+        <div class="menu-item" data-page="links"><span class="ico">🔗</span>链路设置</div>
+        <div class="menu-item" data-page="cloud"><span class="ico">☁️</span>云端设置</div>
+        <div class="menu-title">系统</div>
+        <div class="menu-item" data-page="system"><span class="ico">⚙️</span>系统</div>
+      </nav>
+      <div class="side-foot">nams-agent · Java 版</div>
+    </aside>
+
+    <!-- 主区域 -->
+    <div class="main">
+      <header class="topbar">
+        <span class="page-title" id="pageTitle">状态总览</span>
+        <span class="spacer"></span>
+        <span class="chip"><span class="dot" id="cloudDot"></span><span id="cloudText">云端检测中</span></span>
+        <span class="chip link">链路：<span id="linkText">-</span></span>
+        <span class="chip"><span id="verText">v1.0.0</span></span>
+        <button class="btn" onclick="doLogout()">退出</button>
+      </header>
+
+      <div class="content">
+        <!-- 状态总览 -->
+        <div class="page" id="page-overview">
+          <div class="grid c4">
+            <div class="stat-card"><div class="label">设备总数</div><div class="value blue" id="devTotal">0</div></div>
+            <div class="stat-card"><div class="label">在线</div><div class="value ok" id="devOnline">0</div></div>
+            <div class="stat-card"><div class="label">离线</div><div class="value err" id="devOffline">0</div></div>
+            <div class="stat-card"><div class="label">链路异常</div><div class="value warn" id="devLine">0</div></div>
+          </div>
+          <div class="grid c3">
+            <div class="card"><h3>网关信息</h3><div class="desc" id="gwDesc"></div></div>
+            <div class="card"><h3>上报统计</h3><div class="desc" id="statDesc"></div></div>
+            <div class="card"><h3>云端连接</h3><div class="desc" id="cloudDesc"></div></div>
+          </div>
+          <div class="card"><h3>清单同步</h3><div class="desc" id="syncDesc"></div></div>
+        </div>
+
+        <!-- 设备采集 -->
+        <div class="page" id="page-devices" style="display:none">
+          <div class="card">
+            <h3>纳管设备（映射清单）</h3>
+            <div style="margin-bottom:12px">
+              <button class="btn primary" onclick="doSync()">手动同步清单</button>
+              <span id="syncResult" style="margin-left:10px;font-size:12px;color:#6b7280"></span>
+            </div>
+            <table>
+              <thead><tr><th>设备编码</th><th>名称</th><th>IP</th><th>类型</th><th>采集方式</th><th>状态</th><th>最近采集</th></tr></thead>
+              <tbody id="devTable"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 链路设置 -->
+        <div class="page" id="page-links" style="display:none">
+          <div class="card"><h3>多链路配置（只读，云端/配置文件管理）</h3>
+            <table>
+              <thead><tr><th>链路类型</th><th>优先级</th><th>状态</th></tr></thead>
+              <tbody id="linkTable"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 云端设置 -->
+        <div class="page" id="page-cloud" style="display:none">
+          <div class="card"><h3>云端连接配置</h3><div class="desc" id="cloudCfg"></div></div>
+        </div>
+
+        <!-- 系统 -->
+        <div class="page" id="page-system" style="display:none">
+          <div class="card">
+            <h3>操作</h3>
+            <div style="display:flex;gap:10px">
+              <button class="btn primary" onclick="doReloadCfg()">重新加载配置</button>
+              <button class="btn" onclick="loadLogs()">刷新日志</button>
+              <button class="btn danger" onclick="doRestart()">重启服务</button>
+              <button class="btn" onclick="showPwdDialog()">修改本地密码</button>
+            </div>
+          </div>
+          <div class="card"><h3>运行日志（尾部）</h3><div class="log-box" id="logBox">加载中…</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 强制改密对话框 -->
+  <div class="dialog-mask" id="pwdMask">
+    <div class="dialog">
+      <h3 id="pwdTitle">修改本地管理员密码</h3>
+      <div class="form-item"><label>旧密码</label><input type="password" id="oldPwd"></div>
+      <div class="form-item"><label>新密码（至少 8 位）</label><input type="password" id="newPwd"></div>
+      <div class="form-item"><label>确认新密码</label><input type="password" id="newPwd2"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button class="btn" id="pwdCancel" onclick="hidePwdDialog()">取消</button>
+        <button class="btn primary" onclick="doChangePwd()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

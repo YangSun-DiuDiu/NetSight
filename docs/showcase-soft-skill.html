@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soft Skill — High-End Visual Design Language</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#050505;
+    --ink:#FAFAFA;
+    --ink-2:rgba(250,250,250,.62);
+    --ink-3:rgba(250,250,250,.38);
+    --hairline:rgba(255,255,255,.10);
+    --card-core:#0D0D10;
+    --accent:#A78BFA;
+    --accent-2:#34D399;
+    --ease-spring:cubic-bezier(.32,.72,0,1);
+    --ease-out:cubic-bezier(.22,1,.36,1);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Plus Jakarta Sans','Segoe UI','Microsoft YaHei',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  .display{font-family:'Space Grotesk','Segoe UI',sans-serif;letter-spacing:-.02em}
+
+  /* ---- 背景氛围：径向光晕 + 细噪点（仅 fixed，不随滚动） ---- */
+  .aura{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .aura::before,.aura::after{content:"";position:absolute;border-radius:50%;filter:blur(90px);will-change:transform}
+  .aura::before{width:640px;height:640px;top:-220px;right:-120px;background:radial-gradient(circle,rgba(167,139,250,.22),transparent 65%);animation:drift 16s var(--ease-out) infinite alternate}
+  .aura::after{width:560px;height:560px;bottom:-200px;left:-160px;background:radial-gradient(circle,rgba(52,211,153,.14),transparent 65%);animation:drift 20s var(--ease-out) infinite alternate-reverse}
+  @keyframes drift{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(40px,30px,0) scale(1.08)}}
+  .grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.028;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+  /* ---- 浮动玻璃 pill 导航（Fluid Island Nav） ---- */
+  .nav-wrap{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:center;padding-top:24px}
+  .nav{
+    display:flex;align-items:center;gap:28px;
+    padding:10px 12px 10px 22px;
+    border-radius:999px;
+    background:rgba(10,10,12,.55);
+    backdrop-filter:blur(24px);
+    -webkit-backdrop-filter:blur(24px);
+    border:1px solid var(--hairline);
+    box-shadow:0 24px 60px rgba(0,0,0,.5);
+  }
+  .nav .brand{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;letter-spacing:.02em;display:flex;align-items:center;gap:9px}
+  .nav .brand i{width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 14px rgba(167,139,250,.8)}
+  .nav a{color:var(--ink-2);font-size:13px;text-decoration:none;font-weight:500;transition:color .4s var(--ease-spring)}
+  .nav a:hover{color:var(--ink)}
+  .nav .pill{
+    display:inline-flex;align-items:center;gap:8px;
+    border-radius:999px;padding:8px 18px;
+    background:var(--ink);color:#0A0A0C;font-weight:600;font-size:13px;
+    transition:transform .45s var(--ease-spring),box-shadow .45s var(--ease-spring);
+  }
+  .nav .pill:active{transform:scale(.97)}
+
+  /* ---- 通用容器 ---- */
+  .wrap{position:relative;z-index:2;max-width:1180px;margin:0 auto;padding:0 24px}
+
+  /* ---- Hero：巨大标题 + 大留白 ---- */
+  .hero{padding:210px 0 96px}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    border-radius:999px;padding:7px 16px;
+    border:1px solid var(--hairline);
+    background:rgba(255,255,255,.04);
+    font-size:10px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-3);
+    margin-bottom:34px;
+  }
+  .eyebrow i{width:5px;height:5px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 10px rgba(52,211,153,.9)}
+  h1.display{
+    font-size:clamp(52px,8.2vw,104px);line-height:.98;font-weight:700;color:var(--ink);
+  }
+  h1 .grad{background:linear-gradient(100deg,#C4B5FD 0%,#6EE7B7 90%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{margin-top:32px;max-width:520px;color:var(--ink-2);font-size:17px;line-height:1.8;font-weight:400}
+  .hero-cta{display:flex;align-items:center;gap:16px;margin-top:48px;flex-wrap:wrap}
+
+  /* ---- 磁吸按钮：Button-in-Button ---- */
+  .btn{
+    display:inline-flex;align-items:center;gap:16px;
+    border-radius:999px;padding:15px 16px 15px 28px;
+    font-size:15px;font-weight:600;color:#0A0A0C;background:var(--ink);
+    border:none;cursor:pointer;text-decoration:none;
+    transition:transform .5s var(--ease-spring),box-shadow .5s var(--ease-spring),background .5s var(--ease-spring);
+    box-shadow:0 18px 44px rgba(250,250,250,.16);
+  }
+  .btn:active{transform:scale(.98)}
+  .btn:hover{box-shadow:0 22px 56px rgba(250,250,250,.24)}
+  .btn .arrow{
+    width:34px;height:34px;border-radius:50%;
+    background:#0A0A0C;color:#FAFAFA;
+    display:inline-flex;align-items:center;justify-content:center;
+    transition:transform .5s var(--ease-spring);
+  }
+  .btn:hover .arrow{transform:translate(3px,-2px) scale(1.06)}
+  .btn-ghost{
+    display:inline-flex;align-items:center;gap:10px;
+    border-radius:999px;padding:15px 28px;
+    font-size:15px;font-weight:500;color:var(--ink-2);
+    background:transparent;border:1px solid var(--hairline);cursor:pointer;text-decoration:none;
+    transition:all .5s var(--ease-spring);
+  }
+  .btn-ghost:hover{color:var(--ink);border-color:rgba(255,255,255,.28);background:rgba(255,255,255,.04)}
+
+  /* ---- 双边框嵌套 Bento 卡片（Double-Bezel） ---- */
+  .shell{background:rgba(255,255,255,.04);border:1px solid var(--hairline);padding:2px;border-radius:30px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+  .core{
+    background:var(--card-core);border-radius:28px;padding:30px;height:100%;
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.07);
+  }
+  .section{padding:110px 0}
+  .sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:40px;margin-bottom:64px}
+  .sec-kicker{font-size:10px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:var(--accent);margin-bottom:16px}
+  .sec-title{font-size:clamp(30px,4.4vw,52px);font-weight:700;line-height:1.05}
+  .sec-note{max-width:380px;color:var(--ink-3);font-size:13px;line-height:1.7;text-align:right}
+
+  .bento{display:grid;grid-template-columns:repeat(12,1fr);gap:22px}
+  .b1{grid-column:span 8;grid-row:span 2}
+  .b2{grid-column:span 4}
+  .b3{grid-column:span 4}
+  .b4{grid-column:span 4}
+  .b5{grid-column:span 8}
+  @media(max-width:900px){.bento{grid-template-columns:1fr}.b1,.b2,.b3,.b4,.b5{grid-column:span 1;grid-row:auto}}
+
+  .core h3{font-family:'Space Grotesk',sans-serif;font-size:21px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:12px}
+  .core h3 .ico{
+    width:38px;height:38px;border-radius:12px;flex:none;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.06);border:1px solid var(--hairline);
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.06);
+  }
+  .core h3 .ico svg{stroke:#C4B5FD}
+  .core p{margin-top:14px;color:var(--ink-2);font-size:14px;line-height:1.85}
+  .core .tag{display:inline-flex;margin-top:22px;font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
+
+  /* 卡内示例：迷你双边框 */
+  .demo-inner{margin-top:24px;background:rgba(255,255,255,.03);border:1px solid var(--hairline);border-radius:20px;padding:2px}
+  .demo-inner .in{background:#0B0B0E;border-radius:18px;padding:18px 20px;box-shadow:inset 0 1px 1px rgba(255,255,255,.06);display:flex;align-items:center;gap:14px}
+  .demo-inner .in .dot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 16px rgba(167,139,250,.7);flex:none}
+  .demo-inner .in b{font-size:14px;font-weight:600;display:block}
+  .demo-inner .in span{font-size:12px;color:var(--ink-3);display:block;margin-top:3px}
+
+  /* 按钮家族展示 */
+  .btn-family{display:flex;align-items:center;gap:14px;margin-top:22px;flex-wrap:wrap}
+  .btn-sm{padding:11px 12px 11px 22px;font-size:13px}
+  .btn-sm .arrow{width:28px;height:28px}
+
+  /* 排版展示 */
+  .type-rows{display:grid;gap:6px}
+  .type-row{display:flex;align-items:baseline;gap:26px;padding:18px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+  .type-row:last-child{border-bottom:none}
+  .type-row .lbl{font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);width:120px;flex:none}
+  .type-row .smpl{color:var(--ink)}
+
+  /* 微交互三卡 */
+  .motion-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  @media(max-width:900px){.motion-grid{grid-template-columns:1fr}}
+  .curve{height:64px;margin-top:18px;border-bottom:1px solid var(--hairline);border-left:1px solid var(--hairline)}
+  .curve svg{width:100%;height:100%}
+
+  footer{padding:70px 0 110px;border-top:1px solid rgba(255,255,255,.06);margin-top:40px}
+  .foot{display:flex;justify-content:space-between;align-items:center;color:var(--ink-3);font-size:13px;gap:20px;flex-wrap:wrap}
+
+  /* 入场（视口内即可见，不依赖 JS 动画帧） */
+  .reveal{opacity:1}
+</style>
+</head>
+<body>
+  <div class="aura"></div>
+  <div class="grain"></div>
+
+  <!-- 浮动玻璃导航 -->
+  <div class="nav-wrap">
+    <nav class="nav">
+      <span class="brand"><i></i>Soft Skill</span>
+      <a href="#type">Typography</a>
+      <a href="#com">Components</a>
+      <a href="#motion">Motion</a>
+      <a class="pill" href="#com">Explore <span style="font-size:15px">↗</span></a>
+    </nav>
+  </div>
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="wrap">
+      <span class="eyebrow"><i></i>High-End Visual Design Language</span>
+      <h1 class="display">高级感，<br>是<span class="grad">一种精确的克制</span>。</h1>
+      <p class="hero-sub">双边框嵌套架构、磁吸按钮物理、流体动效编排与宏大的留白纪律——把「昂贵」编码成一套可执行的规则。这是 Soft Skill（high-end-visual-design）的设计语言展示。</p>
+      <div class="hero-cta">
+        <a class="btn" href="#com">探索设计语言<span class="arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></span></a>
+        <a class="btn-ghost" href="#type">查看排版</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Typography -->
+  <section class="section" id="type">
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <div class="sec-kicker">01 — Typography</div>
+          <h2 class="sec-title display">字体排印，<br>是性格的载体。</h2>
+        </div>
+        <p class="sec-note">Display 使用几何 Grotesk 家族（Space Grotesk），正文使用 Plus Jakarta Sans。禁用 Inter / Roboto / Arial 等模板默认字体。</p>
+      </div>
+      <div class="shell"><div class="core" style="padding:34px 36px">
+        <div class="type-rows">
+          <div class="type-row"><span class="lbl">Display XL</span><span class="smpl display" style="font-size:56px;font-weight:700">让界面呼吸 72px</span></div>
+          <div class="type-row"><span class="lbl">Heading</span><span class="smpl display" style="font-size:30px;font-weight:600">克制的字重与负字距</span></div>
+          <div class="type-row"><span class="lbl">Body</span><span class="smpl" style="font-size:16px;color:var(--ink-2)">正文以舒适的行高与低对比度呈现，克制而清晰，不喧宾夺主。</span></div>
+          <div class="type-row"><span class="lbl">Label</span><span class="smpl" style="font-size:10px;font-weight:600;letter-spacing:.26em;text-transform:uppercase;color:var(--ink-3)">Uppercase · Tracking 0.26em · 10px</span></div>
+        </div>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- Components: Double-Bezel Bento -->
+  <section class="section" id="com" style="padding-top:20px">
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <div class="sec-kicker">02 — Components</div>
+          <h2 class="sec-title display">双边框嵌套，<br>如玻璃置于托盘。</h2>
+        </div>
+        <p class="sec-note">所有卡片均采用「外壳 + 内芯」双层嵌套：外壳半透明发丝线，内芯独立底色与内高光，超大圆角同心收束。</p>
+      </div>
+      <div class="bento">
+        <div class="b1 shell"><div class="core">
+          <h3><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="7"/><rect x="8" y="8" width="8" height="8" rx="3.5" fill="rgba(255,255,255,.04)"/></svg></span>Double-Bezel 嵌套架构</h3>
+          <p>外壳：`bg-white/4` 半透明底 + `ring-white/10` 发丝线 + 2px 内衬 + `rounded-30`。内芯：独立 `#0D0D10` 底色 + `inset 0 1px 1px` 内高光 + 同心圆角。任何卡片、输入框、特征网格都不允许平铺在背景上。</p>
+          <div class="demo-inner"><div class="in"><span class="dot"></span><div><b>嵌套示例</b><span>Outer Shell → Inner Core，双层同心圆角</span></div></div></div>
+          <span class="tag">Doppelrand · 同心曲线</span>
+        </div></div>
+
+        <div class="b2 shell"><div class="core">
+          <h3><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2.8 2.8M16.2 16.2L19 19M19 5l-2.8 2.8M7.8 16.2L5 19"/><circle cx="12" cy="12" r="3.2"/></svg></span>磁吸按钮物理</h3>
+          <p>按钮整体按压缩放 `scale(.98)`，内嵌箭头圆环斜向位移放大，形成内部动能张力。过渡一律使用自定义 cubic-bezier，拒绝 linear。</p>
+          <div class="btn-family">
+            <a class="btn btn-sm" href="#" style="pointer-events:none">立即体验<span class="arrow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></span></a>
+            <a class="btn-ghost" href="#" style="pointer-events:none;padding:11px 22px;font-size:13px">次级动作</a>
+          </div>
+          <span class="tag">Button-in-Button · Pill</span>
+        </div></div>
+
+        <div class="b3 shell"><div class="core">
+          <h3><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span>细线图标语言</h3>
+          <p>仅使用超细描边（1.4px）、精确线条的线性图标（Phosphor Light / Remix Line 风格），内联 SVG 渲染，拒绝粗体图标库。</p>
+          <span class="tag">Ultra-Light Stroke</span>
+        </div></div>
+
+        <div class="b4 shell"><div class="core">
+          <h3><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg></span>宏大留白纪律</h3>
+          <p>区块留白 `py-110 ~ py-150`，宏观留白加倍。标题前置 10px 微型胶囊徽标，字号追踪 0.24em。</p>
+          <span class="tag">Macro-Whitespace · py-110</span>
+        </div></div>
+
+        <div class="b5 shell"><div class="core" style="display:flex;flex-direction:column;justify-content:center">
+          <h3 style="font-size:24px"><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h3l2.5-6 4 12 3-9 2 3h5.5"/></svg></span>「昂贵」是可执行的规则</h3>
+          <p style="max-width:640px">从字体、图标、边框、阴影到动效曲线，每一个「廉价默认值」都被显式封禁；每一处细节都被编码为可复用的架构模式。最终整体观感是 15 万美元级代理作品，而非「套了漂亮字体的模板」。</p>
+          <div style="display:flex;gap:10px;margin-top:26px;flex-wrap:wrap">
+            <span style="font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);border:1px solid var(--hairline);border-radius:999px;padding:8px 16px">No Inter · No Roboto</span>
+            <span style="font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);border:1px solid var(--hairline);border-radius:999px;padding:8px 16px">No 1px Gray Border</span>
+            <span style="font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);border:1px solid var(--hairline);border-radius:999px;padding:8px 16px">No Linear Easing</span>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Motion -->
+  <section class="section" id="motion" style="padding-top:20px">
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <div class="sec-kicker">03 — Motion</div>
+          <h2 class="sec-title display">流体动效，<br>模拟真实物理。</h2>
+        </div>
+        <p class="sec-note">所有过渡使用自定义 cubic-bezier 质量弹簧曲线；只动 transform / opacity；blur 仅用于 fixed/sticky 元素。</p>
+      </div>
+      <div class="motion-grid">
+        <div class="shell"><div class="core">
+          <h3><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6c6 0 10 12 16 12"/><path d="M4 6h3M4 6v3"/></svg></span>质量弹簧曲线</h3>
+          <p>默认 `cubic-bezier(.32,.72,0,1)`，接近真实世界的质量与弹簧物理，拒绝 linear / ease-in-out。</p>
+          <div class="curve"><svg viewBox="0 0 200 64" preserveAspectRatio="none"><path d="M0 60 C 40 60 70 8 200 4" fill="none" stroke="#A78BFA" stroke-width="2"/></svg></div>
+        </div></div>
+        <div class="shell"><div class="core">
+          <h3><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="6"/><path d="M9 12l2.2 2.2L15.5 10"/></svg></span>交错遮罩展开</h3>
+          <p>导航展开时，链接逐条从隐形盒子中淡入上滑（`translate-y-12 → 0`），每项 100ms 级差错峰。</p>
+        </div></div>
+        <div class="shell"><div class="core">
+          <h3><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l2-5 4 12 3-9 2 4h4"/></svg></span>滚动重模糊淡入</h3>
+          <p>元素进入视口执行 800ms+ 的重度淡入（位移 + 模糊衰减），由 IntersectionObserver 驱动，绝不用 scroll 监听。</p>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap foot">
+      <span>Designed with <strong style="color:var(--ink-2);font-weight:600">Soft Skill</strong> · Vanguard UI Architect</span>
+      <span>Anti-Slop · Premium · 2026</span>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,18 @@
+[
+  {"sheet_name":"使用说明","range":"B2:B8","cells":[
+    [{"value":"业务部署阶段，实施/运维人员按本表收集每台被监控设备的原始信息，作为「业务系统录入」与「边缘网关配置文件生成」的唯一依据。填完运行 nams-config-generator Skill 一键生成网关配置，同时由管理员录入 NetSight 业务系统。"}],
+    [{"value":"① 先填《边缘网关部署信息表》→ ② 再填《设备主数据收集表》（每台设备一行）→ ③ 按设备一一对应填《采集配置收集表》→ ④ 《指标模板参考表》仅供选择采集方式/模板参考，无需填写。"}],
+    [{"value":"业务系统以「设备编码 device_code」为设备唯一键；边缘网关 Prometheus 以「管理IP」为采集目标（instance），经 targets 清单向指标注入 device_code/device_ip/device_name/device_location 等标签；告警触发后经 AlertManager webhook 上报云端，云端按 device_code（兜底 device_ip）反查归属设备，形成「录入→采集→告警→归属」闭环。"}],
+    [{"value":"标 * 的字段必填；设备编码必填且全系统唯一（建议按 DEV-前缀+设备类型+序号规划）；管理IP地址全系统唯一，不可与其它设备重复。"}],
+    [{"value":"采集方式枚举：icmp（默认，blackbox ICMP 连通性探测，适用全部内网设备）→ 当前生产；snmp（网络设备，预留）；video_probe（摄像头/NVR，预留）；tcp_connect（端口探测，预留）。配置文件由 nams-config-generator Skill 按本表自动生成，设备增删改后重新生成下发即可。"}],
+    [{"value":"配置下发后，Prometheus targets 应在 60s 内刷新；《采集配置收集表》的「部署后探测结果」列由实施人员回填（成功/失败+原因），全部成功即视为设备接入完成。"}],
+    [{"value":"本表含 SNMP 团体名、v3 认证/加密密码、视频/门禁账号密码、Webhook Token 等敏感信息，收集与传递过程须遵守项目保密要求，录入系统后不落明文日志。"}]
+  ]},
+  {"sheet_name":"设备主数据收集表","range":"B1","cells":[[{"value":"设备编码*"}]]},
+  {"sheet_name":"设备主数据收集表","range":"B2:B4","cells":[[{"value":"DEV-SW-CORE-01"}],[{"value":"DEV-SW-ACC-01"}],[{"value":"DEV-CAM-01"}]]},
+  {"sheet_name":"采集配置收集表","range":"A2:A4","cells":[[{"value":"DEV-SW-CORE-01"}],[{"value":"DEV-SW-ACC-01"}],[{"value":"DEV-CAM-01"}]]},
+  {"sheet_name":"采集配置收集表","range":"D2:D4","cells":[[{"value":"icmp"}],[{"value":"icmp"}],[{"value":"icmp"}]]},
+  {"sheet_name":"采集配置收集表","range":"N2:N4","cells":[[{"value":"连通性模板(icmp)"}],[{"value":"连通性模板(icmp)"}],[{"value":"连通性模板(icmp)"}]]},
+  {"sheet_name":"边缘网关部署信息表","range":"O1:P1","cells":[[{"value":"云端WebhookToken(系统生成回填)"},{"value":"租户ID"}]]},
+  {"sheet_name":"边缘网关部署信息表","range":"O2:P2","cells":[[{"value":"系统生成回填"},{"value":1}]]}
+]

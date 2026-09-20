@@ -1,0 +1,86 @@
+{
+  "version": "2026-09-12-deploy-v1",
+  "gateway_code": "GW202609110004",
+  "devices": [
+    {
+      "deviceCode": "DEV-SW-CORE-01",
+      "deviceName": "核心交换机",
+      "deviceIp": "192.168.1.1",
+      "deviceType": "network",
+      "location": "厂区机房A区",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "H3C", "model": "S7510E" }
+    },
+    {
+      "deviceCode": "DEV-SW-AGG-01",
+      "deviceName": "汇聚交换机A",
+      "deviceIp": "192.168.1.2",
+      "deviceType": "network",
+      "location": "厂区机房A区",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "华为", "model": "S6730" }
+    },
+    {
+      "deviceCode": "DEV-SW-AGG-02",
+      "deviceName": "汇聚交换机B",
+      "deviceIp": "192.168.1.3",
+      "deviceType": "network",
+      "location": "厂区机房B区",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "华为", "model": "S5735" }
+    },
+    {
+      "deviceCode": "DEV-SW-ACC-01",
+      "deviceName": "接入交换机",
+      "deviceIp": "192.168.1.10",
+      "deviceType": "network",
+      "location": "车间一层弱电间",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "华为", "model": "S1730S" }
+    },
+    {
+      "deviceCode": "DEV-CAM-01",
+      "deviceName": "车间球机",
+      "deviceIp": "192.168.1.20",
+      "deviceType": "camera",
+      "location": "车间一层东南角",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "海康威视", "model": "DS-2DC4423" }
+    },
+    {
+      "deviceCode": "DEV-CAM-02",
+      "deviceName": "车间枪机",
+      "deviceIp": "192.168.1.21",
+      "deviceType": "camera",
+      "location": "车间一层西侧",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "大华", "model": "DH-IPC-HFW" }
+    },
+    {
+      "deviceCode": "DEV-NVR-01",
+      "deviceName": "NVR录像机",
+      "deviceIp": "192.168.1.30",
+      "deviceType": "nvr",
+      "location": "厂区机房A区",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "海康威视", "model": "DS-9632" }
+    },
+    {
+      "deviceCode": "DEV-DOR-01",
+      "deviceName": "门禁控制器",
+      "deviceIp": "192.168.1.40",
+      "deviceType": "door_controller",
+      "location": "车间一层北门",
+      "collectType": "snmp",
+      "collectPort": 161,
+      "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "中控智慧", "model": "inBioX" }
+    }
+  ]
+}

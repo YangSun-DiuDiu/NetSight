@@ -171,9 +171,40 @@ aside {
 .filter-container {
   padding-bottom: 10px;
 
-  .filter-item {
-    display: inline-block;
+  .filter-item {    display: inline-block;
     vertical-align: middle;
     margin-bottom: 10px;
   }
 }
+
+/* ===== 统一统计卡片（V1.3 全站通用） ===== */
+.stat-row { margin-bottom: 16px; }
+.stat-card {
+  display: flex; align-items: center; background: #fff; border-radius: 8px;
+  padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.04);
+}
+.stat-icon {
+  width: 44px; height: 44px; border-radius: 10px; display: flex;
+  align-items: center; justify-content: center; font-size: 22px;
+  margin-right: 12px; flex-shrink: 0;
+}
+.stat-info { flex: 1; }
+.stat-num { font-size: 22px; font-weight: 600; color: #1F2937; line-height: 1.2; }
+.stat-label { font-size: 13px; color: #6B7280; margin-top: 2px; }
+
+/* ===== 统一表格（V1.4 全站通用，新增页面必遵守） ===== */
+/* 表头标题统一居中 */
+.el-table th { padding: 9px 0; }
+.el-table th .cell { text-align: center; font-weight: 600; color: #1F2937; }
+/* 表格单元垂直居中、行高统一 */
+.el-table td, .el-table th { padding: 8px 0; }
+.el-table .cell { line-height: 20px; }
+/* 操作列按钮统一间距（配合 small-padding fixed-width） */
+.el-table .small-padding .cell { padding-left: 6px; padding-right: 6px; }
+.el-table .fixed-width .el-button {
+  margin: 0 2px;
+}
+.el-table .fixed-width .el-button + .el-button {
+  margin-left: 0;
+}
+

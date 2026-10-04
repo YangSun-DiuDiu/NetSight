@@ -26,7 +26,9 @@ public class ChannelRegistry {
      */
     public ChannelRegistry(List<NotificationChannelSender> senders) {
         for (NotificationChannelSender sender : senders) {
+            // Map.put(key,value)：放入新sender，返回值是【该key原来对应的旧值】
             NotificationChannelSender exist = channelMap.put(sender.getChannelType(), sender);
+            // exist != null：代表这个channelType之前已经注册过
             if (exist != null) {
                 log.warn("通道类型重复注册: {}，已覆盖为 {}", sender.getChannelType(), sender.getClass().getSimpleName());
             }

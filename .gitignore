@@ -36,3 +36,10 @@ netsight-gateway-agent/target/
 netsight-gateway-agent/*.jar
 netsight-gateway-agent/deploy/*.tar.gz
 netsight-gateway-agent/deploy/*.zip
+
+# ===== SDK 与临时调试 =====
+sdk/
+netsight-server/deploy/
+_*.sql
+deploy_temp.py
+verify_temp.py

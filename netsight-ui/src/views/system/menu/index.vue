@@ -48,8 +48,7 @@
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table
-      v-if="refreshTable"
+    <el-table border       v-if="refreshTable"
       v-loading="loading"
       :data="menuList"
       row-key="menuId"
@@ -67,7 +66,7 @@
       <el-table-column prop="component" label="组件路径" :show-overflow-tooltip="true"></el-table-column>
       <el-table-column prop="status" label="状态" width="80">
         <template slot-scope="scope">
-          <dict-tag :options="dict.type.sys_normal_disable" :value="scope.row.status"/>
+          <dict-tag size="mini" :options="dict.type.sys_normal_disable" :value="scope.row.status"/>
         </template>
       </el-table-column>
       <el-table-column label="创建时间" align="center" prop="createTime">
@@ -75,7 +74,7 @@
           <span>{{ parseTime(scope.row.createTime) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button
             size="mini"
@@ -96,8 +95,7 @@
             type="text"
             icon="el-icon-delete"
             @click="handleDelete(scope.row)"
-            v-hasPermi="['system:menu:remove']"
-          >删除</el-button>
+            v-hasPermi="['system:menu:remove']" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

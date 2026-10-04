@@ -76,9 +76,13 @@ aes:
 netsight:
   # 短信验证码开发模式：true=使用固定模拟验证码 123456，生产置 false
   sms:
-    mock-mode: true
+    # 开发默认 mock；生产部署设环境变量 AUTH_SMS_MOCK=false 走真实阿里云短信
+    mock-mode: ${AUTH_SMS_MOCK:true}
     mock-code: "123456"
     expire-minutes: 5
+    # 生产真实发送：渠道管理里配置的阿里云短信实例名（登录前无租户上下文，固定查超管租户）
+    login-channel-name: ${AUTH_SMS_CHANNEL:平台登录认证}
+    login-tenant-id: ${AUTH_SMS_TENANT:1}
   # 边缘网关 WebSocket 路径
   websocket:
     gateway-path: /ws/gateway
@@ -113,6 +117,11 @@ netsight:
         api-url: ${PUSHPLUS_API_URL:https://www.pushplus.plus/send}
         timeout-ms: 5000
         title-prefix: ${PUSHPLUS_TITLE_PREFIX:【运维告警】}
+
+# 文件上传配置
+file:
+  upload-dir: ${FILE_UPLOAD_DIR:/opt/nams-server/uploads}
+  access-prefix: /uploads
 
 logging:
   # 显式指定 Logback 配置（Spring Boot 默认已按 logback-spring.xml 自动加载，此处声明便于排查）

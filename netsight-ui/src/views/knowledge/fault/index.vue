@@ -81,18 +81,18 @@
     <!-- 表格 -->
     <el-card shadow="never">
       <el-table v-loading="loading" :data="list" border>
-        <el-table-column label="标题" prop="title" min-width="220" show-overflow-tooltip />
-        <el-table-column label="分类" prop="category" width="100">
+        <el-table-column label="标题" prop="title" min-width="160" show-overflow-tooltip  align="center"/>
+        <el-table-column label="分类" prop="category" width="100" align="center">
           <template slot-scope="{ row }">
             <el-tag size="small" effect="plain">{{ row.category }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="设备类型" prop="deviceType" width="110">
+        <el-table-column label="设备类型" prop="deviceType" width="110" align="center">
           <template slot-scope="{ row }">
             <el-tag size="small" type="info" effect="plain">{{ deviceTypeLabel(row.deviceType) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="品牌" prop="brand" width="110">
+        <el-table-column label="品牌" prop="brand" width="110" align="center">
           <template slot-scope="{ row }">
             <span>{{ row.brand || '-' }}</span>
           </template>
@@ -105,15 +105,15 @@
         <el-table-column label="浏览" prop="viewCount" width="80" align="center" />
         <el-table-column label="状态" width="90" align="center">
           <template slot-scope="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
+            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建人" prop="createBy" width="110" />
-        <el-table-column label="操作" width="180" align="center">
+        <el-table-column label="创建人" prop="createBy" width="110"  align="center"/>
+        <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width" fixed="right">
           <template slot-scope="{ row }">
             <el-button v-if="hasPerm('knowledge:fault:view')" type="text" size="mini" icon="el-icon-view" @click="handleView(row)">查看</el-button>
             <el-button v-if="hasPerm('knowledge:fault:edit')" type="text" size="mini" icon="el-icon-edit" @click="handleEdit(row)">修改</el-button>
-            <el-button v-if="hasPerm('knowledge:fault:remove')" type="text" size="mini" icon="el-icon-delete" class="danger-text" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="hasPerm('knowledge:fault:remove')" type="text" size="mini" icon="el-icon-delete" class="danger-text" @click="handleDelete(row)" style="color:#f56c6c">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -211,7 +211,7 @@
           <el-descriptions-item label="浏览人次">{{ viewForm.viewCount }}</el-descriptions-item>
           <el-descriptions-item label="关键词">{{ viewForm.keywords || '-' }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="viewForm.status === 1 ? 'success' : 'info'" size="small">{{ viewForm.status === 1 ? '启用' : '停用' }}</el-tag>
+            <el-tag :type="viewForm.status === 1 ? 'success' : 'info'" size="mini">{{ viewForm.status === 1 ? '启用' : '停用' }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="创建人">{{ viewForm.createBy }}</el-descriptions-item>
         </el-descriptions>

@@ -60,15 +60,13 @@
       overflow: hidden;
     }
 
+    // 统一 SVG 菜单图标：18px 固定尺寸，flex 防压缩
     .svg-icon {
+      width: 18px !important;
+      height: 18px !important;
+      font-size: 18px !important;
       margin-right: 10px !important;
-    }
-
-    // Element UI 字体图标（el-icon-*）与 svg-icon 对齐
-    .el-icon {
-      font-size: 15px;
-      margin-right: 10px !important;
-      vertical-align: middle;
+      flex-shrink: 0;
     }
 
     .el-menu {
@@ -83,47 +81,48 @@
       white-space: nowrap !important;
     }
 
-    // 卡片式菜单项（V1.2 白底卡片风：左右留白 + 圆角 6px）
-    // 图标与文字垂直居中：flex align-items 替代 line-height，避免 el-icon 与文字 1-2px 错位
+    // 卡片式菜单项（V1.3 宽间距风：增大上下间距 + 圆角 8px）
     .el-menu-item, .el-submenu__title {
-      margin: 2px 12px;
-      border-radius: 6px;
-      height: 44px;
+      margin: 4px 12px;
+      border-radius: 8px;
+      height: 48px;
       display: flex;
       align-items: center;
+      font-size: 14px;
     }
 
-    // flex 居中后，文字 span 需占满剩余宽度并保持左对齐，避免压缩图标
+    // 文字 span 占满剩余宽度，左对齐，与图标垂直居中
     .el-menu-item span,
     .el-submenu__title > span {
-      display: inline-block;
-      vertical-align: middle;
+      flex: 1;
+      display: block;
+      line-height: 1;
     }
 
     // 折叠模式下恢复原 padding 与居中（折叠后只显示图标）
     &.hideSidebar {
       .el-menu-item, .el-submenu__title {
         display: block;
-        line-height: 44px;
+        line-height: 48px;
         text-align: center;
       }
     }
 
-    // 选中项：浅蓝底 + 主蓝字 + 左侧 3px 主蓝条（V1.2）
+    // 选中项：暖桃色底 + 主蓝字 + 左侧 3px 主蓝条（V1.3）
     .el-menu .el-menu-item.is-active {
       position: relative;
-      background: #EAF0FB !important;
-      color: $base-menu-color-active !important;
+      background: #FFF4E6 !important;
+      color: #E8743B !important;
       font-weight: 600;
 
       &::before {
         content: "";
         position: absolute;
         left: 0;
-        top: 12px;
-        bottom: 12px;
+        top: 14px;
+        bottom: 14px;
         width: 3px;
-        background: #205CF5;
+        background: #E8743B;
         border-radius: 0 3px 3px 0;
       }
     }
@@ -131,6 +130,27 @@
     // 子菜单展开项高亮
     .el-submenu.is-active > .el-submenu__title {
       color: $base-menu-color-active !important;
+      font-weight: 600;
+    }
+
+    // 二级菜单项：与一级菜单对齐（去掉缩进），同高同圆角
+    .el-submenu .el-menu-item {
+      margin: 4px 12px;
+      border-radius: 8px;
+      height: 48px;
+      font-size: 14px;
+      color: #606266;
+
+      &:hover {
+        background-color: #F5F7FA !important;
+        color: #303133 !important;
+      }
+    }
+
+    // 二级菜单选中项：暖桃色
+    .el-submenu .el-menu-item.is-active {
+      background: #FFF4E6 !important;
+      color: #E8743B !important;
       font-weight: 600;
     }
 

@@ -74,6 +74,9 @@ public class WorkOrder extends BaseEntity {
     /** 维修结果 */
     private String repairResult;
 
+    /** 维修照片 URL JSON 数组 */
+    private String repairPhotos;
+
     /** 补充说明 */
     private String remark;
 

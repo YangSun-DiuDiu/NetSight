@@ -9,6 +9,13 @@ import com.netsight.modules.system.entity.SysUser;
 import com.netsight.modules.system.mapper.SysRolePermissionMapper;
 import com.netsight.modules.system.mapper.SysUserMapper;
 import com.netsight.modules.system.mapper.SysUserRoleMapper;
+import com.netsight.modules.workorder.entity.Repairer;
+import com.netsight.modules.workorder.mapper.RepairerMapper;
+import com.netsight.modules.alert.channel.ChannelRegistry;
+import com.netsight.modules.alert.channel.NotificationChannelSender;
+import com.netsight.modules.alert.channel.SendRequest;
+import com.netsight.modules.alert.channel.SendResult;
+import com.netsight.modules.alert.service.NotifyChannelService;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +47,9 @@ public class AuthService {
     private final SysRolePermissionMapper sysRolePermissionMapper;
     private final JwtUtils jwtUtils;
     private final StringRedisTemplate redisTemplate;
+    private final NotifyChannelService notifyChannelService;
+    private final ChannelRegistry channelRegistry;
+    private final RepairerMapper repairerMapper;
 
     /** 验证码 Redis Key 前缀 */
     private static final String SMS_CODE_KEY = "netsight:sms:code:";
@@ -55,6 +65,14 @@ public class AuthService {
 
     @Value("${netsight.sms.expire-minutes:5}")
     private long expireMinutes;
+
+    /** 生产模式登录短信通道实例名（渠道管理里的实例名称） */
+    @Value("${netsight.sms.login-channel-name:平台登录认证}")
+    private String loginChannelName;
+
+    /** 该通道实例所属租户（登录前无租户上下文，固定超管租户） */
+    @Value("${netsight.sms.login-tenant-id:1}")
+    private Long loginTenantId;
 
     /**
      * 发送短信验证码
@@ -79,13 +97,44 @@ public class AuthService {
         // 5. 限流标记：开发模式 10 秒便于联调，生产模式 1 分钟
         long limitSeconds = mockMode ? 10L : 60L;
         redisTemplate.opsForValue().set(limitKey, "1", Duration.ofSeconds(limitSeconds));
-        // 6. 开发模式：打印验证码到日志；生产模式：对接短信 API 发送
+        // 6. 开发模式：打印验证码到日志；生产模式：走通知中心阿里云短信实例真实发送
         if (mockMode) {
             log.info("【模拟验证码】手机号: {}, 验证码: {}", phone, code);
         } else {
-            // TODO: 生产环境对接短信服务商 API，验证码发送
-            log.info("【短信发送】手机号: {}, 验证码: {}", phone, code);
+            sendLoginSms(phone, code, redisKey);
         }
+    }
+
+    /**
+     * 生产环境真实发送登录验证码短信。
+     * 复用通知中心：按实例名 + 超管租户查出阿里云短信实例，把验证码作为 {code} 变量传给阿里云模板渲染发送。
+     * 发送失败则清除 Redis 中的验证码并抛业务异常，避免用户收不到码却留下可用验证码。
+     */
+    private void sendLoginSms(String phone, String code, String redisKey) {
+        Map<String, Object> ch = notifyChannelService.resolveSystemChannel(loginChannelName, loginTenantId);
+        if (ch == null) {
+            redisTemplate.delete(redisKey);
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(),
+                    "登录短信通道未配置（实例：" + loginChannelName + "），请联系管理员");
+        }
+        NotificationChannelSender sender = channelRegistry.get((String) ch.get("channelType"));
+        if (sender == null) {
+            redisTemplate.delete(redisKey);
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "短信通道实现未加载");
+        }
+        SendRequest request = SendRequest.builder()
+                .receiverList(List.of(phone))
+                .contentVars(Map.of("code", code))
+                .channelConfig((Map<String, Object>) ch.get("config"))
+                .build();
+        SendResult result = sender.send(request);
+        if (result == null || !result.isSuccess()) {
+            redisTemplate.delete(redisKey);
+            String msg = result == null ? "未知错误" : result.getErrorMsg();
+            log.error("登录短信发送失败 phone={} err={}", phone, msg);
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "短信发送失败：" + msg);
+        }
+        log.info("登录短信已发送 phone={} bizId={}", phone, result.getThirdPartyMsgId());
     }
 
     /**
@@ -110,7 +159,17 @@ public class AuthService {
         if (user.getStatus() == null || user.getStatus() == 0) {
             throw new ServiceException(ResultCode.USER_DISABLED);
         }
-        // 4. 构造 LoginUser 并签发 Token
+        // 4. H5 维修端登录前置校验：clientType='m' 时必须已关联维修人员档案
+        if ("m".equals(clientType)) {
+            Repairer repairer = repairerMapper.selectOne(new LambdaQueryWrapper<Repairer>()
+                    .eq(Repairer::getPhone, phone)
+                    .eq(Repairer::getTenantId, user.getTenantId())
+                    .last("LIMIT 1"));
+            if (repairer == null) {
+                throw new ServiceException(500, "当前账号未关联维修人员档案，请联系管理员");
+            }
+        }
+        // 5. 构造 LoginUser 并签发 Token
         LoginUser loginUser = new LoginUser();
         loginUser.setUserId(user.getId());
         loginUser.setUsername(user.getUsername());

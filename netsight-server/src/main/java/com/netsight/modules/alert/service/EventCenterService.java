@@ -176,7 +176,7 @@ public class EventCenterService {
             // 发送时由通道中心按通道分别解析 mobile/openid，pushplus 忽略接收人按租户 token 群发。
             List<Long> contactIds = ruleService.parseContactIds(rule);
             List<NotificationContact> contacts = contactService.resolveContacts(contactIds, event.getTenantId());
-            List<Long> channels = ruleService.parseChannels(rule);
+            // 模板即通道：自动通知由规则绑定的模板组决定通道，不再解析规则通道列表
             Map<String, Object> vars = buildVars(event);
 
             // 3. 去重限流：同一 biz_id + event_type 窗口内只发送一次
@@ -192,15 +192,15 @@ public class EventCenterService {
                 return;
             }
 
-            // 4. 路由分发到通道中心
-            List<NotificationLog> logs = channelService.dispatch(event, rule, contacts, channels, vars, null);
+            // 4. 路由分发到通道中心（模板即通道：规则模板组决定通道）
+            List<NotificationLog> logs = channelService.dispatch(event, rule, contacts, null, vars, null);
 
             // 5. 状态回写
             long failCount = logs.stream().filter(l -> l.getSuccess().equals(0)).count();
             String status = failCount == 0 ? "sent" : (failCount == logs.size() ? "failed" : "part_failed");
             markEvent(eventId, status, rule.getId(), rule.getRuleName());
-            log.info("事件[{}]{}处理完成，通道{}个，发送日志{}条，失败{}条",
-                    eventId, event.getEventType(), channels.size(), logs.size(), failCount);
+            log.info("事件[{}]{}处理完成，发送日志{}条，失败{}条",
+                    eventId, event.getEventType(), logs.size(), failCount);
             // 6. 实时推送：新告警事件广播（大屏/告警中心实时刷新）
             try {
                 PushWebSocketHandler.broadcast("event", Map.of(
@@ -349,6 +349,7 @@ public class EventCenterService {
 
     /**
      * 分页查询事件（租户隔离）
+     * 默认过滤掉 user_operation 类型的操作日志（操作日志单独在"操作日志"页面查看）
      */
     public PageResult<EventRecord> pageEvent(long pageNum, long pageSize, String eventType, String severity, String status) {
         Page<EventRecord> page = new Page<>(pageNum, pageSize);
@@ -356,6 +357,10 @@ public class EventCenterService {
                 .eq(StringUtils.hasText(eventType), EventRecord::getEventType, eventType)
                 .eq(StringUtils.hasText(severity), EventRecord::getSeverity, severity)
                 .eq(StringUtils.hasText(status), EventRecord::getStatus, status);
+        // 默认过滤掉操作日志（user_operation），除非显式指定 eventType
+        if (!StringUtils.hasText(eventType)) {
+            wrapper.ne(EventRecord::getEventType, "user_operation");
+        }
         if (!SecurityUtils.isSuperAdmin()) {
             wrapper.eq(EventRecord::getTenantId, SecurityUtils.getTenantId());
         }
@@ -369,6 +374,28 @@ public class EventCenterService {
             logs.forEach(l -> countMap.merge(l.getEventId(), 1L, Long::sum));
             result.getRecords().forEach(e -> e.setLogCount(countMap.getOrDefault(e.getId(), 0L).intValue()));
         }
+        return PageResult.of(result.getTotal(), result.getRecords());
+    }
+
+    /**
+     * 分页查询操作日志（租户隔离）
+     * 专门查询 event_type = 'user_operation' 的记录
+     */
+    public PageResult<EventRecord> pageOperationLog(long pageNum, long pageSize, String keyword) {
+        Page<EventRecord> page = new Page<>(pageNum, pageSize);
+        LambdaQueryWrapper<EventRecord> wrapper = new LambdaQueryWrapper<EventRecord>()
+                .eq(EventRecord::getEventType, "user_operation");
+        // 关键字搜索：模块名/操作内容/URI
+        if (StringUtils.hasText(keyword)) {
+            wrapper.and(w -> w.like(EventRecord::getDeviceName, keyword)
+                    .or().like(EventRecord::getContent, keyword)
+                    .or().like(EventRecord::getLocation, keyword));
+        }
+        if (!SecurityUtils.isSuperAdmin()) {
+            wrapper.eq(EventRecord::getTenantId, SecurityUtils.getTenantId());
+        }
+        wrapper.orderByDesc(EventRecord::getId);
+        Page<EventRecord> result = eventMapper.selectPage(page, wrapper);
         return PageResult.of(result.getTotal(), result.getRecords());
     }
 }

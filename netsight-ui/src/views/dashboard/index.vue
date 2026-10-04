@@ -1,12 +1,12 @@
 <template>
   <div class="screen-wrap">
-    <div class="screen" :class="{ 'is-full': isFull }">
+    <div class="screen" ref="screen" :class="{ 'is-full': isFull }">
       <!-- 顶部 -->
       <header class="screen-header">
         <div class="header-side header-left"></div>
         <div class="header-title">
           <h1>NetSight 运维监控大屏</h1>
-          <div class="header-sub">网络资产 · 视频监控 · 门禁安防 统一运维监控</div>
+          <div class="header-sub">网络资产 · 视频监控 · 告警联动 统一运维监控</div>
         </div>
         <div class="header-side header-right">
           <span class="header-time">{{ now }}</span>
@@ -266,12 +266,18 @@ export default {
       Object.keys(this.charts).forEach(k => { try { this.charts[k].resize() } catch (e) { /* noop */ } })
     },
     toggleFullscreen() {
-      const el = document.documentElement
+      const el = this.$refs.screen
+      if (!el) return
       if (!this.isFull) {
+        // 全屏目标为大屏容器 .screen（而非 documentElement）：原生全屏只渲染该元素，
+        // 浏览器自动隐藏侧边栏/顶栏/tags-view，无需 z-index 博弈
         if (el.requestFullscreen) el.requestFullscreen()
+        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen()
+        else if (el.msRequestFullscreen) el.msRequestFullscreen()
         this.isFull = true
       } else {
         if (document.exitFullscreen) document.exitFullscreen()
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen()
         this.isFull = false
       }
       setTimeout(() => this.resizeCharts(), 200)

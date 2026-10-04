@@ -2,12 +2,72 @@
   <div class="app-container">
     <!-- 统计卡 -->
     <el-row :gutter="16" class="stat-row">
-      <el-col :span="4"><el-card shadow="never" class="stat-card"><div class="stat-num">{{ stats.total }}</div><div class="stat-label">任务总数</div></el-card></el-col>
-      <el-col :span="4"><el-card shadow="never" class="stat-card"><div class="stat-num warn">{{ stats.pending }}</div><div class="stat-label">待执行</div></el-card></el-col>
-      <el-col :span="4"><el-card shadow="never" class="stat-card"><div class="stat-num primary">{{ stats.running }}</div><div class="stat-label">执行中</div></el-card></el-col>
-      <el-col :span="4"><el-card shadow="never" class="stat-card"><div class="stat-num success">{{ stats.done }}</div><div class="stat-label">已完成</div></el-card></el-col>
-      <el-col :span="4"><el-card shadow="never" class="stat-card"><div class="stat-num danger">{{ stats.overdue }}</div><div class="stat-label">已逾期</div></el-card></el-col>
-      <el-col :span="4"><el-card shadow="never" class="stat-card"><div class="stat-num orange">{{ stats.abnormal }}</div><div class="stat-label">含异常</div></el-card></el-col>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#F3F4F6;color:#6B7280">
+            <i class="el-icon-files" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.total }}</div>
+            <div class="stat-label">任务总数</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#FDF3E7;color:#F59E0B">
+            <i class="el-icon-time" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.pending }}</div>
+            <div class="stat-label">待执行</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#EAF0FB;color:#205CF5">
+            <i class="el-icon-loading" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.running }}</div>
+            <div class="stat-label">执行中</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#E8F8F2;color:#10B981">
+            <i class="el-icon-circle-check" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.done }}</div>
+            <div class="stat-label">已完成</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#FEE2E2;color:#EF4444">
+            <i class="el-icon-warning-outline" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.overdue }}</div>
+            <div class="stat-label">已逾期</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#FDF3E7;color:#F97316">
+            <i class="el-icon-error" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.abnormal }}</div>
+            <div class="stat-label">含异常</div>
+          </div>
+        </div>
+      </el-col>
     </el-row>
 
     <!-- 搜索 -->
@@ -37,15 +97,15 @@
     <!-- 任务表格 -->
     <el-card shadow="never">
       <el-table v-loading="loading" :data="list" border stripe>
-        <el-table-column label="任务编号" prop="taskNo" width="170" show-overflow-tooltip />
-        <el-table-column label="计划" prop="planName" min-width="120" show-overflow-tooltip />
-        <el-table-column label="目标设备" prop="targetName" min-width="120" show-overflow-tooltip />
-        <el-table-column label="位置" prop="targetLocation" min-width="100" show-overflow-tooltip />
+        <el-table-column label="任务编号" prop="taskNo" width="220" show-overflow-tooltip  align="center"/>
+        <el-table-column label="计划" prop="planName" width="100" show-overflow-tooltip  align="center"/>
+        <el-table-column label="目标设备" prop="targetName" min-width="100" show-overflow-tooltip  align="center"/>
+        <el-table-column label="位置" prop="targetLocation" width="90" show-overflow-tooltip  align="center"/>
         <el-table-column label="执行人" prop="assigneeName" width="90" align="center" />
         <el-table-column label="计划日期" prop="planDate" width="110" align="center" />
         <el-table-column label="状态" width="90" align="center">
           <template slot-scope="scope">
-            <el-tag :type="statusType(scope.row.status)">{{ statusText(scope.row.status) }}</el-tag>
+            <el-tag size="mini" :type="statusType(scope.row.status)">{{ statusText(scope.row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="异常项" width="80" align="center">
@@ -54,11 +114,11 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center" fixed="right">
+        <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width" fixed="right">
           <template slot-scope="scope">
-            <el-button v-if="scope.row.status === 0 && hasPerm('inspection:task:execute')" type="primary" size="mini" icon="el-icon-video-play" @click="handleStart(scope.row)">开始</el-button>
-            <el-button v-if="(scope.row.status === 0 || scope.row.status === 1) && hasPerm('inspection:task:execute')" type="success" size="mini" icon="el-icon-edit" @click="handleExecute(scope.row)">执行</el-button>
-            <el-button type="info" size="mini" icon="el-icon-view" @click="handleDetail(scope.row)">详情</el-button>
+            <el-button v-if="scope.row.status === 0 && hasPerm('inspection:task:execute')" type="text" size="mini" icon="el-icon-video-play" @click="handleStart(scope.row)">开始</el-button>
+            <el-button v-if="(scope.row.status === 0 || scope.row.status === 1) && hasPerm('inspection:task:execute')" type="text" size="mini" icon="el-icon-s-check" @click="handleExecute(scope.row)">执行</el-button>
+            <el-button type="text" size="mini" icon="el-icon-view" @click="handleDetail(scope.row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -121,7 +181,7 @@
         <el-descriptions-item label="执行人">{{ currentTask.assigneeName }}</el-descriptions-item>
         <el-descriptions-item label="计划日期">{{ currentTask.planDate }}</el-descriptions-item>
         <el-descriptions-item label="状态">
-          <el-tag :type="statusType(currentTask.status)">{{ statusText(currentTask.status) }}</el-tag>
+          <el-tag size="mini" :type="statusType(currentTask.status)">{{ statusText(currentTask.status) }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="完成时间">{{ currentTask.finishTime || '-' }}</el-descriptions-item>
       </el-descriptions>
@@ -254,15 +314,6 @@ export default {
 </script>
 
 <style scoped>
-.stat-row { margin-bottom: 16px; }
-.stat-card { text-align: center; border-radius: 8px; }
-.stat-num { font-size: 26px; font-weight: 600; color: #1F2937; }
-.stat-num.primary { color: #205CF5; }
-.stat-num.success { color: #10B981; }
-.stat-num.danger { color: #EF4444; }
-.stat-num.warn { color: #F59E0B; }
-.stat-num.orange { color: #F97316; }
-.stat-label { font-size: 12px; color: #6B7280; margin-top: 4px; }
 .search-card { margin-bottom: 16px; }
 .exec-info { margin-bottom: 4px; }
 .exec-item { border: 1px solid #E5E7EB; border-radius: 8px; padding: 10px 12px; margin-top: 10px; }

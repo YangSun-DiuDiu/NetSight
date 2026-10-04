@@ -43,20 +43,20 @@
     </el-row>
 
     <!-- 角色列表 -->
-    <el-table v-loading="loading" :data="roleList">
-      <el-table-column label="角色ID" prop="id" width="80" />
-      <el-table-column label="角色名称" prop="roleName" />
-      <el-table-column label="角色编码" prop="roleKey" />
+    <el-table border v-loading="loading" :data="roleList">
+      <el-table-column label="角色ID" prop="id" width="80"  align="center"/>
+      <el-table-column label="角色名称" prop="roleName"  align="center"/>
+      <el-table-column label="角色编码" prop="roleKey"  align="center"/>
       <el-table-column label="显示顺序" prop="roleSort" width="90" align="center" />
       <el-table-column label="状态" align="center" width="100">
         <template slot-scope="scope">
-          <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'">
+          <el-tag size="mini" :type="scope.row.status === 1 ? 'success' : 'info'">
             {{ scope.row.status === 1 ? '正常' : '停用' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="备注" prop="remark" show-overflow-tooltip />
-      <el-table-column label="操作" align="center" width="200" class-name="small-padding fixed-width">
+      <el-table-column label="备注" prop="remark" show-overflow-tooltip  align="center"/>
+      <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button v-hasRole="['super_admin']" size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
           <el-button v-hasRole="['super_admin']" size="mini" type="text" icon="el-icon-key" @click="handlePerm(scope.row)">分配权限</el-button>
@@ -66,8 +66,7 @@
             type="text"
             icon="el-icon-delete"
             :disabled="isBuiltin(scope.row)"
-            @click="handleDelete(scope.row)"
-          >删除</el-button>
+            @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

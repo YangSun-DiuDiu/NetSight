@@ -79,7 +79,7 @@
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table v-loading="loading" :data="postList" @selection-change="handleSelectionChange">
+    <el-table border v-loading="loading" :data="postList" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column label="岗位编号" align="center" prop="postId" />
       <el-table-column label="岗位编码" align="center" prop="postCode" />
@@ -87,7 +87,7 @@
       <el-table-column label="岗位排序" align="center" prop="postSort" />
       <el-table-column label="状态" align="center" prop="status">
         <template slot-scope="scope">
-          <dict-tag :options="dict.type.sys_normal_disable" :value="scope.row.status"/>
+          <dict-tag size="mini" :options="dict.type.sys_normal_disable" :value="scope.row.status"/>
         </template>
       </el-table-column>
       <el-table-column label="创建时间" align="center" prop="createTime" width="180">
@@ -95,7 +95,7 @@
           <span>{{ parseTime(scope.row.createTime) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button
             size="mini"
@@ -109,8 +109,7 @@
             type="text"
             icon="el-icon-delete"
             @click="handleDelete(scope.row)"
-            v-hasPermi="['system:post:remove']"
-          >删除</el-button>
+            v-hasPermi="['system:post:remove']" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

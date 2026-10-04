@@ -165,13 +165,9 @@ public class DeviceService {
         }
         checkTenantPermission(exist.getTenantId());
         deviceMapper.deleteById(id);
-        // 删除自身拓扑 + 作为上级被引用的关系
-        deviceTopologyMapper.delete(new LambdaQueryWrapper<DeviceTopology>()
-                .eq(DeviceTopology::getDeviceId, id));
-        deviceTopologyMapper.delete(new LambdaQueryWrapper<DeviceTopology>()
-                .eq(DeviceTopology::getParentMainId, id)
-                .or().eq(DeviceTopology::getParentBackup1Id, id)
-                .or().eq(DeviceTopology::getParentBackup2Id, id));
+        // 删除自身拓扑 + 作为上级被引用的关系（物理删除，避免逻辑删除残留占唯一键）
+        deviceTopologyMapper.physicalDeleteByDeviceId(id);
+        deviceTopologyMapper.physicalDeleteByParentRef(id);
     }
 
     /**
@@ -210,12 +206,13 @@ public class DeviceService {
     }
 
     /**
-     * 保存设备拓扑（先删后插，主备三路）
+     * 保存设备拓扑（物理删除旧关系后重建，主备三路）
+     * 注意：不能用 BaseMapper.delete()（逻辑删除会残留物理行，撞唯一键 uk_topology_device），
+     * 必须 physicalDeleteByDeviceId 物理清除后 insert。
      */
     private void saveTopology(Device device) {
-        // 先清理旧拓扑：表单提交即重建（主上级为空 = 删除该设备全部拓扑关系）
-        deviceTopologyMapper.delete(new LambdaQueryWrapper<DeviceTopology>()
-                .eq(DeviceTopology::getDeviceId, device.getId()));
+        // 先物理清理旧拓扑（含历史逻辑删除残留行）：表单提交即重建（主上级为空 = 删除该设备全部拓扑关系）
+        deviceTopologyMapper.physicalDeleteByDeviceId(device.getId());
         if (device.getParentMainId() == null) {
             return;
         }

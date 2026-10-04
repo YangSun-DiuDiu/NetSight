@@ -1,5 +1,6 @@
 import Vue from 'vue'
 import Router from 'vue-router'
+import mobileRoutes from './mobile'
 
 Vue.use(Router)
 
@@ -30,6 +31,7 @@ import Layout from '@/layout'
 
 // 公共路由
 export const constantRoutes = [
+  ...mobileRoutes,
   {
     path: '/redirect',
     component: Layout,

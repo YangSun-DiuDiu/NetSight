@@ -1,29 +1,49 @@
 <template>
   <div class="app-container">
     <!-- 统计卡片 -->
-    <el-row :gutter="12" class="stat-cards">
-      <el-col :span="6">
-        <div class="stat-card stat-new">
-          <div class="stat-num">{{ stats.totalParts }}</div>
-          <div class="stat-label">备件种类</div>
+    <el-row :gutter="16" class="stat-row">
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#EAF0FB;color:#205CF5">
+            <i class="el-icon-box" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.totalParts }}</div>
+            <div class="stat-label">备件种类</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-total">
-          <div class="stat-num">{{ stats.totalStock }}</div>
-          <div class="stat-label">库存总量</div>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#E8F8F2;color:#10B981">
+            <i class="el-icon-goods" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.totalStock }}</div>
+            <div class="stat-label">库存总量</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-repairing">
-          <div class="stat-num">{{ stats.repairing }}</div>
-          <div class="stat-label">返修中</div>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#FDF3E7;color:#F59E0B">
+            <i class="el-icon-refresh-right" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.repairing }}</div>
+            <div class="stat-label">返修中</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-low">
-          <div class="stat-num">{{ stats.lowStock }}</div>
-          <div class="stat-label">低于安全库存</div>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#FEE2E2;color:#EF4444">
+            <i class="el-icon-warning-outline" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.lowStock }}</div>
+            <div class="stat-label">低于安全库存</div>
+          </div>
         </div>
       </el-col>
     </el-row>
@@ -58,12 +78,12 @@
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table v-loading="loading" :data="partList" :row-class-name="rowClassName">
-      <el-table-column label="备件编号" prop="partNo" width="200" show-overflow-tooltip />
-      <el-table-column label="类型" prop="partType" width="120" />
-      <el-table-column label="品牌" prop="brand" width="90" />
-      <el-table-column label="型号" prop="model" min-width="150" show-overflow-tooltip />
-      <el-table-column label="序列号" prop="serialNo" width="150" show-overflow-tooltip />
+    <el-table border v-loading="loading" :data="partList" :row-class-name="rowClassName">
+      <el-table-column label="备件编号" prop="partNo" width="240" show-overflow-tooltip  align="center"/>
+      <el-table-column label="类型" prop="partType" width="120"  align="center"/>
+      <el-table-column label="品牌" prop="brand" width="90"  align="center"/>
+      <el-table-column label="型号" prop="model" width="70" show-overflow-tooltip  align="center"/>
+      <el-table-column label="序列号" prop="serialNo" min-width="140" show-overflow-tooltip  align="center"/>
       <el-table-column label="库存" width="90" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.quantity <= scope.row.safeStock ? 'danger' : 'success'">
@@ -76,11 +96,11 @@
           <el-tag size="mini" :type="statusType(scope.row.status)">{{ statusText(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="存放位置" prop="location" min-width="120" show-overflow-tooltip />
+      <el-table-column label="存放位置" prop="location" min-width="120" show-overflow-tooltip  align="center"/>
       <el-table-column label="安全库存" prop="safeStock" width="90" align="center" />
-      <el-table-column label="操作" width="200" align="center">
+      <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width" fixed="right">
         <template slot-scope="scope">
-          <el-button v-hasPermi="['spare:part:stock']" size="mini" type="text" icon="el-icon-sold-out" style="color:#e6a23c" @click="handleStock(scope.row)">出入库</el-button>
+          <el-button v-hasPermi="['spare:part:stock']" size="mini" type="text" icon="el-icon-sold-out"  @click="handleStock(scope.row)">出入库</el-button>
           <el-button v-hasPermi="['spare:part:edit']" size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
           <el-button v-hasPermi="['spare:part:remove']" size="mini" type="text" icon="el-icon-delete" style="color:#f56c6c" @click="handleDelete(scope.row)">删除</el-button>
         </template>
@@ -353,20 +373,6 @@ export default {
 </script>
 
 <style scoped>
-.stat-cards { margin-bottom: 16px; }
-.stat-card {
-  border-radius: 6px;
-  padding: 16px 12px;
-  text-align: center;
-  color: #fff;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-}
-.stat-num { font-size: 26px; font-weight: 700; line-height: 1.2; }
-.stat-label { font-size: 13px; opacity: 0.9; margin-top: 2px; }
-.stat-new { background: linear-gradient(135deg, #68d391, #38a169); }
-.stat-total { background: linear-gradient(135deg, #63b3ed, #3182ce); }
-.stat-repairing { background: linear-gradient(135deg, #f6ad55, #ed8936); }
-.stat-low { background: linear-gradient(135deg, #fc8181, #e53e3e); }
 .search-form { margin-bottom: 4px; }
 .mb8 { margin-bottom: 10px; }
 </style>

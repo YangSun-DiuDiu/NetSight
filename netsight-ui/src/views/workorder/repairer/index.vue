@@ -23,24 +23,24 @@
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table v-loading="loading" :data="repairerList">
-      <el-table-column label="姓名" prop="name" width="110" />
-      <el-table-column label="手机号" prop="phone" width="130" />
-      <el-table-column label="负责区域" prop="region" min-width="150" show-overflow-tooltip />
-      <el-table-column label="设备类型" width="200">
+    <el-table border v-loading="loading" :data="repairerList">
+      <el-table-column label="姓名" prop="name" width="220"  align="center"/>
+      <el-table-column label="手机号" prop="phone" width="195"  align="center"/>
+      <el-table-column label="负责区域" prop="region" min-width="60" show-overflow-tooltip  align="center"/>
+      <el-table-column label="设备类型" min-width="105" align="center">
         <template slot-scope="scope">
           <el-tag v-for="t in parseArr(scope.row.deviceTypes)" :key="t" size="mini" style="margin-right:4px">{{ deviceTypeText(t) }}</el-tag>
           <span v-if="!scope.row.deviceTypes">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="技能" prop="skills" min-width="170" show-overflow-tooltip />
+      <el-table-column label="技能" prop="skills" min-width="135" show-overflow-tooltip  align="center"/>
       <el-table-column label="在岗状态" width="90" align="center">
         <template slot-scope="scope">
           <el-switch :value="scope.row.status === 1" @change="handleStatusChange(scope.row)" />
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" prop="createTime" width="160" align="center" />
-      <el-table-column label="操作" width="140" align="center">
+      <el-table-column label="创建时间" prop="createTime" width="145" align="center" />
+      <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button v-hasPermi="['workorder:repairer:edit']" size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
           <el-button v-hasPermi="['workorder:repairer:remove']" size="mini" type="text" icon="el-icon-delete" style="color:#f56c6c" @click="handleDelete(scope.row)">删除</el-button>

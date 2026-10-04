@@ -18,15 +18,15 @@ import java.util.Map;
  * AlertManager Webhook 接入控制器（云端接入点，免用户认证）
  *
  * 边缘网关本地 AlertManager 将告警推送到此接口：
- *   POST /alert/push
- *   Header: X-Netsight-Webhook-Token: <租户级 Token 或过渡期全局密钥>（防伪造）
- *   Header: X-Netsight-Tenant-Id: <事件归属租户ID>（仅过渡兼容，Token 命中以 Token 为准）
+ * POST /alert/push
+ * Header: X-Netsight-Webhook-Token: <租户级 Token 或过渡期全局密钥>（防伪造）
+ * Header: X-Netsight-Tenant-Id: <事件归属租户ID>（仅过渡兼容，Token 命中以 Token 为准）
  *
  * 鉴权信任模型（方案 5.5 第 7 小节，V1.1.6）：
- *   ① 租户级 Token 优先：服务端反查（Redis → sys_tenant.webhook_token）解析 tenant_id，
- *      Token 即租户身份，事件全部归属该租户——不再信任客户端自报租户；
- *   ② 过渡兼容：未命中租户 Token 时，回退全局 webhook-token + Tenant-Id 头（仅本地开发/迁移期）；
- *   ③ 均失败 → 401 拒绝，告警日志记录来源 IP。
+ * ① 租户级 Token 优先：服务端反查（Redis → sys_tenant.webhook_token）解析 tenant_id，
+ * Token 即租户身份，事件全部归属该租户——不再信任客户端自报租户；
+ * ② 过渡兼容：未命中租户 Token 时，回退全局 webhook-token + Tenant-Id 头（仅本地开发/迁移期）；
+ * ③ 均失败 → 401 拒绝，告警日志记录来源 IP。
  *
  * 报文兼容 AlertManager v4（alerts[]）与方案标准事件格式（event_type）
  */
@@ -61,9 +61,10 @@ public class AlertPushController {
      */
     @PostMapping
     public R<List<Long>> push(@RequestHeader(value = "X-Netsight-Webhook-Token", required = false) String token,
-                              @RequestHeader(value = "X-Netsight-Tenant-Id", required = false) Long tenantId,
-                              @RequestBody Map<String, Object> body,
-                              HttpServletRequest request) {
+            @RequestHeader(value = "X-Netsight-Tenant-Id", required = false) Long tenantId,
+
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request) {
         // ① 租户级 Token 优先：服务端反查（Redis → DB → 回填缓存）
         Long resolvedTenant = webhookTokenService.resolveTenantId(token);
         if (resolvedTenant != null) {

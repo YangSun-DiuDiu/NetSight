@@ -1,30 +1,50 @@
 <template>
   <div class="app-container">
     <!-- 统计卡片 -->
-    <el-row :gutter="16" class="mb8">
-      <el-col :span="6">
-        <el-card shadow="never" class="stat-card">
-          <div class="stat-num">{{ stats.total || 0 }}</div>
-          <div class="stat-label">公告总数</div>
-        </el-card>
+    <el-row :gutter="16" class="stat-row">
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#EAF0FB;color:#205CF5">
+            <i class="el-icon-message" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.total || 0 }}</div>
+            <div class="stat-label">公告总数</div>
+          </div>
+        </div>
       </el-col>
-      <el-col :span="6">
-        <el-card shadow="never" class="stat-card">
-          <div class="stat-num stat-green">{{ stats.published || 0 }}</div>
-          <div class="stat-label">已发布</div>
-        </el-card>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#E8F8F2;color:#10B981">
+            <i class="el-icon-position" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.published || 0 }}</div>
+            <div class="stat-label">已发布</div>
+          </div>
+        </div>
       </el-col>
-      <el-col :span="6">
-        <el-card shadow="never" class="stat-card">
-          <div class="stat-num stat-orange">{{ stats.draft || 0 }}</div>
-          <div class="stat-label">草稿</div>
-        </el-card>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#FDF3E7;color:#F59E0B">
+            <i class="el-icon-edit-outline" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.draft || 0 }}</div>
+            <div class="stat-label">草稿</div>
+          </div>
+        </div>
       </el-col>
-      <el-col :span="6">
-        <el-card shadow="never" class="stat-card">
-          <div class="stat-num stat-gray">{{ stats.offline || 0 }}</div>
-          <div class="stat-label">已下线</div>
-        </el-card>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#F3F4F6;color:#6B7280">
+            <i class="el-icon-circle-close" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.offline || 0 }}</div>
+            <div class="stat-label">已下线</div>
+          </div>
+        </div>
       </el-col>
     </el-row>
 
@@ -60,38 +80,38 @@
     </el-row>
 
     <!-- 公告列表 -->
-    <el-table v-loading="loading" :data="noticeList">
-      <el-table-column label="标题" prop="title" min-width="200" show-overflow-tooltip>
+    <el-table border v-loading="loading" :data="noticeList">
+      <el-table-column label="标题" prop="title" min-width="100" show-overflow-tooltip align="center">
         <template slot-scope="scope">
           <span v-if="scope.row.isTop === 1" class="top-flag">置顶</span>
           <span :class="{ 'unread-title': scope.row.status === 1 }">{{ scope.row.title }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="类型" width="80" align="center">
+      <el-table-column label="类型" width="90" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.noticeType === 'notice' ? 'primary' : 'warning'" effect="light">{{ scope.row.noticeType === 'notice' ? '公告' : '通知' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="级别" width="90" align="center">
+      <el-table-column label="级别" width="100" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.level === 'urgent' ? 'danger' : (scope.row.level === 'important' ? 'warning' : 'info')">{{ levelText(scope.row.level) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="90" align="center">
+      <el-table-column label="状态" width="100" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.status === 1 ? 'success' : (scope.row.status === 0 ? 'info' : 'danger')">{{ statusText(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="发布人" prop="publisherName" width="100" align="center" />
-      <el-table-column label="发布时间" prop="publishTime" width="160" align="center" />
-      <el-table-column label="已读" prop="readCount" width="70" align="center" />
-      <el-table-column label="操作" width="210" align="center">
+      <el-table-column label="发布人" prop="publisherName" width="110" align="center" />
+      <el-table-column label="发布时间" prop="publishTime" width="170" align="center" />
+      <el-table-column label="已读" prop="readCount" width="80" align="center" />
+      <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button type="text" size="mini" icon="el-icon-view" @click="handleDetail(scope.row)">详情</el-button>
           <el-button v-hasPermi="['notice:publish']" v-if="scope.row.status !== 1" type="text" size="mini" icon="el-icon-upload2" @click="handlePublish(scope.row)">发布</el-button>
           <el-button v-hasPermi="['notice:publish']" v-if="scope.row.status === 1" type="text" size="mini" icon="el-icon-download" @click="handleOffline(scope.row)">下线</el-button>
           <el-button v-hasPermi="['notice:edit']" type="text" size="mini" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
-          <el-button v-hasPermi="['notice:remove']" type="text" size="mini" icon="el-icon-delete" class="el-button--text-danger" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button v-hasPermi="['notice:remove']" type="text" size="mini" icon="el-icon-delete" class="el-button--text-danger" @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -317,28 +337,6 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.stat-card {
-  border-radius: 8px;
-  text-align: center;
-  padding: 6px 0;
-
-  .stat-num {
-    font-size: 26px;
-    font-weight: 700;
-    color: #205CF5;
-  }
-
-  .stat-green { color: #10B981; }
-  .stat-orange { color: #F59E0B; }
-  .stat-gray { color: #909399; }
-
-  .stat-label {
-    margin-top: 4px;
-    font-size: 13px;
-    color: #6B7280;
-  }
-}
-
 .top-flag {
   display: inline-block;
   background: #205CF5;

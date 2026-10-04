@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <!-- 搜索区 -->
     <el-form :model="queryParams" ref="queryForm" :inline="true" v-show="showSearch">
@@ -24,8 +24,8 @@
     </el-row>
 
     <!-- 列表 -->
-    <el-table v-loading="loading" :data="list">
-      <el-table-column label="实例名称" prop="channelName" min-width="180" show-overflow-tooltip />
+    <el-table border v-loading="loading" :data="list">
+      <el-table-column label="实例名称" prop="channelName" min-width="180" show-overflow-tooltip  align="center"/>
       <el-table-column label="渠道类型" width="150" align="center">
         <template slot-scope="scope">
           <el-tag size="mini">{{ channelTypeName(scope.row.channelType) }}</el-tag>
@@ -41,17 +41,17 @@
           <el-tag size="mini" :type="healthTag(scope.row.healthStatus)">{{ healthText(scope.row.healthStatus) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="最近检查" width="160" align="center">
+      <el-table-column label="最近检查" width="150" align="center">
         <template slot-scope="scope">
           <span v-if="scope.row.lastCheckTime">{{ scope.row.lastCheckTime }}</span>
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="备注" prop="remark" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="180" align="center">
+      <el-table-column label="备注" prop="remark" min-width="160" show-overflow-tooltip  align="center"/>
+      <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button v-hasPermi="['alert:channel:edit']" type="text" size="mini" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
-          <el-button v-hasPermi="['alert:channel:remove']" type="text" size="mini" icon="el-icon-delete" class="el-button--text-danger" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button v-hasPermi="['alert:channel:remove']" type="text" size="mini" icon="el-icon-delete" class="el-button--text-danger" @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -71,7 +71,13 @@
         </el-form-item>
         <!-- 动态参数表单 -->
         <template v-for="(f, idx) in currentFields">
-          <el-form-item :key="idx" :label="f.label" :prop="'config_' + f.key">
+          <el-form-item :key="idx" :prop="'config_' + f.key">
+            <template slot="label">
+              {{ f.label }}
+              <el-tooltip v-if="f.hint" :content="f.hint" placement="top">
+                <i class="el-icon-question" style="margin-left:4px;color:#909399;cursor:pointer"></i>
+              </el-tooltip>
+            </template>
             <el-input v-if="f.type === 'text' || f.type === 'number'" v-model="formConfig[f.key]" :type="f.type === 'number' ? 'number' : 'text'" :placeholder="'请输入' + f.label" />
             <el-input v-else-if="f.type === 'password'" v-model="formConfig[f.key]" type="password" show-password :placeholder="'请输入' + f.label" />
             <el-input v-else-if="f.type === 'textarea'" v-model="formConfig[f.key]" type="textarea" :rows="3" :placeholder="'请输入' + f.label" />

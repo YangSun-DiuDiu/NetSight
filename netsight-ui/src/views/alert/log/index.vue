@@ -23,13 +23,13 @@
     </el-form>
 
     <!-- 日志列表 -->
-    <el-table v-loading="loading" :data="logList">
+    <el-table border v-loading="loading" :data="logList">
       <el-table-column label="ID" prop="id" width="70" align="center" />
-      <el-table-column label="事件ID" prop="eventId" width="80" align="center">
+      <el-table-column label="事件ID" prop="eventId" width="70" align="center">
         <template slot-scope="scope">{{ scope.row.eventId || '-' }}</template>
       </el-table-column>
-      <el-table-column label="事件类型" prop="eventType" width="130" />
-      <el-table-column label="匹配规则" prop="ruleName" min-width="130" show-overflow-tooltip>
+      <el-table-column label="事件类型" prop="eventType" width="130"  align="center"/>
+      <el-table-column label="匹配规则" prop="ruleName" min-width="130" show-overflow-tooltip align="center">
         <template slot-scope="scope">{{ scope.row.ruleName || '-' }}</template>
       </el-table-column>
       <el-table-column label="通道" width="90" align="center">
@@ -37,14 +37,14 @@
           <el-tag size="mini" :type="channelTagType(scope.row.channelType)">{{ channelTypeName(scope.row.channelType) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="接收人" min-width="150" show-overflow-tooltip><template slot-scope="scope">{{ receiversText(scope.row.receiversJson) }}</template></el-table-column>
-      <el-table-column label="发送内容" prop="content" min-width="200" show-overflow-tooltip />
+      <el-table-column label="接收人" min-width="150" show-overflow-tooltip align="center"><template slot-scope="scope">{{ receiversText(scope.row.receiversJson) }}</template></el-table-column>
+      <el-table-column label="发送内容" prop="content" min-width="180" show-overflow-tooltip  align="center"/>
       <el-table-column label="结果" width="80" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.success === 1 ? 'success' : 'danger'">{{ scope.row.success === 1 ? '成功' : '失败' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="第三方ID" prop="thirdPartyMsgId" width="140" show-overflow-tooltip />
+      <el-table-column label="第三方ID" prop="thirdPartyMsgId" width="140" show-overflow-tooltip  align="center"/>
       <el-table-column label="耗时" width="80" align="center">
         <template slot-scope="scope">{{ scope.row.costTime || 0 }} ms</template>
       </el-table-column>

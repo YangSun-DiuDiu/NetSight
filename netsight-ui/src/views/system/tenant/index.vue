@@ -30,30 +30,30 @@
       </el-col>
     </el-row>
 
-    <el-table v-loading="loading" :data="tenantList">
-      <el-table-column label="租户ID" prop="id" width="80" />
-      <el-table-column label="租户名称" prop="tenantName" />
-      <el-table-column label="联系人" prop="contactPerson" />
-      <el-table-column label="联系电话" prop="contactPhone" />
-      <el-table-column label="Webhook Token" prop="webhookToken" min-width="180">
+    <el-table border v-loading="loading" :data="tenantList">
+      <el-table-column label="租户ID" prop="id" width="80"  align="center"/>
+      <el-table-column label="租户名称" prop="tenantName"  align="center"/>
+      <el-table-column label="联系人" prop="contactPerson"  align="center"/>
+      <el-table-column label="联系电话" prop="contactPhone"  align="center"/>
+      <el-table-column label="Webhook Token" prop="webhookToken" min-width="180" align="center">
         <template slot-scope="scope">
           <span>{{ scope.row.webhookToken }}</span>
         </template>
       </el-table-column>
       <el-table-column label="状态" align="center" width="80">
         <template slot-scope="scope">
-          <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'">
+          <el-tag size="mini" :type="scope.row.status === 1 ? 'success' : 'info'">
             {{ scope.row.status === 1 ? '启用' : '禁用' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="到期时间" prop="expireTime" width="160" />
-      <el-table-column label="操作" align="center" width="300" class-name="small-padding fixed-width">
+      <el-table-column label="到期时间" prop="expireTime" width="160"  align="center"/>
+      <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button v-hasRole="['super_admin']" size="mini" type="text" icon="el-icon-key" @click="handleToken(scope.row)">Token</el-button>
           <el-button v-hasRole="['super_admin']" size="mini" type="text" icon="el-icon-bell" @click="handlePpToken(scope.row)">推送Token</el-button>
           <el-button v-hasRole="['super_admin']" size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
-          <el-button v-hasRole="['super_admin']" size="mini" type="text" icon="el-icon-delete" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button v-hasRole="['super_admin']" size="mini" type="text" icon="el-icon-delete" @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

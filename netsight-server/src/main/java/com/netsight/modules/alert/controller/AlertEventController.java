@@ -44,6 +44,18 @@ public class AlertEventController {
     }
 
     /**
+     * 操作日志分页查询
+     * GET /alert/event/operation-log?pageNum=1&pageSize=10&keyword=
+     */
+    @PreAuthorize("hasRole('super_admin') or hasAuthority('alert:event:operation')")
+    @GetMapping("/operation-log")
+    public R<PageResult<EventRecord>> operationLog(@RequestParam(defaultValue = "1") long pageNum,
+                                                    @RequestParam(defaultValue = "10") long pageSize,
+                                                    @RequestParam(required = false) String keyword) {
+        return R.ok(eventCenterService.pageOperationLog(pageNum, pageSize, keyword));
+    }
+
+    /**
      * 手动触发事件（管理员主动发送通知，可选通道/联系人/内容）
      * POST /alert/event/manual
      * Body: {"eventType":"manual_notify","content":"...","contactIds":[1,2],"channels":["sms","wechat","pushplus"]}

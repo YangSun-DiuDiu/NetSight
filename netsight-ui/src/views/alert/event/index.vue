@@ -38,9 +38,9 @@
     </el-row>
 
     <!-- 事件列表 -->
-    <el-table v-loading="loading" :data="eventList">
+    <el-table border v-loading="loading" :data="eventList">
       <el-table-column label="ID" prop="id" width="70" align="center" />
-      <el-table-column label="事件类型" width="150">
+      <el-table-column label="事件类型" width="140" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="eventTypeTag(scope.row.eventType)">{{ eventTypeText(scope.row.eventType) }}</el-tag>
         </template>
@@ -52,11 +52,11 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="设备" min-width="150">
+      <el-table-column label="设备" min-width="150" align="center">
         <template slot-scope="scope">{{ scope.row.deviceName }} <span class="el-text-muted" v-if="scope.row.deviceIp">({{ scope.row.deviceIp }})</span></template>
       </el-table-column>
-      <el-table-column label="设备位置" prop="location" min-width="120" show-overflow-tooltip />
-      <el-table-column label="匹配规则" prop="ruleName" min-width="130" show-overflow-tooltip>
+      <el-table-column label="设备位置" prop="location" min-width="120" show-overflow-tooltip  align="center"/>
+      <el-table-column label="匹配规则" prop="ruleName" min-width="130" show-overflow-tooltip align="center">
         <template slot-scope="scope">
           <span v-if="scope.row.ruleName">{{ scope.row.ruleName }}</span>
           <span v-else class="el-text-muted">-</span>
@@ -74,7 +74,7 @@
         </template>
       </el-table-column>
       <el-table-column label="发生时间" prop="createTime" width="160" align="center" />
-      <el-table-column label="操作" width="80" align="center">
+      <el-table-column label="操作" align="center" width="110" class-name="small-padding fixed-width" fixed="right">
         <template slot-scope="scope">
           <el-button type="text" size="mini" icon="el-icon-view" @click="handleDetail(scope.row)">详情</el-button>
         </template>

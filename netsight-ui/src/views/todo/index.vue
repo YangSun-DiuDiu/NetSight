@@ -2,28 +2,48 @@
   <div class="app-container todo-page">
     <!-- 统计卡 -->
     <el-row :gutter="16" class="stat-row">
-      <el-col :span="6">
-        <div class="stat-card stat-pending">
-          <div class="stat-value">{{ stats.workOrderPending }}</div>
-          <div class="stat-label">待处理工单</div>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#FDF3E7;color:#F59E0B">
+            <i class="el-icon-document" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.workOrderPending }}</div>
+            <div class="stat-label">待处理工单</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-mine">
-          <div class="stat-value">{{ stats.workOrderMine }}</div>
-          <div class="stat-label">我的维修工单</div>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#EAF0FB;color:#205CF5">
+            <i class="el-icon-user" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.workOrderMine }}</div>
+            <div class="stat-label">我的维修工单</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-insp">
-          <div class="stat-value">{{ stats.inspectionTodo }}</div>
-          <div class="stat-label">待执行点检</div>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#E8F8F2;color:#10B981">
+            <i class="el-icon-date" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.inspectionTodo }}</div>
+            <div class="stat-label">待执行点检</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-total">
-          <div class="stat-value">{{ stats.total }}</div>
-          <div class="stat-label">总待办</div>
+      <el-col :xs="12" :sm="6">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#F1F0FE;color:#8B5CF6">
+            <i class="el-icon-s-order" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.total }}</div>
+            <div class="stat-label">总待办</div>
+          </div>
         </div>
       </el-col>
     </el-row>
@@ -47,24 +67,24 @@
             <el-tag v-else type="success" effect="light">点检</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="bizNo" label="业务编号" width="200" show-overflow-tooltip />
-        <el-table-column prop="title" label="待办事项" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="deviceName" label="关联设备" width="150" show-overflow-tooltip>
+        <el-table-column prop="bizNo" label="业务编号" width="160" show-overflow-tooltip  align="center"/>
+        <el-table-column prop="title" label="待办事项" min-width="200" show-overflow-tooltip  align="center"/>
+        <el-table-column prop="deviceName" label="关联设备" min-width="150" show-overflow-tooltip align="center">
           <template slot-scope="{ row }">{{ row.deviceName || '—' }}</template>
         </el-table-column>
-        <el-table-column prop="source" label="来源" width="140" show-overflow-tooltip />
+        <el-table-column prop="source" label="来源" width="120" show-overflow-tooltip  align="center"/>
         <el-table-column prop="statusText" label="状态" width="100" align="center">
           <template slot-scope="{ row }">
             <el-tag :type="row.statusText === '待派单' ? 'danger' : (row.statusText === '待执行' ? 'primary' : 'warning')"
-                    size="mini" effect="plain">{{ row.statusText }}</el-tag>
+                    size="mini">{{ row.statusText }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="创建时间" width="170" align="center" />
-        <el-table-column label="操作" width="110" align="center">
+        <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
           <template slot-scope="{ row }">
-            <el-button v-if="row.bizType === 'work_order'" type="primary" size="mini"
+            <el-button v-if="row.bizType === 'work_order'" type="text" size="mini"
                        icon="el-icon-s-order" @click="goWorkOrder">去处理</el-button>
-            <el-button v-else type="success" size="mini"
+            <el-button v-else type="text" size="mini"
                        icon="el-icon-s-check" @click="goInspection">去处理</el-button>
           </template>
         </el-table-column>
@@ -128,18 +148,6 @@ export default {
 </script>
 
 <style scoped>
-.todo-page .stat-row { margin-bottom: 16px; }
-.stat-card {
-  background: #fff; border-radius: 12px; padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  border-left: 4px solid #205CF5;
-}
-.stat-card .stat-value { font-size: 30px; font-weight: 700; color: #1F2937; line-height: 1.2; }
-.stat-card .stat-label { margin-top: 6px; font-size: 13px; color: #6B7280; }
-.stat-pending { border-left-color: #EF4444; }
-.stat-mine { border-left-color: #F59E0B; }
-.stat-insp { border-left-color: #10B981; }
-.stat-total { border-left-color: #205CF5; }
 .filter-card { margin-bottom: 16px; }
 .type-group .el-radio-button__inner { border-radius: 6px !important; }
 .box-card { border-radius: 12px; }

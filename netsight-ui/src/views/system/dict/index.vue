@@ -107,7 +107,7 @@
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table v-loading="loading" :data="typeList" @selection-change="handleSelectionChange">
+    <el-table border v-loading="loading" :data="typeList" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column label="字典编号" align="center" prop="dictId" />
       <el-table-column label="字典名称" align="center" prop="dictName" :show-overflow-tooltip="true" />
@@ -120,7 +120,7 @@
       </el-table-column>
       <el-table-column label="状态" align="center" prop="status">
         <template slot-scope="scope">
-          <dict-tag :options="dict.type.sys_normal_disable" :value="scope.row.status"/>
+          <dict-tag size="mini" :options="dict.type.sys_normal_disable" :value="scope.row.status"/>
         </template>
       </el-table-column>
       <el-table-column label="备注" align="center" prop="remark" :show-overflow-tooltip="true" />
@@ -129,7 +129,7 @@
           <span>{{ parseTime(scope.row.createTime) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button
             size="mini"
@@ -143,8 +143,7 @@
             type="text"
             icon="el-icon-delete"
             @click="handleDelete(scope.row)"
-            v-hasPermi="['system:dict:remove']"
-          >删除</el-button>
+            v-hasPermi="['system:dict:remove']" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

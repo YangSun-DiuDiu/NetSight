@@ -8,17 +8,6 @@ import com.netsight.common.exception.ServiceException;
 import com.netsight.config.PushWebSocketHandler;
 import com.netsight.framework.security.SecurityUtils;
 import com.netsight.modules.alert.entity.EventRecord;
-import com.netsight.modules.alert.entity.NotificationContact;
-import com.netsight.modules.alert.entity.NotificationLog;
-import com.netsight.modules.alert.entity.NotificationRule;
-import com.netsight.modules.alert.entity.NotificationTemplate;
-import com.netsight.modules.alert.event.AlertEvent;
-import com.netsight.modules.alert.entity.NotifyChannel;
-import com.netsight.modules.alert.mapper.NotifyChannelMapper;
-import com.netsight.modules.alert.mapper.NotificationTemplateMapper;
-import com.netsight.modules.alert.service.NotificationChannelService;
-import com.netsight.modules.system.entity.SysTenant;
-import com.netsight.modules.system.mapper.SysTenantMapper;
 import com.netsight.modules.workorder.entity.Repairer;
 import com.netsight.modules.workorder.entity.WorkOrder;
 import com.netsight.modules.workorder.entity.WorkOrderPart;
@@ -29,7 +18,6 @@ import com.netsight.modules.workorder.mapper.WorkOrderPartMapper;
 import com.netsight.modules.workorder.mapper.WorkOrderRecordMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -46,7 +34,9 @@ import java.util.stream.Collectors;
 
 /**
  * 故障工单服务（联系单 + 报修派单闭环）
- * 职责：事件联动自动建单（24h 去重）→ 管理员审核 → 报修派单（自动通知维修人员）→ 维修跟进 → 完工关闭
+ * 职责：工单查询/CRUD → 事件联动自动建单（24h 去重）→ 派单状态机 → 完工关闭。
+ * 派单通知发送已抽到 {@link WorkOrderNotifier}，事件路由已抽到
+ * {@link com.netsight.modules.workorder.listener.WorkOrderEventListener}。
  */
 @Slf4j
 @Service
@@ -59,10 +49,7 @@ public class WorkOrderService {
     private final WorkOrderRecordMapper recordMapper;
     private final WorkOrderPartMapper orderPartMapper;
     private final RepairerMapper repairerMapper;
-    private final NotificationTemplateMapper templateMapper;
-    private final NotificationChannelService channelService;
-    private final SysTenantMapper tenantMapper;
-    private final NotifyChannelMapper notifyChannelMapper;
+    private final WorkOrderNotifier notifier;
 
     /** 状态映射 */
     private static final Map<Integer, String> STATUS_TEXT = Map.of(
@@ -123,7 +110,7 @@ public class WorkOrderService {
     }
 
     /**
-     * 工单统计（顶部卡片：待处理/已派单/维修中/已完成）
+     * 工单统计（顶部卡片：待处理/已派单/维修中/已完成/已自动恢复）
      */
     public Map<String, Object> stats() {
         Map<String, Object> stats = new HashMap<>();
@@ -131,6 +118,7 @@ public class WorkOrderService {
         stats.put("dispatched", orderMapper.selectCount(new LambdaQueryWrapper<WorkOrder>().eq(WorkOrder::getStatus, 1)));
         stats.put("repairing", orderMapper.selectCount(new LambdaQueryWrapper<WorkOrder>().eq(WorkOrder::getStatus, 2)));
         stats.put("completed", orderMapper.selectCount(new LambdaQueryWrapper<WorkOrder>().eq(WorkOrder::getStatus, 3)));
+        stats.put("recovered", orderMapper.selectCount(new LambdaQueryWrapper<WorkOrder>().eq(WorkOrder::getStatus, 5)));
         stats.put("total", orderMapper.selectCount(new LambdaQueryWrapper<>()));
         return stats;
     }
@@ -204,27 +192,7 @@ public class WorkOrderService {
         orderPartMapper.delete(new LambdaQueryWrapper<WorkOrderPart>().eq(WorkOrderPart::getOrderId, id));
     }
 
-    // ==================== 事件联动 ====================
-
-    /**
-     * 监听告警事件（事件中心发布）：离线/链路异常自动建单，恢复自动归档
-     */
-    @EventListener
-    public void onAlertEvent(AlertEvent alertEvent) {
-        EventRecord event = alertEvent.getEvent();
-        if (event == null) {
-            return;
-        }
-        try {
-            switch (event.getEventType()) {
-                case "device_offline", "device_line_abnormal" -> autoCreateFromEvent(event);
-                case "device_recovered" -> handleRecover(event);
-                default -> { /* 其他事件不联动工单 */ }
-            }
-        } catch (Exception e) {
-            log.error("告警事件[{}]工单联动异常: {}", alertEvent.getEventId(), e.getMessage(), e);
-        }
-    }
+    // ==================== 事件联动（由 WorkOrderEventListener 路由进入） ====================
 
     /**
      * 告警事件自动生成联系单（方案9.1）
@@ -309,7 +277,7 @@ public class WorkOrderService {
     // ==================== 报修派单闭环 ====================
 
     /**
-     * 报修派单：选择维修人员 → 更新工单 → 自动通知（短信+公众号，复用通道中心）
+     * 报修派单：选择维修人员 → 更新工单 → 自动通知（通知由 WorkOrderNotifier 在事务提交后发送）
      */
     @Transactional(rollbackFor = Exception.class)
     public void dispatch(Long id, Long repairerId, String remark) {
@@ -331,7 +299,7 @@ public class WorkOrderService {
         addRecord(SecurityUtils.getTenantId(), order.getId(), "dispatch", currentUsername(),
                 "报修派单 → " + repairer.getName() + (StringUtils.hasText(remark) ? "，说明：" + remark : ""));
 
-        // 2. 自动通知维修人员（短信+公众号，tpl_order_dispatch 模板）
+        // 2. 自动通知维修人员（短信+公众号+pushplus，tpl_order_dispatch 模板）
         // 【加固】通知移出数据库事务：事务提交后再发送——
         //   ① 避免 HTTP + 重试（最长数秒）长时间占用数据库事务连接；
         //   ② 通知失败不再回滚派单事务（工单状态已提交，通知失败仅记录日志）；
@@ -340,7 +308,7 @@ public class WorkOrderService {
             @Override
             public void afterCommit() {
                 try {
-                    notifyRepairer(order, repairer);
+                    notifier.notifyRepairer(order, repairer);
                 } catch (Exception e) {
                     log.error("工单[{}]派单通知发送失败（不影响工单状态）: {}", order.getOrderNo(), e.getMessage());
                 }
@@ -400,6 +368,8 @@ public class WorkOrderService {
         pushOrder(order, "close");
     }
 
+    // ==================== 内部 ====================
+
     /**
      * 工单变更实时推送（前端工单列表/大屏看板刷新）
      */
@@ -411,91 +381,6 @@ public class WorkOrderService {
                     "status", order.getStatus(), "action", action));
         } catch (Exception ignored) {
             // 推送失败不影响主流程
-        }
-    }
-
-    // ==================== 内部 ====================
-
-    /**
-     * 派单自动通知：复用事件中心通道中心（EventRecord + 临时规则模板 + 通道中心 dispatch）
-     */
-    private void notifyRepairer(WorkOrder order, Repairer repairer) {
-        try {
-            NotificationTemplate mainTemplate = templateMapper.selectOne(
-                    new LambdaQueryWrapper<NotificationTemplate>()
-                            .eq(NotificationTemplate::getTemplateCode, "tpl_order_dispatch")
-                            // 【加固】按工单所属租户过滤模板，防止不同租户模板串用（模板为租户级复制数据）
-                            .eq(NotificationTemplate::getTenantId, order.getTenantId())
-                            .last("LIMIT 1"));
-            if (mainTemplate == null) {
-                log.warn("派单通知模板 tpl_order_dispatch 不存在，跳过通知");
-                return;
-            }
-            NotificationRule rule = new NotificationRule();
-            rule.setTemplateId(mainTemplate.getId());
-
-            EventRecord event = new EventRecord();
-            event.setTenantId(order.getTenantId());
-            event.setEventType("order_dispatch");
-            event.setEventSource("workorder");
-            event.setSeverity("warning");
-            event.setBizId(order.getOrderNo());
-            event.setDeviceName(order.getDeviceName());
-            event.setDeviceIp(order.getDeviceIp());
-            event.setDeviceType(order.getDeviceType());
-            event.setLocation(order.getDeviceLocation());
-            event.setContent(order.getDescription());
-            event.setStatus("pending");
-            event.setRetryCount(0);
-
-            Map<String, Object> vars = new HashMap<>();
-            vars.put("orderNo", order.getOrderNo());
-            vars.put("deviceName", order.getDeviceName() == null ? "" : order.getDeviceName());
-            vars.put("deviceIp", order.getDeviceIp() == null ? "" : order.getDeviceIp());
-            vars.put("deviceType", order.getDeviceType() == null ? "" : order.getDeviceType());
-            vars.put("deviceLocation", order.getDeviceLocation() == null ? "" : order.getDeviceLocation());
-            vars.put("faultDesc", StringUtils.hasText(order.getDescription()) ? order.getDescription()
-                    : ("设备" + (order.getFaultType().equals("offline") ? "离线" : "链路异常")));
-            vars.put("repairerName", repairer.getName());
-            vars.put("tenantName", resolveTenantName(order.getTenantId()));
-
-            // 构造联系人：维修人员只有手机号，封装为 NotificationContact。
-            // sms 通道按 mobile 发送；wechat 通道因未绑定 openid 自动跳过（记 warning）；pushplus 忽略接收人按租户 token 群发。
-            List<NotificationContact> contacts = new java.util.ArrayList<>();
-            if (StringUtils.hasText(repairer.getPhone())) {
-                NotificationContact c = new NotificationContact();
-                c.setName(repairer.getName());
-                c.setMobile(repairer.getPhone());
-                contacts.add(c);
-            }
-            if (contacts.isEmpty()) {
-                log.warn("维修人员[{}]未配置手机号，派单通知跳过", repairer.getName());
-                return;
-            }
-            List<Long> channelIds = notifyChannelMapper.selectList(
-                    new LambdaQueryWrapper<NotifyChannel>().eq(NotifyChannel::getTenantId, order.getTenantId()).eq(NotifyChannel::getEnabled, 1))
-                    .stream().map(NotifyChannel::getId).toList();
-            List<NotificationLog> logs = channelService.dispatch(event, rule,
-                    contacts, channelIds, vars, null);
-            log.info("工单[{}]派单通知已发送，日志{}条", order.getOrderNo(), logs.size());
-        } catch (Exception e) {
-            log.error("工单[{}]派单通知异常: {}", order.getOrderNo(), e.getMessage(), e);
-        }
-    }
-
-    /**
-     * 按租户 ID 解析租户名称（sys_tenant 为系统表，不受租户拦截；查不到/异常兜底空串）
-     */
-    private String resolveTenantName(Long tenantId) {
-        if (tenantId == null) {
-            return "";
-        }
-        try {
-            SysTenant tenant = tenantMapper.selectById(tenantId);
-            return tenant == null ? "" : (tenant.getTenantName() == null ? "" : tenant.getTenantName());
-        } catch (Exception e) {
-            log.warn("解析租户名称失败 tenantId={}: {}", tenantId, e.getMessage());
-            return "";
         }
     }
 

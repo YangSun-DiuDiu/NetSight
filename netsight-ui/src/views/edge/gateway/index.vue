@@ -32,17 +32,17 @@
     </el-row>
 
     <!-- 网关列表 -->
-    <el-table v-loading="loading" :data="gatewayList">
-      <el-table-column label="网关名称" prop="gatewayName" min-width="140" />
-      <el-table-column label="网关编码" prop="gatewayCode" width="170" />
-      <el-table-column label="部署位置" prop="location" min-width="120" show-overflow-tooltip />
-      <el-table-column label="所属租户" prop="tenantId" width="90" />
+    <el-table border v-loading="loading" :data="gatewayList">
+      <el-table-column label="网关名称" prop="gatewayName" width="70"  align="center"/>
+      <el-table-column label="网关编码" prop="gatewayCode" width="220"  align="center"/>
+      <el-table-column label="部署位置" prop="location" min-width="120" show-overflow-tooltip  align="center"/>
+      <el-table-column label="所属租户" prop="tenantId" width="90"  align="center"/>
       <el-table-column label="上行链路" width="90" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="linkTypeTag(scope.row.linkType)">{{ linkTypeText(scope.row.linkType) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="最近IP" prop="ipAddress" width="130" />
+      <el-table-column label="最近IP" prop="ipAddress" width="120"  align="center"/>
       <el-table-column label="在线状态" width="90" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.onlineStatus === 1 ? 'success' : 'danger'">
@@ -50,7 +50,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="最近心跳" prop="lastHeartbeatTime" width="160" />
+      <el-table-column label="最近心跳" prop="lastHeartbeatTime" width="150"  align="center"/>
       <el-table-column label="PushPlus" width="110" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.pushplusToken ? 'success' : 'info'">
@@ -63,12 +63,12 @@
           <el-switch v-hasRole="['super_admin','tenant_admin']" v-model="scope.row.status" :active-value="1" :inactive-value="0" @change="handleStatusChange(scope.row)" />
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" width="280" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width" fixed="right">
         <template slot-scope="scope">
           <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
           <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-key" @click="handleResetToken(scope.row)">重置Token</el-button>
           <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-chat-dot-round" @click="handlePp(scope.row)">PushPlus</el-button>
-          <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-delete" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-delete" @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

@@ -49,6 +49,7 @@ public class NotifyChannelService {
                     field("accessKeySecret", "AccessKey Secret", "password", true),
                     field("signName", "短信签名", "text", true),
                     field("templateCode", "模板 CODE", "text", true),
+                    field("templateVarNames", "模板变量名", "text", false, "系统支持的变量：code（验证码）、deviceName（设备名）、deviceIp（设备IP）、deviceType（设备类型）、time（时间）、location（位置）、tenantName（租户名）、severity（级别）。多个用英文逗号分隔。留空默认 code。"),
                     field("endpoint", "Endpoint", "text", false)
             )),
             meta("tencent_sms", "腾讯云短信", List.of(
@@ -179,6 +180,45 @@ public class NotifyChannelService {
         return result;
     }
 
+    /**
+     * 按通道类型解析该租户默认启用的通道实例（模板未绑具体实例时的兜底）。
+     * 异步线程无租户上下文，必须显式按 tenantId 过滤，防止跨租户串用实例。
+     */
+    public Map<String, Object> resolveDefaultByType(String channelType, Long tenantId) {
+        NotifyChannel c = channelMapper.selectOne(new LambdaQueryWrapper<NotifyChannel>()
+                .eq(NotifyChannel::getChannelType, channelType)
+                .eq(NotifyChannel::getTenantId, tenantId)
+                .eq(NotifyChannel::getEnabled, 1)
+                .orderByAsc(NotifyChannel::getId)
+                .last("LIMIT 1"));
+        if (c == null) return null;
+        Map<String, Object> cfg = parseConfig(c.getConfigJson());
+        decryptConfig(cfg);
+        Map<String, Object> item = new HashMap<>();
+        item.put("channelId", c.getId());
+        item.put("channelType", c.getChannelType());
+        item.put("channelName", c.getChannelName());
+        item.put("config", cfg);
+        return item;
+    }
+
+    /**
+     * 系统级通道解析（登录验证码等无租户上下文场景）。
+     * 按实例名 + 指定租户精确查，绕过租户拦截器，返回解密后的实例参数。
+     */
+    public Map<String, Object> resolveSystemChannel(String channelName, Long tenantId) {
+        NotifyChannel c = channelMapper.selectSystemChannel(channelName, tenantId);
+        if (c == null) return null;
+        Map<String, Object> cfg = parseConfig(c.getConfigJson());
+        decryptConfig(cfg);
+        Map<String, Object> item = new HashMap<>();
+        item.put("channelId", c.getId());
+        item.put("channelType", c.getChannelType());
+        item.put("channelName", c.getChannelName());
+        item.put("config", cfg);
+        return item;
+    }
+
     /** 健康检查（每 5 分钟） */
     @Scheduled(fixedDelay = 300_000L, initialDelay = 60_000L)
     public void healthCheck() {
@@ -271,6 +311,13 @@ public class NotifyChannelService {
         Map<String, String> f = new HashMap<>();
         f.put("key", key); f.put("label", label); f.put("type", type);
         f.put("required", String.valueOf(required));
+        return f;
+    }
+
+    /** 带提示文案的字段（前端在 label 旁渲染小问号 tooltip） */
+    private static Map<String, String> field(String key, String label, String type, boolean required, String hint) {
+        Map<String, String> f = field(key, label, type, required);
+        f.put("hint", hint);
         return f;
     }
 }

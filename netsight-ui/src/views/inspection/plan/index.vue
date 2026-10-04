@@ -26,7 +26,7 @@
         <el-button v-if="hasPerm('inspection:plan:add')" type="primary" icon="el-icon-plus" @click="openAdd">新增计划</el-button>
       </div>
       <el-table v-loading="loading" :data="list" border stripe>
-        <el-table-column label="计划名称" prop="planName" min-width="140" show-overflow-tooltip />
+        <el-table-column label="计划名称" prop="planName" width="110" show-overflow-tooltip  align="center"/>
         <el-table-column label="周期" width="90" align="center">
           <template slot-scope="scope">
             <el-tag size="mini">{{ cycleText(scope.row.cycleType) }}</el-tag>
@@ -37,13 +37,13 @@
             {{ scope.row.targetType === 'device' ? '指定设备' : '按设备类型' }}
           </template>
         </el-table-column>
-        <el-table-column label="目标" min-width="160" show-overflow-tooltip>
+        <el-table-column label="目标" min-width="160" show-overflow-tooltip align="center">
           <template slot-scope="scope">
             {{ scope.row.targetIds }}
           </template>
         </el-table-column>
         <el-table-column label="执行人" prop="assigneeName" width="100" align="center" />
-        <el-table-column label="生效期" width="180" align="center">
+        <el-table-column label="生效期" width="170" align="center">
           <template slot-scope="scope">
             {{ scope.row.startDate || '-' }} ~ {{ scope.row.endDate || '长期' }}
           </template>
@@ -53,11 +53,11 @@
             <el-tag :type="scope.row.status === 1 ? 'success' : 'info'" size="mini">{{ scope.row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" align="center" fixed="right">
+        <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width" fixed="right">
           <template slot-scope="scope">
-            <el-button v-if="hasPerm('inspection:plan:edit')" type="success" size="mini" icon="el-icon-s-promotion" @click="handleGenerate(scope.row)">生成任务</el-button>
-            <el-button v-if="hasPerm('inspection:plan:edit')" type="primary" size="mini" icon="el-icon-edit" @click="openEdit(scope.row)">修改</el-button>
-            <el-button v-if="hasPerm('inspection:plan:remove')" type="danger" size="mini" icon="el-icon-delete" @click="handleDelete(scope.row)">删除</el-button>
+            <el-button v-if="hasPerm('inspection:plan:edit')" type="text" size="mini" icon="el-icon-s-promotion" @click="handleGenerate(scope.row)">生成任务</el-button>
+            <el-button v-if="hasPerm('inspection:plan:edit')" type="text" size="mini" icon="el-icon-edit" @click="openEdit(scope.row)">修改</el-button>
+            <el-button v-if="hasPerm('inspection:plan:remove')" type="text" size="mini" icon="el-icon-delete" @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

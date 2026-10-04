@@ -23,10 +23,10 @@
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table v-loading="loading" :data="recordList">
-      <el-table-column label="操作时间" prop="createTime" width="170" align="center" />
-      <el-table-column label="备件编号" prop="partNo" width="200" show-overflow-tooltip />
-      <el-table-column label="备件名称" prop="partName" min-width="180" show-overflow-tooltip />
+    <el-table border v-loading="loading" :data="recordList">
+      <el-table-column label="操作时间" prop="createTime" width="225" align="center" />
+      <el-table-column label="备件编号" prop="partNo" width="215" show-overflow-tooltip  align="center"/>
+      <el-table-column label="备件名称" prop="partName" width="70" show-overflow-tooltip  align="center"/>
       <el-table-column label="操作类型" width="110" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="recordTypeType(scope.row.recordType)">{{ recordTypeText(scope.row.recordType) }}</el-tag>
@@ -40,11 +40,11 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="关联工单" width="200" align="center">
+      <el-table-column label="关联工单" min-width="150" align="center">
         <template slot-scope="scope">{{ scope.row.orderNo || '-' }}</template>
       </el-table-column>
       <el-table-column label="操作人" prop="operator" width="100" align="center" />
-      <el-table-column label="备注" prop="remark" min-width="160" show-overflow-tooltip />
+      <el-table-column label="备注" prop="remark" min-width="160" show-overflow-tooltip  align="center"/>
     </el-table>
 
     <pagination v-show="total > 0" :total="total" :page.sync="queryParams.pageNum" :limit.sync="queryParams.pageSize" @pagination="getList" />

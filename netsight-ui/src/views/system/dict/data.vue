@@ -90,7 +90,7 @@
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table v-loading="loading" :data="dataList" @selection-change="handleSelectionChange">
+    <el-table border v-loading="loading" :data="dataList" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column label="字典编码" align="center" prop="dictCode" />
       <el-table-column label="字典标签" align="center" prop="dictLabel">
@@ -112,7 +112,7 @@
           <span>{{ parseTime(scope.row.createTime) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button
             size="mini"

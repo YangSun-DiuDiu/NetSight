@@ -50,7 +50,11 @@ public class SecurityConfig {
             // 边缘网关采集清单下发（网关 Token 鉴权，非用户 JWT）
             "/edge/config/**",
             // AlertManager Webhook 接入（Header 密钥鉴权，非用户 JWT）
-            "/alert/push"
+            "/alert/push",
+            // 上传文件静态访问
+            "/uploads/**",
+            // 文件上传接口（需登录鉴权，但放行 OPTIONS）
+            "/file/upload"
     };
 
     @Bean

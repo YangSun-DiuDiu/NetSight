@@ -28,10 +28,10 @@
     </el-row>
 
     <!-- 列表 -->
-    <el-table v-loading="loading" :data="list">
-      <el-table-column label="姓名" prop="name" min-width="120" />
+    <el-table border v-loading="loading" :data="list">
+      <el-table-column label="姓名" prop="name" min-width="120"  align="center"/>
       <el-table-column label="手机号" prop="mobile" min-width="130" align="center" />
-      <el-table-column label="微信openid" min-width="180" show-overflow-tooltip>
+      <el-table-column label="微信openid" min-width="170" show-overflow-tooltip align="center">
         <template slot-scope="scope">
           <span v-if="scope.row.wechatOpenid">{{ scope.row.wechatOpenid }}</span>
           <el-tag v-else size="mini" type="info">未绑定（本期预留）</el-tag>
@@ -42,11 +42,11 @@
           <el-tag size="mini" :type="scope.row.status === 1 ? 'success' : 'info'">{{ scope.row.status === 1 ? '启用' : '停用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="备注" prop="remark" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="150" align="center">
+      <el-table-column label="备注" prop="remark" min-width="160" show-overflow-tooltip  align="center"/>
+      <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button v-hasPermi="['alert:contact:edit']" type="text" size="mini" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
-          <el-button v-hasPermi="['alert:contact:remove']" type="text" size="mini" icon="el-icon-delete" class="el-button--text-danger" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button v-hasPermi="['alert:contact:remove']" type="text" size="mini" icon="el-icon-delete" class="el-button--text-danger" @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

@@ -21,9 +21,9 @@
       </div>
       <el-table v-loading="loading" :data="list" border stripe>
         <el-table-column label="排序" prop="sort" width="70" align="center" />
-        <el-table-column label="点检项名称" prop="itemName" min-width="130" />
-        <el-table-column label="检查内容" prop="checkContent" min-width="180" show-overflow-tooltip />
-        <el-table-column label="检查标准" prop="checkStandard" min-width="180" show-overflow-tooltip />
+        <el-table-column label="点检项名称" prop="itemName" min-width="130"  align="center"/>
+        <el-table-column label="检查内容" prop="checkContent" min-width="180" show-overflow-tooltip  align="center"/>
+        <el-table-column label="检查标准" prop="checkStandard" min-width="180" show-overflow-tooltip  align="center"/>
         <el-table-column label="结果类型" width="100" align="center">
           <template slot-scope="scope">
             <el-tag :type="scope.row.resultType === 'text' ? 'warning' : 'success'" size="mini">{{ scope.row.resultType === 'text' ? '文本填写' : '勾选' }}</el-tag>
@@ -34,10 +34,10 @@
             <el-tag :type="scope.row.status === 1 ? 'success' : 'info'" size="mini">{{ scope.row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" align="center" fixed="right">
+        <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width" fixed="right">
           <template slot-scope="scope">
-            <el-button v-if="hasPerm('inspection:item:edit')" type="primary" size="mini" icon="el-icon-edit" @click="openEdit(scope.row)">修改</el-button>
-            <el-button v-if="hasPerm('inspection:item:remove')" type="danger" size="mini" icon="el-icon-delete" @click="handleDelete(scope.row)">删除</el-button>
+            <el-button v-if="hasPerm('inspection:item:edit')" type="text" size="mini" icon="el-icon-edit" @click="openEdit(scope.row)">修改</el-button>
+            <el-button v-if="hasPerm('inspection:item:remove')" type="text" size="mini" icon="el-icon-delete" @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

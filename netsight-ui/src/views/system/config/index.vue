@@ -102,7 +102,7 @@
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table v-loading="loading" :data="configList" @selection-change="handleSelectionChange">
+    <el-table border v-loading="loading" :data="configList" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column label="参数主键" align="center" prop="configId" />
       <el-table-column label="参数名称" align="center" prop="configName" :show-overflow-tooltip="true" />
@@ -119,7 +119,7 @@
           <span>{{ parseTime(scope.row.createTime) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button
             size="mini"
@@ -133,8 +133,7 @@
             type="text"
             icon="el-icon-delete"
             @click="handleDelete(scope.row)"
-            v-hasPermi="['system:config:remove']"
-          >删除</el-button>
+            v-hasPermi="['system:config:remove']" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

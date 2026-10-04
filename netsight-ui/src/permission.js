@@ -9,14 +9,38 @@ import { isRelogin } from '@/utils/request'
 
 NProgress.configure({ showSpinner: false })
 
-const whiteList = ['/login', '/register']
+const whiteList = ['/login', '/register', '/m/login']
 
 const isWhiteList = (path) => {
   return whiteList.some(pattern => isPathMatch(pattern, path))
 }
 
+// H5 移动端路径前缀
+const isMobilePath = (path) => path.startsWith('/m/')
+
 router.beforeEach((to, from, next) => {
   NProgress.start()
+
+  // H5 移动端路由独立处理
+  if (isMobilePath(to.path)) {
+    const token = getToken()
+    if (to.path === '/m/login') {
+      if (token) {
+        next('/m/orders')
+      } else {
+        next()
+      }
+    } else {
+      if (token) {
+        next()
+      } else {
+        next('/m/login')
+      }
+    }
+    NProgress.done()
+    return
+  }
+
   if (getToken()) {
     to.meta.title && store.dispatch('settings/setTitle', to.meta.title)
     /* has token*/

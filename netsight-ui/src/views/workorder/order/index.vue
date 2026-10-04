@@ -1,35 +1,71 @@
 <template>
   <div class="app-container">
     <!-- 顶部统计卡片 -->
-    <el-row :gutter="12" class="stat-cards">
-      <el-col :span="4">
-        <div class="stat-card stat-pending">
-          <div class="stat-num">{{ stats.pending }}</div>
-          <div class="stat-label">待处理</div>
+    <el-row :gutter="16" class="stat-row">
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#FDF3E7;color:#F59E0B">
+            <i class="el-icon-document" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.pending }}</div>
+            <div class="stat-label">待处理</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="4">
-        <div class="stat-card stat-dispatched">
-          <div class="stat-num">{{ stats.dispatched }}</div>
-          <div class="stat-label">已派单</div>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#EAF0FB;color:#205CF5">
+            <i class="el-icon-s-promotion" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.dispatched }}</div>
+            <div class="stat-label">已派单</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="4">
-        <div class="stat-card stat-repairing">
-          <div class="stat-num">{{ stats.repairing }}</div>
-          <div class="stat-label">维修中</div>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#F1F0FE;color:#8B5CF6">
+            <i class="el-icon-set-up" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.repairing }}</div>
+            <div class="stat-label">维修中</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="4">
-        <div class="stat-card stat-completed">
-          <div class="stat-num">{{ stats.completed }}</div>
-          <div class="stat-label">已完成</div>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#E8F8F2;color:#10B981">
+            <i class="el-icon-circle-check" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.completed }}</div>
+            <div class="stat-label">已完成</div>
+          </div>
         </div>
       </el-col>
-      <el-col :span="4">
-        <div class="stat-card stat-total">
-          <div class="stat-num">{{ stats.total }}</div>
-          <div class="stat-label">工单总数</div>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#E6FFFA;color:#0D9488">
+            <i class="el-icon-refresh" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.recovered }}</div>
+            <div class="stat-label">已自动恢复</div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="12" :sm="4">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#F3F4F6;color:#6B7280">
+            <i class="el-icon-tickets" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats.total }}</div>
+            <div class="stat-label">工单总数</div>
+          </div>
         </div>
       </el-col>
     </el-row>
@@ -69,22 +105,22 @@
     </el-row>
 
     <!-- 工单列表 -->
-    <el-table v-loading="loading" :data="orderList">
-      <el-table-column label="工单编号" prop="orderNo" width="200" show-overflow-tooltip />
-      <el-table-column label="来源" width="80" align="center">
+    <el-table border v-loading="loading" :data="orderList">
+      <el-table-column label="工单编号" prop="orderNo" width="360" show-overflow-tooltip  align="center"/>
+      <el-table-column label="来源" width="90" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.sourceType === 'event' ? 'danger' : 'info'">
             {{ scope.row.sourceType === 'event' ? '告警' : '手动' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="设备" min-width="170" show-overflow-tooltip>
+      <el-table-column label="设备" width="85" show-overflow-tooltip align="center">
         <template slot-scope="scope">
           <div>{{ scope.row.deviceName }}</div>
           <div class="sub-text">{{ scope.row.deviceIp }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="故障类型" width="100" align="center">
+      <el-table-column label="故障类型" min-width="100" align="center">
         <template slot-scope="scope">{{ faultTypeText(scope.row.faultType) }}</template>
       </el-table-column>
       <el-table-column label="级别" width="90" align="center">
@@ -99,21 +135,21 @@
           <el-tag size="mini" :type="statusType(scope.row.status)">{{ scope.row.statusText }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="维修人员" prop="repairerName" width="100" align="center">
+      <el-table-column label="维修人员" prop="repairerName" min-width="100" align="center">
         <template slot-scope="scope">{{ scope.row.repairerName || '-' }}</template>
       </el-table-column>
-      <el-table-column label="记录/备件" width="90" align="center">
+      <el-table-column label="记录/备件" width="100" align="center">
         <template slot-scope="scope">
           <span>{{ scope.row.recordCount || 0 }}/{{ scope.row.partCount || 0 }}</span>
         </template>
       </el-table-column>
       <el-table-column label="创建时间" prop="createTime" width="160" align="center" />
-      <el-table-column label="操作" width="230" align="center" fixed="right">
+      <el-table-column label="操作" align="center" width="240" class-name="small-padding fixed-width" fixed="right">
         <template slot-scope="scope">
           <el-button size="mini" type="text" icon="el-icon-view" @click="handleDetail(scope.row)">详情</el-button>
-          <el-button v-hasPermi="['workorder:order:dispatch']" v-if="scope.row.status === 0" size="mini" type="text" icon="el-icon-s-promotion" style="color:#e6a23c" @click="handleDispatch(scope.row)">报修派单</el-button>
+          <el-button v-hasPermi="['workorder:order:dispatch']" v-if="scope.row.status === 0" size="mini" type="text" icon="el-icon-s-promotion"  @click="handleDispatch(scope.row)">报修派单</el-button>
           <el-button v-hasPermi="['workorder:order:complete']" v-if="scope.row.status === 1" size="mini" type="text" icon="el-icon-video-play" @click="handleRepairStart(scope.row)">开始维修</el-button>
-          <el-button v-hasPermi="['workorder:order:complete']" v-if="scope.row.status === 1 || scope.row.status === 2" size="mini" type="text" icon="el-icon-circle-check" style="color:#67c23a" @click="handleComplete(scope.row)">完工</el-button>
+          <el-button v-hasPermi="['workorder:order:complete']" v-if="scope.row.status === 1 || scope.row.status === 2" size="mini" type="text" icon="el-icon-s-check"  @click="handleComplete(scope.row)">完工</el-button>
           <el-button v-hasPermi="['workorder:order:complete']" v-if="scope.row.status === 0 || scope.row.status === 5" size="mini" type="text" icon="el-icon-circle-close" @click="handleClose(scope.row)">关闭</el-button>
           <el-button v-hasPermi="['workorder:order:edit']" v-if="scope.row.status === 0" size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
           <el-button v-hasPermi="['workorder:order:remove']" v-if="scope.row.status === 0" size="mini" type="text" icon="el-icon-delete" style="color:#f56c6c" @click="handleDelete(scope.row)">删除</el-button>
@@ -338,7 +374,7 @@ export default {
       showSearch: true,
       orderList: [],
       total: 0,
-      stats: { pending: 0, dispatched: 0, repairing: 0, completed: 0, total: 0 },
+      stats: { pending: 0, dispatched: 0, repairing: 0, completed: 0, recovered: 0, total: 0 },
       statusMap: { 0: '待处理', 1: '已派单', 2: '维修中', 3: '已完成', 4: '已关闭', 5: '已自动恢复' },
       queryParams: { pageNum: 1, pageSize: 10, orderNo: undefined, deviceName: undefined, faultType: undefined, status: undefined },
       open: false,
@@ -517,21 +553,6 @@ export default {
 </script>
 
 <style scoped>
-.stat-cards { margin-bottom: 16px; }
-.stat-card {
-  border-radius: 6px;
-  padding: 16px 12px;
-  text-align: center;
-  color: #fff;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-}
-.stat-num { font-size: 26px; font-weight: 700; line-height: 1.2; }
-.stat-label { font-size: 13px; opacity: 0.9; margin-top: 2px; }
-.stat-pending { background: linear-gradient(135deg, #f6ad55, #ed8936); }
-.stat-dispatched { background: linear-gradient(135deg, #63b3ed, #3182ce); }
-.stat-repairing { background: linear-gradient(135deg, #b794f4, #805ad5); }
-.stat-completed { background: linear-gradient(135deg, #68d391, #38a169); }
-.stat-total { background: linear-gradient(135deg, #a0aec0, #718096); }
 .search-form { margin-bottom: 4px; }
 .mb8 { margin-bottom: 10px; }
 .sub-text { color: #909399; font-size: 12px; }

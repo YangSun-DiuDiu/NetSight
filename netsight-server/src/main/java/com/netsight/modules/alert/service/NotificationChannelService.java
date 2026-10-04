@@ -61,24 +61,148 @@ public class NotificationChannelService {
     public List<NotificationLog> dispatch(EventRecord event, NotificationRule rule,
                                           List<NotificationContact> contacts, List<Long> channelIds,
                                           Map<String, Object> vars, Map<String, Object> extra) {
+        // 模板即通道：规则绑定模板组（templateCode），发送时按模板查全部通道模板遍历发送，不再读规则通道列表
+        if (rule != null && rule.getTemplateId() != null) {
+            return dispatchByTemplateGroup(event, rule, contacts, vars, extra);
+        }
+        // 手动发送：rule==null，按前端传入通道实例 ID 发送
+        return dispatchByChannelIds(event, contacts, channelIds, vars, extra);
+    }
+
+    /**
+     * 模板即通道：按规则绑定的模板组（templateCode）查该租户下全部启用模板，
+     * 每条模板自带 channelId（通道实例），遍历各通道渲染+发送。多通道=同 templateCode 多条模板。
+     */
+    private List<NotificationLog> dispatchByTemplateGroup(EventRecord event, NotificationRule rule,
+                                                         List<NotificationContact> contacts,
+                                                         Map<String, Object> vars, Map<String, Object> extra) {
+        List<NotificationLog> logs = new ArrayList<>();
+        NotificationTemplate mainTemplate = templateMapper.selectOne(new LambdaQueryWrapper<NotificationTemplate>()
+                .eq(NotificationTemplate::getId, rule.getTemplateId())
+                .eq(NotificationTemplate::getTenantId, event.getTenantId())
+                .last("LIMIT 1"));
+        if (mainTemplate == null) {
+            log.warn("规则[{}]模板[{}]不属于事件租户[{}]，跳过发送", rule.getId(), rule.getTemplateId(), event.getTenantId());
+            return logs;
+        }
+        List<NotificationTemplate> groupTemplates = templateMapper.selectList(new LambdaQueryWrapper<NotificationTemplate>()
+                .eq(NotificationTemplate::getTemplateCode, mainTemplate.getTemplateCode())
+                .eq(NotificationTemplate::getTenantId, event.getTenantId())
+                .eq(NotificationTemplate::getEnabled, 1));
+        if (groupTemplates.isEmpty()) {
+            log.warn("模板组[{}]无启用模板，跳过发送", mainTemplate.getTemplateCode());
+            return logs;
+        }
+        List<String> doneChannelTypes = new ArrayList<>();
+        for (NotificationTemplate tpl : groupTemplates) {
+            // 模板绑定了具体通道实例则用之；未绑（channelId 为空）则按通道类型自动选该租户默认启用实例
+            Map<String, Object> ch = resolveChannelInstance(tpl, event.getTenantId());
+            if (ch == null) {
+                log.warn("模板[{}]通道类型[{}]无可用实例，跳过", tpl.getId(), tpl.getChannelType());
+                continue;
+            }
+            String channelType = String.valueOf(ch.get("channelType"));
+            if (doneChannelTypes.contains(channelType)) {
+                continue;
+            }
+            List<String> channelReceivers = contactService.resolveReceiversByChannel(contacts, channelType);
+            NotificationLog logEntry = sendOneResolved(event, rule, tpl, channelType, channelReceivers, vars, extra, ch);
+            logs.add(logEntry);
+            doneChannelTypes.add(channelType);
+
+            if (fallbackEnabled && logEntry.getSuccess() != null && logEntry.getSuccess() == 0
+                    && ("sms".equals(channelType) || channelType.endsWith("_sms"))
+                    && !doneChannelTypes.contains("wechat_work")) {
+                log.warn("短信发送失败，自动降级企业微信重发 (eventId={})", event.getId());
+                for (NotificationTemplate wxTpl : groupTemplates) {
+                    Map<String, Object> wxCh = resolveChannelInstance(wxTpl, event.getTenantId());
+                    if (wxCh == null) continue;
+                    if (!"wechat_work".equals(String.valueOf(wxCh.get("channelType")))) continue;
+                    List<String> wxReceivers = contactService.resolveReceiversByChannel(contacts, "wechat_work");
+                    NotificationLog fallback = sendOneResolved(event, rule, wxTpl, "wechat_work", wxReceivers, vars, extra, wxCh);
+                    logs.add(fallback);
+                    doneChannelTypes.add("wechat_work");
+                    break;
+                }
+            }
+        }
+        return logs;
+    }
+
+    /**
+     * 解析模板对应的通道实例：优先用模板绑定的具体实例 channelId；
+     * 未绑（channelId 为空）时按通道类型自动选该租户默认启用实例。无可用实例返回 null。
+     */
+    private Map<String, Object> resolveChannelInstance(NotificationTemplate tpl, Long tenantId) {
+        if (tpl.getChannelId() != null) {
+            List<Map<String, Object>> resolved = notifyChannelService.resolveChannels(List.of(tpl.getChannelId()));
+            return resolved.isEmpty() ? null : resolved.get(0);
+        }
+        return notifyChannelService.resolveDefaultByType(tpl.getChannelType(), tenantId);
+    }
+
+    /**
+     * 模板组单通道发送：直接用传入模板渲染，不再 findTemplate
+     */
+    private NotificationLog sendOneResolved(EventRecord event, NotificationRule rule,
+                                           NotificationTemplate template, String channelType,
+                                           List<String> receivers, Map<String, Object> vars,
+                                           Map<String, Object> extra, Map<String, Object> channelInstance) {
+        NotificationChannelSender sender;
+        try {
+            sender = channelRegistry.get(channelType);
+        } catch (Exception e) {
+            return buildFailLog(event, rule, channelType, receivers, "通道未注册: " + channelType);
+        }
+        String rawContent = template == null ? null : template.getContent();
+        String content = rawContent != null
+                ? NotificationTemplateService.render(rawContent, vars)
+                : (vars != null && vars.get("content") != null ? String.valueOf(vars.get("content")) : "");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> chCfg = channelInstance == null ? null
+                : (Map<String, Object>) channelInstance.get("config");
+        SendRequest request = SendRequest.builder()
+                .receiverList(receivers)
+                .templateId(template == null ? null : template.getId())
+                .contentVars(vars)
+                .content(content)
+                .bizId(event.getBizId())
+                .tenantId(event.getTenantId())
+                .gatewayCode(parseGatewayCode(event.getLabelsJson()))
+                .extra(extra)
+                .channelConfig(chCfg)
+                .build();
+        RetrySendResult result = sendWithRetry(sender, request);
+        NotificationLog logEntry = new NotificationLog();
+        logEntry.setTenantId(event.getTenantId());
+        logEntry.setEventId(event.getId());
+        logEntry.setRuleId(rule == null ? null : rule.getId());
+        logEntry.setRuleName(rule == null ? null : rule.getRuleName());
+        logEntry.setEventType(event.getEventType());
+        logEntry.setChannelType(channelType);
+        logEntry.setReceiversJson(toJson(receivers));
+        logEntry.setContent(content);
+        logEntry.setBizId(event.getBizId());
+        logEntry.setSuccess(result.sendResult.isSuccess() ? 1 : 0);
+        logEntry.setErrorMsg(result.sendResult.getErrorMsg());
+        logEntry.setThirdPartyMsgId(result.sendResult.getThirdPartyMsgId());
+        logEntry.setCostTime(result.sendResult.getCostTime());
+        logEntry.setRetryCount(result.retryCount);
+        logMapper.insert(logEntry);
+        return logEntry;
+    }
+
+    /**
+     * 手动发送：按传入通道实例 ID 遍历发送（无模板组概念，findTemplate 两级兜底）
+     */
+    private List<NotificationLog> dispatchByChannelIds(EventRecord event,
+                                                      List<NotificationContact> contacts, List<Long> channelIds,
+                                                      Map<String, Object> vars, Map<String, Object> extra) {
         List<NotificationLog> logs = new ArrayList<>();
         if (channelIds == null || channelIds.isEmpty()) {
             return logs;
         }
-        // 主模板（用于取 templateCode 与内容兜底；手动发送 rule 可为 null）
-        // 【加固】按 模板ID + 事件租户 查询：dispatch 在异步线程执行，TenantLine 拦截器无租户上下文会跳过过滤，
-        // 若仅 selectById，规则可引用其他租户的模板造成跨租户模板串用（内容泄露/误发），必须显式按事件租户匹配。
         NotificationTemplate mainTemplate = null;
-        if (rule != null && rule.getTemplateId() != null) {
-            mainTemplate = templateMapper.selectOne(new LambdaQueryWrapper<NotificationTemplate>()
-                    .eq(NotificationTemplate::getId, rule.getTemplateId())
-                    .eq(NotificationTemplate::getTenantId, event.getTenantId())
-                    .last("LIMIT 1"));
-            if (mainTemplate == null) {
-                log.warn("规则[{}]模板[{}]不属于事件租户[{}]，按无模板兜底处理",
-                        rule.getId(), rule.getTemplateId(), event.getTenantId());
-            }
-        }
         // 按渠道实例 ID 解析实例配置（channelType + 解密后的 config）
         List<Map<String, Object>> channels = notifyChannelService.resolveChannels(channelIds);
         List<String> doneChannelTypes = new ArrayList<>();
@@ -89,7 +213,7 @@ public class NotificationChannelService {
             }
             // 按通道解析投递地址：sms→联系人mobile，wechat→openid，pushplus→空（租户token群发）
             List<String> channelReceivers = contactService.resolveReceiversByChannel(contacts, channelType);
-            NotificationLog logEntry = sendOne(event, rule, mainTemplate, channelType,
+            NotificationLog logEntry = sendOne(event, null, mainTemplate, channelType,
                     channelReceivers, vars, extra, ch);
             logs.add(logEntry);
             doneChannelTypes.add(channelType);
@@ -105,7 +229,7 @@ public class NotificationChannelService {
                 if (!wxChannels.isEmpty()) {
                     Map<String, Object> wxCh = wxChannels.get(0);
                     List<String> wechatReceivers = contactService.resolveReceiversByChannel(contacts, "wechat_work");
-                    NotificationLog fallback = sendOne(event, rule, mainTemplate, "wechat_work",
+                    NotificationLog fallback = sendOne(event, null, mainTemplate, "wechat_work",
                             wechatReceivers, vars, extra, wxCh);
                     logs.add(fallback);
                     doneChannelTypes.add("wechat_work");

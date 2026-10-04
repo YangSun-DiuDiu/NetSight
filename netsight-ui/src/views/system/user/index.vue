@@ -49,12 +49,12 @@
     </el-row>
 
     <!-- 用户列表 -->
-    <el-table v-loading="loading" :data="userList">
-      <el-table-column label="用户ID" prop="id" width="80" />
-      <el-table-column label="登录账号" prop="username" />
-      <el-table-column label="姓名" prop="realName" />
-      <el-table-column label="手机号" prop="phone" width="130" />
-      <el-table-column label="所属租户" prop="tenantId" width="100" />
+    <el-table border v-loading="loading" :data="userList">
+      <el-table-column label="用户ID" prop="id" width="80"  align="center"/>
+      <el-table-column label="登录账号" prop="username"  width="80" align="center"/>
+      <el-table-column label="姓名" prop="realName"  width="80" align="center"/>
+      <el-table-column label="手机号" prop="phone" width="140"  align="center"/>
+      <el-table-column label="所属租户" prop="tenantId" min-width="110"  align="center"/>
       <el-table-column label="状态" align="center" width="100">
         <template slot-scope="scope">
           <el-switch
@@ -67,8 +67,8 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" prop="createTime" width="160" />
-      <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
+      <el-table-column label="创建时间" prop="createTime" width="170"  align="center"/>
+      <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
           <el-button v-hasRole="['super_admin']" size="mini" type="text" icon="el-icon-key" @click="handleResetPwd(scope.row)">重置密码</el-button>
@@ -78,8 +78,7 @@
             type="text"
             icon="el-icon-delete"
             :disabled="scope.row.username === 'admin'"
-            @click="handleDelete(scope.row)"
-          >删除</el-button>
+            @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -218,10 +217,10 @@ export default {
     },
     handleUpdate(row) {
       this.reset()
-      this.form = { ...row }
+      this.form = { ...row, roleIds: [] }
       // 回显角色
       getUserRoleIds(row.id).then(roleIds => {
-        this.form.roleIds = roleIds
+        this.$set(this.form, 'roleIds', roleIds || [])
       })
       this.open = true
       this.title = "修改用户"

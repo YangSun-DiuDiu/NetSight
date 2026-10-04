@@ -40,44 +40,44 @@
     </el-row>
 
     <!-- 设备列表 -->
-    <el-table v-loading="loading" :data="deviceList">
+    <el-table border v-loading="loading" :data="deviceList">
       <el-table-column label="状态" width="70" align="center">
         <template slot-scope="scope">
           <el-tooltip :content="statusTooltip(scope.row)" placement="top">
-            <span class="status-dot" :style="{ background: statusColor(scope.row) }"></span>
+            <el-tag size="mini" :type="statusTagType(scope.row)">{{ statusTagText(scope.row) }}</el-tag>
           </el-tooltip>
         </template>
       </el-table-column>
-      <el-table-column label="设备名称" prop="deviceName" min-width="130" />
-      <el-table-column label="设备编码" prop="deviceCode" width="170" />
+      <el-table-column label="设备名称" prop="deviceName" width="100"  align="center"/>
+      <el-table-column label="设备编码" prop="deviceCode" width="190"  align="center"/>
       <el-table-column label="设备类型" width="110" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="typeTag(scope.row.deviceType)">{{ typeText(scope.row.deviceType) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="品牌/型号" min-width="140">
+      <el-table-column label="品牌/型号" min-width="140" align="center">
         <template slot-scope="scope">{{ scope.row.brand }} {{ scope.row.model }}</template>
       </el-table-column>
-      <el-table-column label="管理IP" prop="ipAddress" width="130" />
-      <el-table-column label="部署位置" prop="location" min-width="110" show-overflow-tooltip />
-      <el-table-column label="保修期" width="150" align="center">
+      <el-table-column label="管理IP" prop="ipAddress" width="130"  align="center"/>
+      <el-table-column label="部署位置" prop="location" min-width="110" show-overflow-tooltip  align="center"/>
+      <el-table-column label="保修期" width="140" align="center">
         <template slot-scope="scope">
           <span v-if="scope.row.warrantyExpire" :style="{ marginRight: '4px' }">{{ scope.row.warrantyExpire }}</span>
           <el-tag size="mini" :type="warrantyTag(scope.row.warrantyStatus)">{{ warrantyText(scope.row.warrantyStatus) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="归属网关" prop="gatewayName" min-width="110" />
-      <el-table-column label="上级设备" min-width="140">
+      <el-table-column label="归属网关" prop="gatewayName" min-width="110"  align="center"/>
+      <el-table-column label="上级设备" min-width="130" align="center">
         <template slot-scope="scope">
           <span v-if="!scope.row.parentNames || scope.row.parentNames.length === 0" style="color: #bbb">未配置</span>
           <el-tag v-for="(p, i) in scope.row.parentNames" :key="i" size="mini" style="margin-right: 4px" :type="i === 0 ? 'primary' : 'warning'">{{ p }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" width="230" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width" fixed="right">
         <template slot-scope="scope">
           <el-button v-hasRole="['super_admin','tenant_admin','ops']" size="mini" type="text" icon="el-icon-camera" @click="handleQrcode(scope.row)">二维码</el-button>
           <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
-          <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-delete" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-delete" @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -424,6 +424,16 @@ export default {
       this.resetForm('form')
     },
     // ===== 三色状态 =====
+    statusTagType(row) {
+      if (row.status === 0) return 'danger'      // 红：离线
+      if (row.lineStatus === 1) return 'warning'  // 黄：链路/业务异常
+      return 'success'                            // 绿：正常
+    },
+    statusTagText(row) {
+      if (row.status === 0) return '离线'
+      if (row.lineStatus === 1) return '链路异常'
+      return '在线'
+    },
     statusColor(row) {
       if (row.status === 0) return '#f56c6c'       // 红：离线
       if (row.lineStatus === 1) return '#909399'   // 灰：链路/业务异常

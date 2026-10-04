@@ -1,0 +1,12 @@
+import paramiko
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect('192.168.1.55', username='root', password='Chinaunicom@1358', timeout=10)
+stdin, stdout, stderr = ssh.exec_command("mysql -u sadmin -pChinaunicom@1358 netsight -e 'SELECT id,parent_id,perm_name,icon,path FROM sys_permission WHERE perm_type=\"menu\" AND del_flag=0 ORDER BY parent_id,sort;'")
+out = stdout.read().decode('utf-8', errors='replace')
+err = stderr.read().decode('utf-8', errors='replace')
+print("OUT:")
+print(out)
+print("ERR:")
+print(err)
+ssh.close()

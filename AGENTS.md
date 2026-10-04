@@ -1,6 +1,14 @@
 # AGENTS.md — NetSight（NAMS）项目开发上下文
 
-> **GitHub 远程仓库已建立（2026-10-04 push 完成）**：仓库 `https://github.com/YangSun-DiuDiu/NetSight.git`（**private 私有**，用户名 YangSun-DiuDiu，登录邮箱 4742224@qq.com 不是 username）。本地默认分支 **master**（非 main）；已推送 3 笔提交 `4d25ec4`（初始 673 文件）→ `9990561`（通知教程）→ `9c583db`（NetSight V1.4.1 全量：通知通道方案B/H5维修端/告警中心全链路/UI统一/门禁删除/安全加固，123 文件）。**push 用 fine-grained PAT**（走环境变量 `GITHUB_TOKEN`/内嵌 x-access-token，勿明文入库；该 PAT 无创建仓库权限，后续建新仓库需用户网页创建或换经典 PAT）。**`.gitignore` 已追加排除：`sdk/`（211MB 大华 SDK 二进制）、`netsight-server/deploy/`、`_*.sql`、`deploy_temp.py`、`verify_temp.py`**（GitHub 单文件 100MB 限制，sdk 永不入库）。git 权威信息见 `C:\Users\Administrator\AppData\Local\Doubao\User Data\Default\.doubao\agent_mode\workspace\.user_skills\java-app-deploy\scripts\netsight-project.json`。
+> **GitHub 远程仓库（2026-10-04 建立并完成首次 push，权限与过程全记录）**：
+> - **仓库**：`https://github.com/YangSun-DiuDiu/NetSight.git`（**private 私有**；用户名 `YangSun-DiuDiu`，登录邮箱 4742224@qq.com 是邮箱非 username；仓库为**用户网页手动创建**——fine-grained PAT 无建仓权限）。
+> - **分支**：本地/远程均 **master**（非 main；若产品要求 main 需 `git branch -M main` 再推）；remote origin 已配置 `https://github.com/YangSun-DiuDiu/NetSight.git`（URL 不带 token，认证走环境变量）。
+> - **认证方式（实测权限边界）**：用户提供的 **fine-grained PAT**（`github_pat_` 前缀）——✅ `GET /user`（读账号）、✅ 对**已存在仓库** push（Contents 写）；❌ `POST /user/repos`（创建仓库）返回 `Resource not accessible by personal access token`。**结论：push 用现有 PAT 足够；新建仓库必须用户网页创建（https://github.com/new，选 Private、名称一致、不勾 README/.gitignore/license）或换经典 PAT（ghp_ 带 repo scope）**。
+> - **推送命令（PowerShell，token 勿写入 remote/.git/config）**：`$env:GH_TOKEN='<PAT>'; git push "https://x-access-token:$env:GH_TOKEN@github.com/YangSun-DiuDiu/NetSight.git" master`——成功标志是输出 `* [new branch]` / `xxx..yyy master -> master`；**PowerShell 把 git stderr 当 NativeCommandError 显示 exit 1 属正常，看输出内容判定**。验证用 `git ls-remote https://github.com/YangSun-DiuDiu/NetSight.git`（HEAD/refs/heads/master 应等于本地 HEAD）。
+> - **已推送 4 笔提交**：`4d25ec4`（初始 673 文件）→ `9990561`（通知教程）→ `9c583db`（NetSight V1.4.1 全量：通知通道方案B/H5维修端/告警中心全链路/UI统一/门禁删除/安全加固，123 文件）→ `c930062`（AGENTS 记录 push）。远程 HEAD=c930062。
+> - **`.gitignore` 已追加排除（勿再提交）**：`sdk/`（211MB 大华 SDK 二进制，超 GitHub 100MB 单文件限制）、`netsight-server/deploy/`（调试目录）、`_*.sql`、`deploy_temp.py`、`verify_temp.py`；原有规则含 target/dist/node_modules/*.jar/backup/`_*.py|_*.json|_*.txt`/.env。
+> - **安全约定**：PAT 只走环境变量，永不写入 remote URL 配置、AGENTS.md、netsight-project.json 或任何入库文件。
+> - **git 权威信息**：`C:\Users\Administrator\AppData\Local\Doubao\User Data\Default\.doubao\agent_mode\workspace\.user_skills\java-app-deploy\scripts\netsight-project.json`（mode=已推送 GitHub 私有仓库）。
 
 > **代码备份固定目录（2026-10-04 用户指定，git 本地仓库方式）**：用户要求"备份代码"时，一律备份到 `F:\netSight代码备份目录`（已存在），**备份方式 = git 本地仓库**（非简单文件复制）：在备份目录内建立/维护 git 仓库（如 `F:\netSight代码备份目录\netsight-backup.git` 裸仓库或镜像仓库），每次备份时从项目 `E:\gitee\NetSight1.0`（本地 git 仓库）push/mirror 过去，**并打带日期的 tag**（如 `backup-YYYYMMDD`，可附说明）以便按日期回退；git 仓库信息维护在 `deploy\netsight-project.json`（java-app-deploy skill 引用）。与项目内 `E:\gitee\NetSight1.0\backup\` 的快照备份用途区分：backup\ 是就地快速回滚用，F 盘 git 仓库是用户要求的正式备份归档地（提交历史+日期 tag 可追溯）。
 

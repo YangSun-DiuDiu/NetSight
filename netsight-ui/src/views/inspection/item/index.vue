@@ -20,16 +20,16 @@
         <el-button v-if="hasPerm('inspection:item:add')" type="primary" icon="el-icon-plus" @click="openAdd">新增点检项</el-button>
       </div>
       <el-table v-loading="loading" :data="list" border stripe>
-        <el-table-column label="排序" prop="sort" width="70" align="center" />
+        <el-table-column label="排序" prop="sort" width="100" align="center" />
         <el-table-column label="点检项名称" prop="itemName" min-width="130"  align="center"/>
         <el-table-column label="检查内容" prop="checkContent" min-width="180" show-overflow-tooltip  align="center"/>
         <el-table-column label="检查标准" prop="checkStandard" min-width="180" show-overflow-tooltip  align="center"/>
-        <el-table-column label="结果类型" width="100" align="center">
+        <el-table-column label="结果类型" width="200" align="center">
           <template slot-scope="scope">
             <el-tag :type="scope.row.resultType === 'text' ? 'warning' : 'success'" size="mini">{{ scope.row.resultType === 'text' ? '文本填写' : '勾选' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column label="状态" width="200" align="center">
           <template slot-scope="scope">
             <el-tag :type="scope.row.status === 1 ? 'success' : 'info'" size="mini">{{ scope.row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>

@@ -97,18 +97,18 @@
     <!-- 任务表格 -->
     <el-card shadow="never">
       <el-table v-loading="loading" :data="list" border stripe>
-        <el-table-column label="任务编号" prop="taskNo" width="220" show-overflow-tooltip  align="center"/>
-        <el-table-column label="计划" prop="planName" width="100" show-overflow-tooltip  align="center"/>
+        <el-table-column label="任务编号" prop="taskNo" width="250" show-overflow-tooltip  align="center"/>
+        <el-table-column label="计划" prop="planName" width="250" show-overflow-tooltip  align="center"/>
         <el-table-column label="目标设备" prop="targetName" min-width="100" show-overflow-tooltip  align="center"/>
-        <el-table-column label="位置" prop="targetLocation" width="90" show-overflow-tooltip  align="center"/>
-        <el-table-column label="执行人" prop="assigneeName" width="90" align="center" />
-        <el-table-column label="计划日期" prop="planDate" width="110" align="center" />
-        <el-table-column label="状态" width="90" align="center">
+        <el-table-column label="位置" prop="targetLocation" width="150" show-overflow-tooltip  align="center"/>
+        <el-table-column label="执行人" prop="assigneeName" width="150" align="center" />
+        <el-table-column label="计划日期" prop="planDate" width="150" align="center" />
+        <el-table-column label="状态" width="150" align="center">
           <template slot-scope="scope">
             <el-tag size="mini" :type="statusType(scope.row.status)">{{ statusText(scope.row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="异常项" width="80" align="center">
+        <el-table-column label="异常项" width="150" align="center">
           <template slot-scope="scope">
             <el-tag v-if="scope.row.abnormalCount > 0" type="danger" size="mini">{{ scope.row.abnormalCount }}</el-tag>
             <span v-else>-</span>

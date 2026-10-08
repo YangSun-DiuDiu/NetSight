@@ -82,33 +82,33 @@
     <el-card shadow="never">
       <el-table v-loading="loading" :data="list" border>
         <el-table-column label="标题" prop="title" min-width="160" show-overflow-tooltip  align="center"/>
-        <el-table-column label="分类" prop="category" width="100" align="center">
+        <el-table-column label="分类" prop="category" width="160" align="center">
           <template slot-scope="{ row }">
             <el-tag size="small" effect="plain">{{ row.category }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="设备类型" prop="deviceType" width="110" align="center">
+        <el-table-column label="设备类型" prop="deviceType" width="160" align="center">
           <template slot-scope="{ row }">
             <el-tag size="small" type="info" effect="plain">{{ deviceTypeLabel(row.deviceType) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="品牌" prop="brand" width="110" align="center">
+        <el-table-column label="品牌" prop="brand" width="160" align="center">
           <template slot-scope="{ row }">
             <span>{{ row.brand || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="参考级别" width="90" align="center">
+        <el-table-column label="参考级别" width="160" align="center">
           <template slot-scope="{ row }">
             <el-tag :type="severityType(row.severityRef)" size="small">{{ severityLabel(row.severityRef) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="浏览" prop="viewCount" width="80" align="center" />
-        <el-table-column label="状态" width="90" align="center">
+        <el-table-column label="浏览" prop="viewCount" width="160" align="center" />
+        <el-table-column label="状态" width="160" align="center">
           <template slot-scope="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建人" prop="createBy" width="110"  align="center"/>
+        <el-table-column label="创建人" prop="createBy" width="160"  align="center"/>
         <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width" fixed="right">
           <template slot-scope="{ row }">
             <el-button v-if="hasPerm('knowledge:fault:view')" type="text" size="mini" icon="el-icon-view" @click="handleView(row)">查看</el-button>

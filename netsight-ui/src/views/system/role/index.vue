@@ -44,11 +44,11 @@
 
     <!-- 角色列表 -->
     <el-table border v-loading="loading" :data="roleList">
-      <el-table-column label="角色ID" prop="id" width="80"  align="center"/>
-      <el-table-column label="角色名称" prop="roleName"  align="center"/>
-      <el-table-column label="角色编码" prop="roleKey"  align="center"/>
-      <el-table-column label="显示顺序" prop="roleSort" width="90" align="center" />
-      <el-table-column label="状态" align="center" width="100">
+      <el-table-column label="角色ID" prop="id" width="120"  align="center"/>
+      <el-table-column label="角色名称" prop="roleName" width="200"  align="center"/>
+      <el-table-column label="角色编码" prop="roleKey" width="200"  align="center"/>
+      <el-table-column label="显示顺序" prop="roleSort" width="200" align="center" />
+      <el-table-column label="状态" align="center" width="200">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.status === 1 ? 'success' : 'info'">
             {{ scope.row.status === 1 ? '正常' : '停用' }}

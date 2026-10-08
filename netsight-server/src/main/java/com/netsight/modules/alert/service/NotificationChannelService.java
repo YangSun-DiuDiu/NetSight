@@ -130,15 +130,16 @@ public class NotificationChannelService {
     }
 
     /**
-     * 解析模板对应的通道实例：优先用模板绑定的具体实例 channelId；
-     * 未绑（channelId 为空）时按通道类型自动选该租户默认启用实例。无可用实例返回 null。
+     * 解析模板绑定的通道实例（方案B：所有消息通道必须显式绑定 channelId，无类型兜底）。
+     * channelId 为空直接返回 null，由调用方跳过发送并记录 warning；无可用实例返回 null。
      */
     private Map<String, Object> resolveChannelInstance(NotificationTemplate tpl, Long tenantId) {
-        if (tpl.getChannelId() != null) {
-            List<Map<String, Object>> resolved = notifyChannelService.resolveChannels(List.of(tpl.getChannelId()));
-            return resolved.isEmpty() ? null : resolved.get(0);
+        if (tpl.getChannelId() == null) {
+            log.warn("模板[{}]未绑定通道实例（channelId 为空），跳过发送 (tenantId={})", tpl.getId(), tenantId);
+            return null;
         }
-        return notifyChannelService.resolveDefaultByType(tpl.getChannelType(), tenantId);
+        List<Map<String, Object>> resolved = notifyChannelService.resolveChannels(List.of(tpl.getChannelId()));
+        return resolved.isEmpty() ? null : resolved.get(0);
     }
 
     /**
@@ -253,7 +254,7 @@ public class NotificationChannelService {
             return buildFailLog(event, rule, channelType, receivers, "通道未注册: " + channelType);
         }
 
-        // 1. 选择该通道实例的模板（方案B：先按具体通道实例 channelId 找专属模板，找不到再按 channelType 找该类型默认模板兜底）
+        // 1. 选择该通道实例的模板（方案B：仅按具体通道实例 channelId 找专属模板，无类型兜底）
         Long channelInstanceId = channelInstance == null ? null
                 : (channelInstance.get("channelId") == null ? null : ((Number) channelInstance.get("channelId")).longValue());
         NotificationTemplate template = findTemplate(mainTemplate, channelType, channelInstanceId, event.getTenantId());
@@ -369,31 +370,17 @@ public class NotificationChannelService {
     }
 
     /**
-     * 找模板（方案B：两级查找）
-     * 1) 优先按 具体通道实例 channelId 找专属模板（模板直接绑定已配好参数的通道实例）；
-     * 2) 找不到（channelId 为空或无专属模板）再按 channelType 找该类型默认模板兜底。
+     * 找模板（方案B：仅按具体通道实例 channelId 找专属模板，无类型兜底）
+     * 手动发送场景 mainTemplate 为 null 时直接返回 null（内容取 vars.content）。
      * （异步线程无登录态、租户过滤不生效，必须显式按事件租户过滤，防止跨租户串用模板）
      */
     private NotificationTemplate findTemplate(NotificationTemplate mainTemplate, String channelType, Long channelId, Long tenantId) {
-        if (mainTemplate == null) {
+        if (mainTemplate == null || channelId == null) {
             return null;
         }
-        // 第一级：按具体通道实例找专属模板
-        if (channelId != null) {
-            NotificationTemplate instanceTpl = templateMapper.selectOne(new LambdaQueryWrapper<NotificationTemplate>()
-                    .eq(NotificationTemplate::getTemplateCode, mainTemplate.getTemplateCode())
-                    .eq(NotificationTemplate::getChannelId, channelId)
-                    .eq(NotificationTemplate::getTenantId, tenantId)
-                    .eq(NotificationTemplate::getEnabled, 1)
-                    .last("LIMIT 1"));
-            if (instanceTpl != null) {
-                return instanceTpl;
-            }
-        }
-        // 第二级：按 channelType 找该类型默认模板兜底
         return templateMapper.selectOne(new LambdaQueryWrapper<NotificationTemplate>()
                 .eq(NotificationTemplate::getTemplateCode, mainTemplate.getTemplateCode())
-                .eq(NotificationTemplate::getChannelType, channelType)
+                .eq(NotificationTemplate::getChannelId, channelId)
                 .eq(NotificationTemplate::getTenantId, tenantId)
                 .eq(NotificationTemplate::getEnabled, 1)
                 .last("LIMIT 1"));

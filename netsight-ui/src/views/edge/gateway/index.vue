@@ -33,32 +33,32 @@
 
     <!-- 网关列表 -->
     <el-table border v-loading="loading" :data="gatewayList">
-      <el-table-column label="网关名称" prop="gatewayName" width="70"  align="center"/>
-      <el-table-column label="网关编码" prop="gatewayCode" width="220"  align="center"/>
+      <el-table-column label="网关名称" prop="gatewayName" width="200"  align="center"/>
+      <el-table-column label="网关编码" prop="gatewayCode" width="200"  align="center"/>
       <el-table-column label="部署位置" prop="location" min-width="120" show-overflow-tooltip  align="center"/>
-      <el-table-column label="所属租户" prop="tenantId" width="90"  align="center"/>
-      <el-table-column label="上行链路" width="90" align="center">
+      <el-table-column label="所属租户" prop="tenantId" width="200"  align="center"/>
+      <el-table-column label="上行链路" width="200" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="linkTypeTag(scope.row.linkType)">{{ linkTypeText(scope.row.linkType) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="最近IP" prop="ipAddress" width="120"  align="center"/>
-      <el-table-column label="在线状态" width="90" align="center">
+      <el-table-column label="最近IP" prop="ipAddress" width="200"  align="center"/>
+      <el-table-column label="在线状态" width="200" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.onlineStatus === 1 ? 'success' : 'danger'">
             {{ scope.row.onlineStatus === 1 ? '在线' : '离线' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="最近心跳" prop="lastHeartbeatTime" width="150"  align="center"/>
-      <el-table-column label="PushPlus" width="110" align="center">
+      <el-table-column label="最近心跳" prop="lastHeartbeatTime" width="200"  align="center"/>
+      <el-table-column label="PushPlus" width="200" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.pushplusToken ? 'success' : 'info'">
             {{ scope.row.pushplusToken ? scope.row.pushplusToken : '未配置' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="启用" width="80" align="center">
+      <el-table-column label="启用" width="200" align="center">
         <template slot-scope="scope">
           <el-switch v-hasRole="['super_admin','tenant_admin']" v-model="scope.row.status" :active-value="1" :inactive-value="0" @change="handleStatusChange(scope.row)" />
         </template>

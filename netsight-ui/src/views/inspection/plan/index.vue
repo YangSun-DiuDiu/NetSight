@@ -26,13 +26,13 @@
         <el-button v-if="hasPerm('inspection:plan:add')" type="primary" icon="el-icon-plus" @click="openAdd">新增计划</el-button>
       </div>
       <el-table v-loading="loading" :data="list" border stripe>
-        <el-table-column label="计划名称" prop="planName" width="110" show-overflow-tooltip  align="center"/>
-        <el-table-column label="周期" width="90" align="center">
+        <el-table-column label="计划名称" prop="planName" width="250" show-overflow-tooltip  align="center"/>
+        <el-table-column label="周期" width="250" align="center">
           <template slot-scope="scope">
             <el-tag size="mini">{{ cycleText(scope.row.cycleType) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="对象" width="120" align="center">
+        <el-table-column label="对象" width="200" align="center">
           <template slot-scope="scope">
             {{ scope.row.targetType === 'device' ? '指定设备' : '按设备类型' }}
           </template>
@@ -42,13 +42,13 @@
             {{ scope.row.targetIds }}
           </template>
         </el-table-column>
-        <el-table-column label="执行人" prop="assigneeName" width="100" align="center" />
-        <el-table-column label="生效期" width="170" align="center">
+        <el-table-column label="执行人" prop="assigneeName" width="180" align="center" />
+        <el-table-column label="生效期" width="180" align="center">
           <template slot-scope="scope">
             {{ scope.row.startDate || '-' }} ~ {{ scope.row.endDate || '长期' }}
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column label="状态" width="150" align="center">
           <template slot-scope="scope">
             <el-tag :type="scope.row.status === 1 ? 'success' : 'info'" size="mini">{{ scope.row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>

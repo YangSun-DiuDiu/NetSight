@@ -87,24 +87,24 @@
           <span :class="{ 'unread-title': scope.row.status === 1 }">{{ scope.row.title }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="类型" width="90" align="center">
+      <el-table-column label="类型" width="180" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.noticeType === 'notice' ? 'primary' : 'warning'" effect="light">{{ scope.row.noticeType === 'notice' ? '公告' : '通知' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="级别" width="100" align="center">
+      <el-table-column label="级别" width="180" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.level === 'urgent' ? 'danger' : (scope.row.level === 'important' ? 'warning' : 'info')">{{ levelText(scope.row.level) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="100" align="center">
+      <el-table-column label="状态" width="180" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.status === 1 ? 'success' : (scope.row.status === 0 ? 'info' : 'danger')">{{ statusText(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="发布人" prop="publisherName" width="110" align="center" />
-      <el-table-column label="发布时间" prop="publishTime" width="170" align="center" />
-      <el-table-column label="已读" prop="readCount" width="80" align="center" />
+      <el-table-column label="发布人" prop="publisherName" width="180" align="center" />
+      <el-table-column label="发布时间" prop="publishTime" width="180" align="center" />
+      <el-table-column label="已读" prop="readCount" width="180" align="center" />
       <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button type="text" size="mini" icon="el-icon-view" @click="handleDetail(scope.row)">详情</el-button>

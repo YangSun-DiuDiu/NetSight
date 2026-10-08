@@ -181,28 +181,6 @@ public class NotifyChannelService {
     }
 
     /**
-     * 按通道类型解析该租户默认启用的通道实例（模板未绑具体实例时的兜底）。
-     * 异步线程无租户上下文，必须显式按 tenantId 过滤，防止跨租户串用实例。
-     */
-    public Map<String, Object> resolveDefaultByType(String channelType, Long tenantId) {
-        NotifyChannel c = channelMapper.selectOne(new LambdaQueryWrapper<NotifyChannel>()
-                .eq(NotifyChannel::getChannelType, channelType)
-                .eq(NotifyChannel::getTenantId, tenantId)
-                .eq(NotifyChannel::getEnabled, 1)
-                .orderByAsc(NotifyChannel::getId)
-                .last("LIMIT 1"));
-        if (c == null) return null;
-        Map<String, Object> cfg = parseConfig(c.getConfigJson());
-        decryptConfig(cfg);
-        Map<String, Object> item = new HashMap<>();
-        item.put("channelId", c.getId());
-        item.put("channelType", c.getChannelType());
-        item.put("channelName", c.getChannelName());
-        item.put("config", cfg);
-        return item;
-    }
-
-    /**
      * 系统级通道解析（登录验证码等无租户上下文场景）。
      * 按实例名 + 指定租户精确查，绕过租户拦截器，返回解密后的实例参数。
      */

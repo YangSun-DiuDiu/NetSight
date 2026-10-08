@@ -25,15 +25,15 @@
 
     <!-- 模板列表 -->
     <el-table border v-loading="loading" :data="templateList">
-      <el-table-column label="模板编码" prop="templateCode" width="200"  align="center"/>
-      <el-table-column label="模板名称" prop="templateName" width="95"  align="center"/>
-      <el-table-column label="绑定通道" width="115" align="center">
+      <el-table-column label="模板编码" prop="templateCode" width="220"  align="center"/>
+      <el-table-column label="模板名称" prop="templateName" width="250"  align="center"/>
+      <el-table-column label="绑定通道" width="250" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="channelTagType(scope.row.channelType)">{{ channelLabel(scope.row) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="模板内容" prop="content" min-width="340" show-overflow-tooltip  align="center"/>
-      <el-table-column label="启用" width="80" align="center">
+      <el-table-column label="模板内容" prop="content" min-width="300" show-overflow-tooltip  align="center"/>
+      <el-table-column label="启用" width="120" align="center">
         <template slot-scope="scope">
           <el-switch v-model="scope.row.enabled" :active-value="1" :inactive-value="0" @change="handleEnabledChange(scope.row)" />
         </template>
@@ -70,7 +70,7 @@
               :label="channelTypeName(ch.channelType) + ' · ' + ch.channelName" :value="ch.id" />
           </el-select>
           <div style="font-size:12px;color:#909399;line-height:1.4;margin-top:4px;">
-            仅列出本租户已启用并配好参数的通道实例；不选则按通道类型使用默认模板
+            必须选择已配置好参数的通道实例（仅列出本租户已启用实例），不再支持按通道类型使用默认模板
           </div>
         </el-form-item>
         <el-form-item label="模板内容" prop="content">

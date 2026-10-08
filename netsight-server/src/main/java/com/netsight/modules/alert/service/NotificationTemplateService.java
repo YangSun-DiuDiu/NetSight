@@ -63,9 +63,12 @@ public class NotificationTemplateService {
     }
 
     /**
-     * 新增模板（编码租户内唯一）
+     * 新增模板（编码租户内唯一；必须绑定通道实例，无类型兜底）
      */
     public void addTemplate(NotificationTemplate template) {
+        if (template.getChannelId() == null) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "模板必须绑定通道实例（channelId 不能为空）");
+        }
         if (template.getTenantId() == null) {
             template.setTenantId(SecurityUtils.getTenantId());
         }
@@ -79,7 +82,7 @@ public class NotificationTemplateService {
     }
 
     /**
-     * 修改模板（仅本租户，超管不限）
+     * 修改模板（仅本租户，超管不限；必须绑定通道实例，无类型兜底）
      */
     public void updateTemplate(NotificationTemplate template) {
         NotificationTemplate exist = templateMapper.selectById(template.getId());
@@ -87,6 +90,9 @@ public class NotificationTemplateService {
             throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "模板不存在");
         }
         checkTenantPermission(exist.getTenantId());
+        if (template.getChannelId() == null) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "模板必须绑定通道实例（channelId 不能为空）");
+        }
         templateMapper.updateById(template);
     }
 

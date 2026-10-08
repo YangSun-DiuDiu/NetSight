@@ -50,12 +50,12 @@
 
     <!-- 用户列表 -->
     <el-table border v-loading="loading" :data="userList">
-      <el-table-column label="用户ID" prop="id" width="80"  align="center"/>
-      <el-table-column label="登录账号" prop="username"  width="80" align="center"/>
-      <el-table-column label="姓名" prop="realName"  width="80" align="center"/>
-      <el-table-column label="手机号" prop="phone" width="140"  align="center"/>
-      <el-table-column label="所属租户" prop="tenantId" min-width="110"  align="center"/>
-      <el-table-column label="状态" align="center" width="100">
+      <el-table-column label="用户ID" prop="id" width="120"  align="center"/>
+      <el-table-column label="登录账号" prop="username"  width="180" align="center"/>
+      <el-table-column label="姓名" prop="realName"  width="180" align="center"/>
+      <el-table-column label="手机号" prop="phone" width="180"  align="center"/>
+      <el-table-column label="所属租户" prop="tenantId" min-width="180"  align="center"/>
+      <el-table-column label="状态" align="center" width="180">
         <template slot-scope="scope">
           <el-switch
             v-hasRole="['super_admin','tenant_admin']"
@@ -67,7 +67,7 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" prop="createTime" width="170"  align="center"/>
+      <el-table-column label="创建时间" prop="createTime" width="200"  align="center"/>
       <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button v-hasRole="['super_admin','tenant_admin']" size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>

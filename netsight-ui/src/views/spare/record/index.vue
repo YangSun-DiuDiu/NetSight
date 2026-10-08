@@ -26,13 +26,13 @@
     <el-table border v-loading="loading" :data="recordList">
       <el-table-column label="操作时间" prop="createTime" width="225" align="center" />
       <el-table-column label="备件编号" prop="partNo" width="215" show-overflow-tooltip  align="center"/>
-      <el-table-column label="备件名称" prop="partName" width="70" show-overflow-tooltip  align="center"/>
-      <el-table-column label="操作类型" width="110" align="center">
+      <el-table-column label="备件名称" prop="partName" width="350" show-overflow-tooltip  align="center"/>
+      <el-table-column label="操作类型" width="120" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="recordTypeType(scope.row.recordType)">{{ recordTypeText(scope.row.recordType) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="数量" width="100" align="center">
+      <el-table-column label="数量" width="120" align="center">
         <template slot-scope="scope">
           <span v-if="scope.row.recordType === 'repair'" style="color:#e6a23c;font-weight:600">送修 {{ scope.row.quantity }} {{ scope.row.unit }}</span>
           <span v-else :style="{ color: scope.row.quantity > 0 ? '#67c23a' : '#f56c6c', fontWeight: 600 }">
@@ -43,7 +43,7 @@
       <el-table-column label="关联工单" min-width="150" align="center">
         <template slot-scope="scope">{{ scope.row.orderNo || '-' }}</template>
       </el-table-column>
-      <el-table-column label="操作人" prop="operator" width="100" align="center" />
+      <el-table-column label="操作人" prop="operator" width="120" align="center" />
       <el-table-column label="备注" prop="remark" min-width="160" show-overflow-tooltip  align="center"/>
     </el-table>
 

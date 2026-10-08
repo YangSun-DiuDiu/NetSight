@@ -106,15 +106,15 @@
 
     <!-- 工单列表 -->
     <el-table border v-loading="loading" :data="orderList">
-      <el-table-column label="工单编号" prop="orderNo" width="360" show-overflow-tooltip  align="center"/>
-      <el-table-column label="来源" width="90" align="center">
+      <el-table-column label="工单编号" prop="orderNo" width="300" show-overflow-tooltip  align="center"/>
+      <el-table-column label="来源" width="120" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.sourceType === 'event' ? 'danger' : 'info'">
             {{ scope.row.sourceType === 'event' ? '告警' : '手动' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="设备" width="85" show-overflow-tooltip align="center">
+      <el-table-column label="设备" width="220" show-overflow-tooltip align="center">
         <template slot-scope="scope">
           <div>{{ scope.row.deviceName }}</div>
           <div class="sub-text">{{ scope.row.deviceIp }}</div>
@@ -123,27 +123,27 @@
       <el-table-column label="故障类型" min-width="100" align="center">
         <template slot-scope="scope">{{ faultTypeText(scope.row.faultType) }}</template>
       </el-table-column>
-      <el-table-column label="级别" width="90" align="center">
+      <el-table-column label="级别" width="120" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.severity === 'critical' ? 'danger' : (scope.row.severity === 'warning' ? 'warning' : 'info')">
             {{ scope.row.severity === 'critical' ? '高危' : (scope.row.severity === 'warning' ? '一般' : '信息') }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="100" align="center">
+      <el-table-column label="状态" width="120" align="center">
         <template slot-scope="scope">
           <el-tag size="mini" :type="statusType(scope.row.status)">{{ scope.row.statusText }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="维修人员" prop="repairerName" min-width="100" align="center">
+      <el-table-column label="维修人员" prop="repairerName" min-width="180" align="center">
         <template slot-scope="scope">{{ scope.row.repairerName || '-' }}</template>
       </el-table-column>
-      <el-table-column label="记录/备件" width="100" align="center">
+      <el-table-column label="记录/备件" width="180" align="center">
         <template slot-scope="scope">
           <span>{{ scope.row.recordCount || 0 }}/{{ scope.row.partCount || 0 }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" prop="createTime" width="160" align="center" />
+      <el-table-column label="创建时间" prop="createTime" width="180" align="center" />
       <el-table-column label="操作" align="center" width="240" class-name="small-padding fixed-width" fixed="right">
         <template slot-scope="scope">
           <el-button size="mini" type="text" icon="el-icon-view" @click="handleDetail(scope.row)">详情</el-button>

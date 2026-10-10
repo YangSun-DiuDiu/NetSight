@@ -17,9 +17,6 @@ public class SendRequest {
     /** 接收人列表（手机号 / OpenID / 邮箱地址） */
     private List<String> receiverList;
 
-    /** 内容模板ID（元数据，追溯用） */
-    private Long templateId;
-
     /** 模板变量 Map（渲染用） */
     private Map<String, Object> contentVars;
 

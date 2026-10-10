@@ -164,7 +164,6 @@ public class NotificationChannelService {
                 : (Map<String, Object>) channelInstance.get("config");
         SendRequest request = SendRequest.builder()
                 .receiverList(receivers)
-                .templateId(template == null ? null : template.getId())
                 .contentVars(vars)
                 .content(content)
                 .bizId(event.getBizId())
@@ -277,7 +276,6 @@ public class NotificationChannelService {
                 : (Map<String, Object>) channelInstance.get("config");
         SendRequest request = SendRequest.builder()
                 .receiverList(receivers)
-                .templateId(template == null ? null : template.getId())
                 .contentVars(vars)
                 .content(content)
                 .bizId(event.getBizId())

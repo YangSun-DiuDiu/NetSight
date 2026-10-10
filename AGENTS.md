@@ -477,6 +477,8 @@ npm run build:prod           # 生产构建（脚本名是 build:prod，无 buil
 
 * **后续待办（第 7 周起）**：前端菜单管理页面（sys\_permission 可视化维护）、微信小程序端（PC 全量测试后启动）、事件 / 日志 / 操作日志归档清理定时任务、告警升级 / 静默策略、**云安全组放行 80**（当前部署已完成只差放行）、帮助中心 "使用文档" 在线链接（当前为文本占位）、AI 实时分析模块（首页仅展示规划，后续版本落地）。
 
+* **架构深化候选 3「异步租户身份显式化」——待办未实施（2026-10-08 用户拍板"先列入待办，后期再决定"）**：improve-codebase-architecture 审查（报告 `%TEMP%\architecture-review-20261008-194833.html`）Top 推荐项。**根因**：租户隔离依赖线程局部登录态（SecurityUtils→SecurityContextHolder），`TenantLineHandler.ignoreTable()` 在未登录时放弃过滤 → @Async（eventExecutor）/@Scheduled 无租户上下文，全靠 5+ 处手工 eq(tenantId) 加固，漏一处即跨租户。**方案**：新增 `TenantContextHolder`（ThreadLocal）+ `MybatisPlusConfig.getTenantId()/ignoreTable()` 两级取值（显式上下文优先、有显式租户即过滤）+ `AsyncConfig.eventExecutor` 加 TaskDecorator 传递清理 + `EventCenterService.asyncProcess` 入口注入（@EventListener 同步监听自动受益）+ `InspectionService` 定时任务按计划租户注入（可选）。存量手工 eq 建议保留为纵深防御，新代码走拦截器兜底。**实施前待确认决策点**：①存量手工 eq 保留 vs 删除（建议保留）②InspectionService 是否纳入本轮。**完整方案**：`docs/架构深化-候选3-异步租户身份显式化.md`（含现状/三层设计/改动清单/验证回滚）。
+
 ## nams-agent Java 化部署（2026-09-12 已落地 .60 并验证）
 
 * **决策**：nams-agent（边缘网关通信中枢，Java 技术栈）替换 Python 模拟器 gateway_sim.py 正式部署 .60（模拟边缘网关服务器）。工程 `E:\gitee\NetSight1.0\netsight-gateway-agent`（独立 jar，Spring Boot 4.0.8 + JDK 21，~20MB）；本地管理页 :8081 路由器风格（admin 首登强制改密，改密接口 **`POST /local/api/password`** 参数 oldPwd/newPwd，**不是** /change-password）；告警接收 :18080。

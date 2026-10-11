@@ -34,10 +34,8 @@ public class AuthController {
      */
     @PostMapping("/sms-code")
     @RateLimit(key = "phone,ip", limit = 5, window = 60, message = "验证码获取过于频繁，请1分钟后再试")
-    public R<Void> sendSmsCode(@RequestParam
-                               @NotBlank(message = "手机号不能为空")
-                               @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
-                               String phone) {
+    public R<Void> sendSmsCode(
+            @RequestParam @NotBlank(message = "手机号不能为空") @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确") String phone) {
         authService.sendSmsCode(phone);
         return R.ok("验证码已发送", null);
     }
@@ -47,7 +45,7 @@ public class AuthController {
      * POST /auth/login
      */
     @PostMapping("/login")
-    @Log(module="系统认证", action="用户登录")
+    @Log(module = "系统认证", action = "用户登录")
     @RateLimit(key = "phone,ip", limit = 5, window = 60, message = "登录尝试过于频繁，请1分钟后再试")
     public R<Map<String, Object>> login(@RequestBody @Validated LoginRequest request) {
         return R.ok(authService.loginByPhone(request.getPhone(), request.getCode(), request.getClientType()));
@@ -58,10 +56,11 @@ public class AuthController {
      * POST /auth/logout（需携带 Token）
      */
     @PostMapping("/logout")
-    @Log(module="系统认证", action="用户登出")
+    @Log(module = "系统认证", action = "用户登出")
     public R<Void> logout(@RequestHeader(value = "Authorization", required = false) String authorization) {
         String token = authorization != null && authorization.startsWith("Bearer ")
-                ? authorization.substring(7) : null;
+                ? authorization.substring(7)
+                : null;
         authService.logout(token);
         return R.ok();
     }
@@ -78,7 +77,11 @@ public class AuthController {
         @NotBlank(message = "验证码不能为空")
         private String code;
 
-        /** 登录端：pc / mini / app，默认 pc */
+        /**
+         * 登录端类型
+         * pc：电脑后台管理端（默认）
+         * m：维修人员H5移动端（会额外校验维修人员档案）
+         */
         private String clientType = "pc";
     }
 }

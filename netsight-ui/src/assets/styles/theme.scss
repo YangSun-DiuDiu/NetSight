@@ -99,13 +99,24 @@ html, body, #app {
     border-bottom: 1px solid #EEF0F4;
   }
 
-  /* 去掉默认竖线分隔 */
-  td.el-table__cell {
+  /* 浅色竖线：分列清晰，1px #E8ECF3 略深于横线 */
+  td.el-table__cell,
+  th.el-table__cell {
+    border-right: 1px solid #E8ECF3;
+  }
+
+  /* 去掉最右列竖线，避免封口成格子 */
+  td.el-table__cell:last-child,
+  th.el-table__cell:last-child {
     border-right: none;
   }
 
-  th.el-table__cell {
-    border-right: none;
+  /* 工具类：低密度表格如需无竖线，加 el-table--no-vline */
+  &.el-table--no-vline {
+    td.el-table__cell,
+    th.el-table__cell {
+      border-right: none;
+    }
   }
 
   .el-table__row {

@@ -41,13 +41,6 @@
 
     <!-- 设备列表 -->
     <el-table border v-loading="loading" :data="deviceList">
-      <el-table-column label="状态" width="70" align="center">
-        <template slot-scope="scope">
-          <el-tooltip :content="statusTooltip(scope.row)" placement="top">
-            <el-tag size="mini" :type="statusTagType(scope.row)">{{ statusTagText(scope.row) }}</el-tag>
-          </el-tooltip>
-        </template>
-      </el-table-column>
       <el-table-column label="设备名称" prop="deviceName" width="100"  align="center"/>
       <el-table-column label="设备编码" prop="deviceCode" width="190"  align="center"/>
       <el-table-column label="设备类型" width="110" align="center">
@@ -59,6 +52,13 @@
         <template slot-scope="scope">{{ scope.row.brand }} {{ scope.row.model }}</template>
       </el-table-column>
       <el-table-column label="管理IP" prop="ipAddress" width="130"  align="center"/>
+      <el-table-column label="状态" width="90" align="center">
+        <template slot-scope="scope">
+          <el-tooltip :content="statusTooltip(scope.row)" placement="top">
+            <el-tag size="mini" :type="statusTagType(scope.row)">{{ statusTagText(scope.row) }}</el-tag>
+          </el-tooltip>
+        </template>
+      </el-table-column>
       <el-table-column label="部署位置" prop="location" min-width="110" show-overflow-tooltip  align="center"/>
       <el-table-column label="保修期" width="140" align="center">
         <template slot-scope="scope">

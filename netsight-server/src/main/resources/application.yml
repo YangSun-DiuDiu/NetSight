@@ -117,6 +117,26 @@ netsight:
         api-url: ${PUSHPLUS_API_URL:https://www.pushplus.plus/send}
         timeout-ms: 5000
         title-prefix: ${PUSHPLUS_TITLE_PREFIX:【运维告警】}
+  # ===== AI 能力（阶段 1：知识库问诊）=====
+  ai:
+    # 总开关：false 时所有 AI 能力降级（不调用模型）
+    enabled: ${AI_ENABLED:true}
+    # DeepSeek API Key 走环境变量（systemd drop-in 注入，禁止明文入库/进 git；空=禁用）
+    api-key: ${DEEPSEEK_API_KEY:}
+    api-url: ${DEEPSEEK_API_URL:https://api.deepseek.com/chat/completions}
+    model: ${DEEPSEEK_MODEL:deepseek-chat}
+    # 超时与重试（connect 5s / read 30s / 指数退避重试 2 次）
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000
+    max-retries: 2
+    # RAG 检索条数与问答缓存（同租户同问题）
+    knowledge-topk: 5
+    answer-cache-minutes: 10
+    # 数据脱敏：true=设备名/IP 出域前打码（生产建议开）
+    mask-sensitive: ${AI_MASK_SENSITIVE:false}
+    # 费用估算单价（元/百万 tokens，deepseek-chat 官方价）
+    price-input-per-m: 0.5
+    price-output-per-m: 2
 
 # 文件上传配置
 file:

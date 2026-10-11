@@ -22,6 +22,46 @@
     </div>
 
     <div class="section">
+      <div class="section-title">AI 诊断</div>
+      <div class="ai-card">
+        <van-field
+          v-model="aiForm.question"
+          rows="3"
+          type="textarea"
+          label="故障现象"
+          placeholder="可补充或修改故障现象，例如：指示灯不亮、网络不通、无法开门…"
+          class="ai-input"
+        />
+        <div class="ai-ctx" v-if="aiCtxText">自动带入：{{ aiCtxText }}</div>
+        <div class="ai-actions">
+          <van-button
+            size="small"
+            block
+            class="ai-btn"
+            :loading="aiLoading"
+            :disabled="!order.deviceName && !aiForm.question"
+            @click="aiAsk"
+          >AI 分析</van-button>
+        </div>
+
+        <div class="ai-result" v-if="aiResult">
+          <div class="ai-badge" :class="aiBadgeClass">{{ aiBadgeText }}</div>
+          <div class="ai-answer">{{ aiResult.answer }}</div>
+          <div class="ai-sources" v-if="aiResult.sources && aiResult.sources.length">
+            <div class="ai-sources-title">参考文章</div>
+            <van-tag
+              v-for="(s, i) in aiResult.sources"
+              :key="i"
+              plain
+              round
+              class="ai-source-tag"
+            >{{ s.title }}</van-tag>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
       <div class="section-title">处理记录</div>
       <van-steps :active="records.length" direction="vertical">
         <van-step v-for="(r, i) in records" :key="i">
@@ -116,11 +156,38 @@ export default {
       fileList: [],
       partOptions: [],
       selectedPart: null,
+      aiLoading: false,
+      aiResult: null,
+      aiForm: {
+        question: ''
+      },
       form: {
         repairResult: '',
         partId: null,
         partQty: 1
       }
+    }
+  },
+  computed: {
+    aiCtxText() {
+      const parts = []
+      if (this.order.deviceName) parts.push(this.order.deviceName)
+      if (this.order.deviceLocation) parts.push(this.order.deviceLocation)
+      if (this.order.faultType) parts.push(this.faultText(this.order.faultType))
+      return parts.join(' / ')
+    },
+    aiBadgeText() {
+      if (!this.aiResult) return ''
+      if (this.aiResult.noHit) return '知识库暂无匹配'
+      if (!this.aiResult.aiUsed) return 'AI 服务暂不可用 · 知识库原文'
+      if (this.aiResult.fromCache) return 'AI 生成 · 缓存'
+      return 'AI 生成'
+    },
+    aiBadgeClass() {
+      if (!this.aiResult) return ''
+      if (this.aiResult.noHit) return 'badge-muted'
+      if (!this.aiResult.aiUsed) return 'badge-fallback'
+      return 'badge-ai'
     }
   },
   created() {
@@ -134,6 +201,8 @@ export default {
         this.order = res.data.order
         this.records = res.data.records || []
         this.parts = res.data.parts || []
+        // 故障现象默认带入工单描述，维修人员可补充修改
+        this.aiForm.question = this.order.description || ''
         if (this.order.repairPhotos) {
           try {
             this.photoList = JSON.parse(this.order.repairPhotos)
@@ -141,6 +210,29 @@ export default {
             this.photoList = []
           }
         }
+      })
+    },
+    aiAsk() {
+      const question = (this.aiForm.question || '').trim()
+      if (!question) {
+        Toast('请描述故障现象')
+        return
+      }
+      this.aiLoading = true
+      const body = {
+        question: question,
+        deviceName: this.order.deviceName || '',
+        deviceType: this.order.deviceType || '',
+        deviceLocation: this.order.deviceLocation || '',
+        faultType: this.order.faultType || '',
+        description: this.order.description || ''
+      }
+      request.post('/ai/knowledge/ask', body).then(res => {
+        this.aiLoading = false
+        this.aiResult = res.data
+      }).catch(err => {
+        this.aiLoading = false
+        Toast((err && err.msg) || 'AI 问诊失败，请稍后重试')
       })
     },
     loadParts() {
@@ -302,6 +394,88 @@ export default {
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--hairline);
+}
+
+/* AI 诊断卡片 */
+.ai-card {
+  margin: 0 16px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 12px;
+}
+::v-deep .ai-input {
+  background: var(--surface);
+  border-radius: 8px;
+}
+::v-deep .ai-input .van-field__label {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ai-ctx {
+  margin: 4px 16px 0;
+  font-size: 12px;
+  color: var(--ink-subtle);
+}
+.ai-actions {
+  margin: 12px 8px 4px;
+}
+::v-deep .ai-btn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.ai-result {
+  margin-top: 12px;
+  border-top: 1px dashed var(--hairline);
+  padding-top: 12px;
+}
+.ai-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.badge-ai {
+  background: #eef0ff;
+  color: var(--primary);
+}
+.badge-fallback {
+  background: #fff7e6;
+  color: #b45309;
+}
+.badge-muted {
+  background: #f3f4f6;
+  color: var(--ink-muted);
+}
+.ai-answer {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ai-sources {
+  margin-top: 10px;
+}
+.ai-sources-title {
+  font-size: 12px;
+  color: var(--ink-subtle);
+  margin-bottom: 6px;
+}
+.ai-source-tag {
+  margin: 0 6px 6px 0;
+  color: var(--primary);
+  border-color: #c7cbe8;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Upload section */

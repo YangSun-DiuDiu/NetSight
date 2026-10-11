@@ -31,6 +31,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
@@ -72,11 +73,18 @@ public class DashboardController {
 
     /**
      * 大屏聚合数据
-     * GET /dashboard/overview
+     * GET /dashboard/overview?demo=0
+     * demo=1：返回演示模式模拟数据（每个板块 100 条级，丰富展示效果），不触碰任何真实业务表
      */
     @GetMapping("/overview")
     @PreAuthorize("hasRole('super_admin') or hasAuthority('dashboard:view')")
-    public R<Map<String, Object>> overview() {
+    public R<Map<String, Object>> overview(@RequestParam(defaultValue = "0") int demo) {
+        if (demo == 1) {
+            Map<String, Object> demoData = demoOverview();
+            demoData.put("recentEvents", demoRecentEvents());
+            demoData.put("generatedAt", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            return R.ok(demoData);
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("device", deviceOverview());
         result.put("event", eventOverview());
@@ -381,6 +389,212 @@ public class DashboardController {
         data.put("users", users == null ? 0 : users);
         data.put("todayStock", todayStock == null ? 0 : todayStock);
         return data;
+    }
+
+    // ==================== 演示模式（demo=1，纯内存模拟，不碰真实表） ====================
+
+    /**
+     * 演示模式聚合数据：每个板块均模拟 100 条级的展示效果，
+     * 结构字段与真实模式完全一致（前端零适配）。
+     */
+    private Map<String, Object> demoOverview() {
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        // 设备概览：total=100，在线 72 / 离线 28，链路异常 4
+        Map<String, Object> device = new LinkedHashMap<>();
+        device.put("total", 100);
+        device.put("online", 72);
+        device.put("offline", 28);
+        device.put("lineAbnormal", 4);
+        device.put("onlineRate", 72.0);
+        List<Map<String, Object>> byType = new ArrayList<>();
+        addType(byType, "network", 22, 8);
+        addType(byType, "camera", 20, 8);
+        addType(byType, "door_controller", 12, 4);
+        addType(byType, "nvr", 9, 3);
+        addType(byType, "server", 5, 3);
+        addType(byType, "switch", 4, 2);
+        device.put("byType", byType);
+        result.put("device", device);
+
+        // 事件统计：今日 100，级别 42/36/22，7 天趋势，TOP5 设备
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("today", 100);
+        event.put("critical", 42);
+        event.put("warning", 36);
+        event.put("info", 22);
+        List<Map<String, Object>> eventTrend = new ArrayList<>();
+        int[] eventDays = {86, 112, 95, 130, 104, 88, 100};
+        for (int i = 0; i < 7; i++) {
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("date", LocalDate.now().minusDays(6 - i).format(DATE_FMT).substring(5));
+            p.put("count", eventDays[i]);
+            eventTrend.add(p);
+        }
+        event.put("trend", eventTrend);
+        List<Map<String, Object>> topDevices = new ArrayList<>();
+        addTop(topDevices, "大华摄像头", 1080);
+        addTop(topDevices, "大华人脸识别主机", 960);
+        addTop(topDevices, "车间枪机", 520);
+        addTop(topDevices, "接入交换机", 410);
+        addTop(topDevices, "门禁控制器", 330);
+        event.put("topDevices", topDevices);
+        result.put("event", event);
+
+        // 工单看板：合计 100
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("pending", 25);
+        order.put("dispatched", 20);
+        order.put("repairing", 15);
+        order.put("completed", 25);
+        order.put("closed", 10);
+        order.put("recovered", 5);
+        order.put("total", 100);
+        List<Map<String, Object>> orderTrend = new ArrayList<>();
+        int[] orderDays = {12, 18, 15, 22, 16, 14, 20};
+        for (int i = 0; i < 7; i++) {
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("date", LocalDate.now().minusDays(6 - i).format(DATE_FMT).substring(5));
+            p.put("count", orderDays[i]);
+            orderTrend.add(p);
+        }
+        order.put("trend", orderTrend);
+        result.put("order", order);
+
+        // 网关：100 台网关，在线 93
+        Map<String, Object> gateway = new LinkedHashMap<>();
+        gateway.put("total", 100);
+        gateway.put("online", 93);
+        gateway.put("offline", 7);
+        result.put("gateway", gateway);
+
+        // 备件库存：12 类 / 总量 1024 / 低库存 8 + TOP5 明细
+        Map<String, Object> spare = new LinkedHashMap<>();
+        spare.put("partTypes", 12);
+        spare.put("totalQuantity", 1024);
+        spare.put("lowStock", 8);
+        List<Map<String, Object>> lowStockList = new ArrayList<>();
+        addSpare(lowStockList, "SHP-001", "视频监控-海康-DS-2CD-001", 3, 10);
+        addSpare(lowStockList, "SHP-002", "门禁-大华-ASI41-002", 2, 8);
+        addSpare(lowStockList, "SHP-003", "网络-华为-S5735-003", 4, 12);
+        addSpare(lowStockList, "SHP-004", "电源-明纬-S-35-004", 5, 15);
+        addSpare(lowStockList, "SHP-005", "硬盘-希捷-4T-005", 6, 20);
+        spare.put("lowStockList", lowStockList);
+        result.put("spare", spare);
+
+        // 知识库：100 篇，5 类各 20
+        Map<String, Object> knowledge = new LinkedHashMap<>();
+        knowledge.put("total", 100);
+        List<Map<String, Object>> byCategory = new ArrayList<>();
+        addCategory(byCategory, "视频故障", 24);
+        addCategory(byCategory, "设备离线", 22);
+        addCategory(byCategory, "门禁故障", 20);
+        addCategory(byCategory, "链路异常", 18);
+        addCategory(byCategory, "性能问题", 16);
+        knowledge.put("byCategory", byCategory);
+        result.put("knowledge", knowledge);
+
+        // 通知公告：100 条，最新 3 条
+        Map<String, Object> notice = new LinkedHashMap<>();
+        notice.put("total", 100);
+        List<Map<String, Object>> latest = new ArrayList<>();
+        addNotice(latest, "【重要】NetSight 平台 V1.4 版本升级完成通知", "important", 1, "10-11 09:30");
+        addNotice(latest, "机房巡检计划调整通知（本周六维护窗口）", "normal", 0, "10-10 18:00");
+        addNotice(latest, "设备固件升级批次安排公告", "normal", 0, "10-09 14:20");
+        notice.put("latest", latest);
+        result.put("notice", notice);
+
+        // 点检巡检：100 计划 / 今日任务 100 / 完成 64
+        Map<String, Object> inspection = new LinkedHashMap<>();
+        inspection.put("plans", 100);
+        inspection.put("todayTasks", 100);
+        inspection.put("todayDone", 64);
+        inspection.put("doneRate", 64.0);
+        result.put("inspection", inspection);
+
+        // 通知发送监控：今日 100，成功 96
+        Map<String, Object> notify = new LinkedHashMap<>();
+        notify.put("today", 100);
+        notify.put("success", 96);
+        notify.put("failed", 4);
+        notify.put("successRate", 96.0);
+        result.put("notify", notify);
+
+        // 今日运营速览
+        Map<String, Object> ops = new LinkedHashMap<>();
+        ops.put("repairers", 100);
+        ops.put("onDuty", 78);
+        ops.put("tenants", 100);
+        ops.put("users", 200);
+        ops.put("todayStock", 100);
+        result.put("ops", ops);
+
+        return result;
+    }
+
+    /** 演示模式：100 条实时告警（LIVE 列表） */
+    private List<Map<String, Object>> demoRecentEvents() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        String[] devices = {"大华摄像头", "大华人脸识别主机", "车间枪机", "接入交换机", "门禁控制器", "NVR-01", "核心服务器"};
+        String[] sevs = {"critical", "critical", "warning", "warning", "info"};
+        String[] types = {"device_offline", "device_line_abnormal", "device_recovered"};
+        LocalDateTime base = LocalDateTime.now();
+        for (int i = 0; i < 100; i++) {
+            Map<String, Object> ev = new LinkedHashMap<>();
+            ev.put("id", 100001L + i);
+            ev.put("severity", sevs[i % sevs.length]);
+            ev.put("deviceName", devices[i % devices.length]);
+            ev.put("eventType", types[i % types.length]);
+            ev.put("createTime", base.minusMinutes(5L * (i + 1)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            list.add(ev);
+        }
+        return list;
+    }
+
+    /** 演示模式：设备类型分布条目（online + offline） */
+    private void addType(List<Map<String, Object>> list, String type, long online, long offline) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("deviceType", type);
+        item.put("total", online + offline);
+        item.put("online", online);
+        item.put("offline", offline);
+        list.add(item);
+    }
+
+    /** 演示模式：告警 TOP 设备条目 */
+    private void addTop(List<Map<String, Object>> list, String name, long count) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("deviceName", name);
+        item.put("count", count);
+        list.add(item);
+    }
+
+    /** 演示模式：低库存备件条目 */
+    private void addSpare(List<Map<String, Object>> list, String partNo, String partName, long quantity, long safeStock) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("partNo", partNo);
+        item.put("partName", partName);
+        item.put("quantity", quantity);
+        item.put("safeStock", safeStock);
+        list.add(item);
+    }
+
+    /** 演示模式：知识分类条目 */
+    private void addCategory(List<Map<String, Object>> list, String category, long count) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("category", category);
+        item.put("count", count);
+        list.add(item);
+    }
+
+    /** 演示模式：公告条目 */
+    private void addNotice(List<Map<String, Object>> list, String title, String level, int isTop, String publishTime) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("title", title);
+        item.put("level", level);
+        item.put("isTop", isTop);
+        item.put("publishTime", publishTime);
+        list.add(item);
     }
 
     // ==================== 工具 ====================

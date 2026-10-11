@@ -10,6 +10,10 @@
         </div>
         <div class="header-side header-right">
           <span class="header-time">{{ now }}</span>
+          <el-button size="mini" plain class="fullscreen-btn" @click="toggleDemo">
+            <i :class="demoMode ? 'el-icon-data-line' : 'el-icon-odometer'"></i>
+            {{ demoMode ? '演示模式(100条)' : '真实数据' }}
+          </el-button>
           <el-button size="mini" plain class="fullscreen-btn" @click="toggleFullscreen">
             <i :class="isFull ? 'el-icon-close' : 'el-icon-full-screen'"></i>
             {{ isFull ? '退出全屏' : '全屏' }}
@@ -211,6 +215,7 @@ export default {
     return {
       now: this.fmtNow(),
       isFull: false,
+      demoMode: localStorage.getItem('netsight-dashboard-demo') === '1',
       data: {
         device: { total: 0, online: 0, offline: 0, lineAbnormal: 0, onlineRate: 0, byType: [] },
         event: { today: 0, critical: 0, warning: 0, info: 0, trend: [], topDevices: [] },
@@ -267,8 +272,17 @@ export default {
     sevClass(s) { return 'sev-' + (s || 'info') },
     evTypeName(t) { return TYPE_MAP[t] || t || '未知' },
     refreshAll() {
-      getDashboardOverview().then(data => {
+      getDashboardOverview(this.demoMode ? 1 : 0).then(data => {
         this.data = Object.assign({}, this.data, data)
+        // 演示模式：实时告警列表直接用后端返回的 100 条模拟告警（需在异步回调内取，避免竞态）
+        if (this.demoMode && data.recentEvents && data.recentEvents.length) {
+          this.recentEvents = data.recentEvents
+        } else if (!this.demoMode) {
+          // 真实模式：走事件分页接口
+          listEvent({ pageNum: 1, pageSize: 8 }).then(res => {
+            this.recentEvents = (res && res.rows) || []
+          }).catch(() => { /* noop */ })
+        }
         this.$nextTick(() => {
           this.renderTypeChart()
           this.renderTrendChart()
@@ -277,9 +291,11 @@ export default {
           this.renderOrderTrendChart()
         })
       }).catch(() => { /* 轮询失败静默 */ })
-      listEvent({ pageNum: 1, pageSize: 8 }).then(res => {
-        this.recentEvents = (res && res.rows) || []
-      }).catch(() => { /* noop */ })
+    },
+    toggleDemo() {
+      this.demoMode = !this.demoMode
+      localStorage.setItem('netsight-dashboard-demo', this.demoMode ? '1' : '0')
+      this.refreshAll()
     },
     initChart(refName) {
       if (!this.charts[refName] && this.$refs[refName]) {

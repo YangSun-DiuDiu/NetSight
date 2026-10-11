@@ -150,15 +150,13 @@
             </div>
           </div>
           <div class="panel">
-            <div class="panel-title"><i class="dot"></i>告警级别统计</div>
+            <div class="panel-title title-flex"><i class="dot"></i>告警级别统计<span class="title-sub">累计告警：{{ data.event.critical + data.event.warning + data.event.info }} 条</span></div>
             <div class="sev-grid">
               <div class="sv-item sv-critical"><span>严重</span><b>{{ data.event.critical }}</b></div>
               <div class="sv-item sv-warning"><span>警告</span><b>{{ data.event.warning }}</b></div>
               <div class="sv-item sv-info"><span>提示</span><b>{{ data.event.info }}</b></div>
             </div>
-            <div class="sev-total">累计告警：{{ data.event.critical + data.event.warning + data.event.info }} 条</div>
             <div v-if="data.event.topDevices.length" class="top-list">
-              <div class="top-title">告警 TOP 设备</div>
               <div v-for="(td, ti) in data.event.topDevices" :key="ti" class="top-item">
                 <span class="top-idx" :class="{ 'top-hot': ti < 3 }">{{ ti + 1 }}</span>
                 <span class="top-name" :title="td.deviceName || td.deviceCode">{{ td.deviceName || td.deviceCode }}</span>
@@ -503,7 +501,8 @@ export default {
 .screen.is-full .sv-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; }
 .screen.is-full .sv-item span { font-size: 11px; }
 .screen.is-full .sv-item b { font-size: 15px; margin-top: 0; display: inline; }
-.screen.is-full .top-item { padding: 2px 0; }
+.screen.is-full .top-item { padding: 1px 0; font-size: 11px; }
+.screen.is-full .top-list { margin-top: 4px; padding-top: 3px; }
 .screen.is-full .nt-item { padding: 5px 8px; }
 .screen.is-full .nt-val { font-size: 15px; }
 .screen.is-full .op-item { padding: 4px 4px; }
@@ -590,9 +589,11 @@ export default {
   display: flex;
   align-items: center;
 }
+/* 标题行副标题（告警级别统计：累计告警并入标题右侧，省一行） */
+.panel-title.title-flex { justify-content: space-between; }
+.title-sub { font-size: 11px; font-weight: 400; color: #6f9ed1; }
 .panel-title .dot {
-  width: 6px;
-  height: 6px;
+  width: 6px;  height: 6px;
   background: #40a9ff;
   border-radius: 50%;
   margin-right: 7px;
@@ -734,11 +735,6 @@ export default {
 .sv-critical { background: rgba(255, 77, 79, 0.18); border: 1px solid rgba(255, 77, 79, 0.4); }
 .sv-warning { background: rgba(250, 173, 20, 0.15); border: 1px solid rgba(250, 173, 20, 0.4); }
 .sv-info { background: rgba(64, 158, 255, 0.15); border: 1px solid rgba(64, 158, 255, 0.4); }
-.sev-total {
-  font-size: 11px;
-  color: #6f9ed1;
-  text-align: right;
-}
 .screen-footer {
   text-align: center;
   font-size: 11px;
@@ -830,14 +826,9 @@ export default {
 .insp-val { color: #fff; font-weight: 600; font-family: Consolas, monospace; }
 .chart-sm { height: 120px; }
 .top-list {
-  margin-top: 10px;
+  margin-top: 4px;
   border-top: 1px dashed rgba(64, 158, 255, 0.2);
-  padding-top: 8px;
-}
-.top-title {
-  font-size: 11px;
-  color: #6f9ed1;
-  margin-bottom: 6px;
+  padding-top: 4px;
 }
 .top-item {
   display: flex;

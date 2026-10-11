@@ -468,11 +468,20 @@ export default {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* 根因修复：panel 高度不足时裁切内容而非溢出重叠到相邻板块（右列 3→5 板块后被放大） */
+  overflow: hidden;
 }
 .screen.is-full .panel .chart-md {
   flex: 1;
   min-height: 0;
   height: auto;
+}
+/* 全屏下可滚动列表弹性占位：吸收剩余高度，超高内部滚动，不再溢出 */
+.screen.is-full .panel .mini-list,
+.screen.is-full .panel .top-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .screen.is-full .panel-live .live-list {
   flex: 1;
@@ -489,6 +498,21 @@ export default {
 .screen.is-full .metric-grid {
   flex: none;
 }
+/* 全屏紧凑化：矮屏（右列 5 板块均分）时压缩固定内容高度，保证不溢出 */
+.screen.is-full .sev-grid { margin-bottom: 4px; }
+.screen.is-full .sv-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; }
+.screen.is-full .sv-item span { font-size: 11px; }
+.screen.is-full .sv-item b { font-size: 15px; margin-top: 0; display: inline; }
+.screen.is-full .top-item { padding: 2px 0; }
+.screen.is-full .nt-item { padding: 5px 8px; }
+.screen.is-full .nt-val { font-size: 15px; }
+.screen.is-full .op-item { padding: 4px 4px; }
+.screen.is-full .op-val { font-size: 16px; }
+.screen.is-full .insp-ring { width: 84px; height: 84px; }
+/* 右列弹性比例：告警级别统计(含TOP设备)优先获得空间；通知/运营内容少，少占 */
+.screen.is-full .col > .panel:nth-child(3) { flex: 1.5; }
+.screen.is-full .col > .panel:nth-child(4) { flex: 0.8; }
+.screen.is-full .col > .panel:nth-child(5) { flex: 0.85; }
 .screen.is-full .screen-footer { flex: none; }
 .screen-header {
   display: flex;

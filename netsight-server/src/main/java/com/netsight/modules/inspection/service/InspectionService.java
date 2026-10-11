@@ -15,7 +15,9 @@ import com.netsight.modules.inspection.mapper.InspectionPlanMapper;
 import com.netsight.modules.inspection.mapper.InspectionRecordMapper;
 import com.netsight.modules.inspection.mapper.InspectionTaskMapper;
 import com.netsight.modules.system.entity.Device;
+import com.netsight.modules.system.entity.SysUser;
 import com.netsight.modules.system.mapper.DeviceMapper;
+import com.netsight.modules.system.mapper.SysUserMapper;
 import com.netsight.modules.workorder.entity.WorkOrder;
 import com.netsight.modules.workorder.service.WorkOrderService;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
@@ -50,6 +53,7 @@ public class InspectionService {
     private final InspectionTaskMapper taskMapper;
     private final InspectionRecordMapper recordMapper;
     private final DeviceMapper deviceMapper;
+    private final SysUserMapper userMapper;
     private final WorkOrderService workOrderService;
 
     // ==================== 点检项库 ====================
@@ -127,6 +131,8 @@ public class InspectionService {
         }
         wrapper.orderByDesc(InspectionPlan::getId);
         Page<InspectionPlan> result = planMapper.selectPage(page, wrapper);
+        // 解析目标列为展示名（设备名 / 设备类型中文名）
+        fillPlanTargetNames(result.getRecords());
         return PageResult.of(result.getTotal(), result.getRecords());
     }
 
@@ -146,6 +152,8 @@ public class InspectionService {
         if (plan.getTenantId() == null) {
             plan.setTenantId(SecurityUtils.getTenantId());
         }
+        // 执行人校验：存在且同租户；姓名以系统用户为准（防手填错名/跨租户）
+        checkAssignee(plan);
         planMapper.insert(plan);
     }
 
@@ -156,6 +164,7 @@ public class InspectionService {
         }
         checkTenantPermission(exist.getTenantId());
         plan.setTenantId(exist.getTenantId());
+        checkAssignee(plan);
         planMapper.updateById(plan);
     }
 
@@ -198,6 +207,8 @@ public class InspectionService {
                 task.setTaskNo(genTaskNo());
                 task.setPlanId(plan.getId());
                 task.setPlanName(plan.getPlanName());
+                // 任务快照计划绑定的点检项（空=执行时回退全部启用项，兼容旧计划）
+                task.setItemIds(plan.getItemIds());
                 task.setTargetId((Long) t.get("id"));
                 task.setTargetName((String) t.get("name"));
                 task.setTargetType((String) t.get("targetType"));
@@ -275,9 +286,13 @@ public class InspectionService {
                 .like(StringUtils.hasText(targetName), InspectionTask::getTargetName, targetName)
                 .eq(status != null, InspectionTask::getStatus, status);
         boolean isManager = isTaskManager();
-        if (Boolean.TRUE.equals(my) || !isManager) {
-            // 普通角色只看自己的任务
+        if (Boolean.TRUE.equals(my)) {
+            // 管理员勾选"我的任务"：仅看分配给自己的
             wrapper.eq(InspectionTask::getAssigneeId, SecurityUtils.getUserId());
+        } else if (!isManager) {
+            // 普通角色：看分配给自己的 + 未分配的任务（未分配任务同租户可执行，避免"无人可执行"）
+            wrapper.and(w -> w.eq(InspectionTask::getAssigneeId, SecurityUtils.getUserId())
+                    .or().isNull(InspectionTask::getAssigneeId));
         }
         if (!SecurityUtils.isSuperAdmin()) {
             wrapper.eq(InspectionTask::getTenantId, SecurityUtils.getTenantId());
@@ -299,10 +314,12 @@ public class InspectionService {
         Map<String, Object> result = new HashMap<>();
         result.put("task", task);
         result.put("records", records);
+        // 本任务应点检的项：优先任务快照 itemIds，空=全部启用项（兼容旧任务）
+        result.put("taskItems", resolveTaskItems(task));
         return result;
     }
 
-    /** 开始执行（待执行 → 执行中；仅执行人或管理员可操作） */
+    /** 开始执行（待执行/逾期可开始；仅执行人或管理员可操作） */
     public void startTask(Long id) {
         InspectionTask task = taskMapper.selectById(id);
         if (task == null) {
@@ -311,8 +328,8 @@ public class InspectionService {
         checkTenantPermission(task.getTenantId());
         // 【加固】归属校验：非管理员只能开始分配给自己的任务（防止代他人执行/越权操作）
         checkTaskAssignee(task);
-        if (task.getStatus() == null || task.getStatus() != 0) {
-            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "仅待执行任务可开始");
+        if (task.getStatus() == null || (task.getStatus() != 0 && task.getStatus() != 3)) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "仅待执行/逾期任务可开始");
         }
         InspectionTask update = new InspectionTask();
         update.setId(id);
@@ -334,8 +351,9 @@ public class InspectionService {
         checkTenantPermission(task.getTenantId());
         // 【加固】归属校验：非管理员只能提交分配给自己的任务
         checkTaskAssignee(task);
-        if (task.getStatus() == null || (task.getStatus() != 0 && task.getStatus() != 1)) {
-            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "仅待执行/执行中任务可提交");
+        // 允许状态 0 待执行 / 1 执行中 / 3 已逾期（逾期任务补录，修复此前"逾期死锁"：逾期任务无法提交的流程缺陷）
+        if (task.getStatus() == null || (task.getStatus() != 0 && task.getStatus() != 1 && task.getStatus() != 3)) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "仅待执行/执行中/逾期任务可提交");
         }
         int repairMode = body.get("repairMode") == null ? 0 : ((Number) body.get("repairMode")).intValue();
         @SuppressWarnings("unchecked")
@@ -470,12 +488,12 @@ public class InspectionService {
         }
     }
 
-    /** 每日 00:05 将已过计划日期且未完成的待执行任务置为逾期 */
+    /** 每日 00:05 将已过计划日期且【待执行】的任务置为逾期（执行中任务不置逾期，允许跨天继续完成） */
     @Scheduled(cron = "0 5 0 * * ?")
     public void scheduledMarkOverdue() {
         List<InspectionTask> tasks = taskMapper.selectList(new LambdaQueryWrapper<InspectionTask>()
                 .lt(InspectionTask::getPlanDate, LocalDate.now())
-                .in(InspectionTask::getStatus, 0, 1));
+                .eq(InspectionTask::getStatus, 0));
         for (InspectionTask task : tasks) {
             InspectionTask update = new InspectionTask();
             update.setId(task.getId());
@@ -487,7 +505,7 @@ public class InspectionService {
         }
     }
 
-    /** 判断计划今天是否应生成任务 */
+    /** 判断计划今天是否应生成任务（cycleDay 支持自定义：weekly=周几 / monthly=每月几号，空=默认 周一/1日） */
     private boolean isDueToday(InspectionPlan plan, LocalDate today) {
         if (plan.getStartDate() != null && today.isBefore(plan.getStartDate())) {
             return false;
@@ -497,10 +515,23 @@ public class InspectionService {
         }
         return switch (plan.getCycleType() == null ? "daily" : plan.getCycleType()) {
             case "daily" -> true;
-            case "weekly" -> today.getDayOfWeek().getValue() == 1;
-            case "monthly" -> today.getDayOfMonth() == 1;
+            case "weekly" -> today.getDayOfWeek().getValue() == parseCycleDay(plan.getCycleDay(), 1, 7);
+            case "monthly" -> today.getDayOfMonth() == parseCycleDay(plan.getCycleDay(), 1, 31);
             default -> false;
         };
+    }
+
+    /** 解析周期自定义日期：weekly 1-7 / monthly 1-31；非法值回退默认 1 */
+    private int parseCycleDay(String cycleDay, int def, int max) {
+        if (!StringUtils.hasText(cycleDay)) {
+            return def;
+        }
+        try {
+            int v = Integer.parseInt(cycleDay.trim());
+            return (v >= 1 && v <= max) ? v : def;
+        } catch (NumberFormatException e) {
+            return def;
+        }
     }
 
     // ==================== 工具方法 ====================
@@ -575,5 +606,90 @@ public class InspectionService {
                 && (targetTenantId == null || !targetTenantId.equals(SecurityUtils.getTenantId()))) {
             throw new ServiceException(ResultCode.FORBIDDEN);
         }
+    }
+
+    /**
+     * 执行人校验：assigneeId 必须存在且（非超管）属于本租户；
+     * assigneeName 以系统用户真实姓名为准，覆盖前端手填值（防错名/跨租户脏数据）。
+     */
+    private void checkAssignee(InspectionPlan plan) {
+        if (plan.getAssigneeId() == null) {
+            return;
+        }
+        SysUser user = userMapper.selectById(plan.getAssigneeId());
+        if (user == null) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "执行人不存在，请选择本租户有效用户");
+        }
+        if (!SecurityUtils.isSuperAdmin() && !plan.getTenantId().equals(user.getTenantId())) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "执行人必须属于本租户");
+        }
+        plan.setAssigneeName(StringUtils.hasText(user.getRealName()) ? user.getRealName() : user.getUsername());
+    }
+
+    /**
+     * 解析任务应点检的项：
+     * 1. 任务 itemIds 快照有值 → 按快照 ID 查询（快照语义：项库后续增删不改动本任务，已删除项跳过）；
+     * 2. 快照为空（旧任务）→ 回退查询该租户全部启用项，兼容历史数据。
+     */
+    private List<InspectionItem> resolveTaskItems(InspectionTask task) {
+        List<Long> ids = parseLongList(task.getItemIds());
+        if (ids.isEmpty()) {
+            return itemMapper.selectList(new LambdaQueryWrapper<InspectionItem>()
+                    .eq(InspectionItem::getTenantId, task.getTenantId())
+                    .eq(InspectionItem::getStatus, 1)
+                    .orderByAsc(InspectionItem::getSort)
+                    .orderByAsc(InspectionItem::getId));
+        }
+        List<InspectionItem> items = itemMapper.selectBatchIds(ids);
+        Map<Long, InspectionItem> byId = items.stream()
+                .collect(Collectors.toMap(InspectionItem::getId, i -> i, (a, b) -> a));
+        List<InspectionItem> ordered = new ArrayList<>();
+        for (Long id : ids) {
+            InspectionItem item = byId.get(id);
+            if (item != null) {
+                ordered.add(item);
+            }
+        }
+        return ordered;
+    }
+
+    /** 解析计划目标列为展示名：设备 → 设备名称；类型 → 类型中文名 */
+    private void fillPlanTargetNames(List<InspectionPlan> plans) {
+        for (InspectionPlan plan : plans) {
+            List<String> raw = parseStringList(plan.getTargetIds());
+            if (raw.isEmpty()) {
+                plan.setTargetNames("-");
+                continue;
+            }
+            if ("device".equals(plan.getTargetType())) {
+                List<Long> ids = parseLongList(plan.getTargetIds());
+                List<Device> devices = ids.isEmpty() ? List.of() : deviceMapper.selectBatchIds(ids);
+                Map<Long, Device> byId = devices.stream()
+                        .collect(Collectors.toMap(Device::getId, d -> d, (a, b) -> a));
+                plan.setTargetNames(ids.stream()
+                        .map(byId::get)
+                        .filter(Objects::nonNull)
+                        .map(d -> StringUtils.hasText(d.getDeviceName()) ? d.getDeviceName() : String.valueOf(d.getId()))
+                        .collect(Collectors.joining("、")));
+                if (!StringUtils.hasText(plan.getTargetNames())) {
+                    plan.setTargetNames("-");
+                }
+            } else {
+                plan.setTargetNames(raw.stream().map(InspectionService::typeNameZh)
+                        .collect(Collectors.joining("、")));
+            }
+        }
+    }
+
+    /** 设备类型代码 → 中文名（未知类型原样展示） */
+    private static String typeNameZh(String code) {
+        return switch (code == null ? "" : code) {
+            case "network" -> "网络设备";
+            case "camera" -> "摄像头";
+            case "nvr" -> "NVR";
+            case "door_controller" -> "门禁控制器";
+            case "server" -> "服务器";
+            default -> code;
+        };
     }
 }

@@ -117,7 +117,7 @@
         <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width" fixed="right">
           <template slot-scope="scope">
             <el-button v-if="scope.row.status === 0 && hasPerm('inspection:task:execute')" type="text" size="mini" icon="el-icon-video-play" @click="handleStart(scope.row)">开始</el-button>
-            <el-button v-if="(scope.row.status === 0 || scope.row.status === 1) && hasPerm('inspection:task:execute')" type="text" size="mini" icon="el-icon-s-check" @click="handleExecute(scope.row)">执行</el-button>
+            <el-button v-if="(scope.row.status === 0 || scope.row.status === 1 || scope.row.status === 3) && hasPerm('inspection:task:execute')" type="text" size="mini" icon="el-icon-s-check" @click="handleExecute(scope.row)">执行</el-button>
             <el-button type="text" size="mini" icon="el-icon-view" @click="handleDetail(scope.row)">详情</el-button>
           </template>
         </el-table-column>
@@ -148,9 +148,9 @@
           <template v-if="item.resultType === 'text'">
             <el-input v-model="item.textResult" placeholder="填写检查结果数值/文本" style="width: 320px" />
           </template>
-          <el-radio-group v-model="item.result" :disabled="item.resultType === 'text'">
-            <el-radio :label="0">正常</el-radio>
-            <el-radio :label="1">异常</el-radio>
+          <el-radio-group v-model="item.result">
+            <el-radio :label="0">{{ item.resultType === 'text' ? '达标' : '正常' }}</el-radio>
+            <el-radio :label="1">{{ item.resultType === 'text' ? '不达标' : '异常' }}</el-radio>
           </el-radio-group>
           <el-input v-model="item.remark" placeholder="备注（异常原因）" style="width: 220px" />
         </div>
@@ -265,9 +265,23 @@ export default {
       this.currentTask = row
       this.repairMode = false
       this.execRemark = ''
-      listEnabledItem().then(res => {
-        this.items = (res || []).map(it => ({ ...it, result: 0, textResult: '', remark: '' }))
-        this.execVisible = true
+      // 优先按任务快照点检项加载（计划绑定项）；旧任务无快照则回退全部启用项
+      getInspectionTask(row.id).then(res => {
+        const snapshot = (res.taskItems && res.taskItems.length) ? res.taskItems : null
+        if (snapshot) {
+          this.items = snapshot.map(it => ({ ...it, result: 0, textResult: '', remark: '' }))
+          this.execVisible = true
+        } else {
+          listEnabledItem().then(list => {
+            this.items = (list || []).map(it => ({ ...it, result: 0, textResult: '', remark: '' }))
+            this.execVisible = true
+          })
+        }
+      }).catch(() => {
+        listEnabledItem().then(list => {
+          this.items = (list || []).map(it => ({ ...it, result: 0, textResult: '', remark: '' }))
+          this.execVisible = true
+        })
       })
     },
     handleSubmit() {
@@ -308,6 +322,10 @@ export default {
     },
     statusType(s) {
       return ['warning', 'primary', 'success', 'danger'][s] || 'info'
+    },
+    hasPerm(key) {
+      const perms = this.$store.getters.permissions || []
+      return perms.includes(key) || (this.$store.getters.roles || []).includes('super_admin')
     }
   }
 }

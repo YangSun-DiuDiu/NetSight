@@ -1,5 +1,6 @@
 package com.netsight.modules.inspection.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.netsight.common.core.BaseEntity;
 import lombok.Data;
@@ -28,6 +29,13 @@ public class InspectionTask extends BaseEntity {
 
     /** 计划名称（快照） */
     private String planName;
+
+    /** 点检项ID列表快照（JSON数组；空=执行时回退全部启用项，兼容旧任务） */
+    private String itemIds;
+
+    /** 本任务应点检的点检项（解析 itemIds 后，非表字段） */
+    @TableField(exist = false)
+    private java.util.List<InspectionItem> taskItems;
 
     /** 点检目标ID（设备ID或类型） */
     private Long targetId;

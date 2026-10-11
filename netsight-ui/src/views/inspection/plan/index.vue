@@ -27,22 +27,27 @@
       </div>
       <el-table v-loading="loading" :data="list" border stripe>
         <el-table-column label="计划名称" prop="planName" width="250" show-overflow-tooltip  align="center"/>
-        <el-table-column label="周期" width="250" align="center">
+        <el-table-column label="周期" width="180" align="center">
           <template slot-scope="scope">
-            <el-tag size="mini">{{ cycleText(scope.row.cycleType) }}</el-tag>
+            <el-tag size="mini">{{ cycleText(scope.row) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="对象" width="200" align="center">
+        <el-table-column label="对象" width="120" align="center">
           <template slot-scope="scope">
-            {{ scope.row.targetType === 'device' ? '指定设备' : '按设备类型' }}
+            {{ scope.row.targetType === 'device' ? '指定设备' : '按类型' }}
           </template>
         </el-table-column>
         <el-table-column label="目标" min-width="160" show-overflow-tooltip align="center">
           <template slot-scope="scope">
-            {{ scope.row.targetIds }}
+            {{ scope.row.targetNames || scope.row.targetIds }}
           </template>
         </el-table-column>
-        <el-table-column label="执行人" prop="assigneeName" width="180" align="center" />
+        <el-table-column label="点检项" min-width="160" show-overflow-tooltip align="center">
+          <template slot-scope="scope">
+            {{ scope.row.itemNames || (scope.row.itemIds ? (scope.row.itemIds + '').replace(/\[|\]|"/g, '') : '全部启用项') }}
+          </template>
+        </el-table-column>
+        <el-table-column label="执行人" prop="assigneeName" width="120" align="center" />
         <el-table-column label="生效期" width="180" align="center">
           <template slot-scope="scope">
             {{ scope.row.startDate || '-' }} ~ {{ scope.row.endDate || '长期' }}
@@ -73,9 +78,21 @@
         <el-form-item label="周期类型">
           <el-radio-group v-model="form.cycleType">
             <el-radio-button label="daily">每日</el-radio-button>
-            <el-radio-button label="weekly">每周一</el-radio-button>
-            <el-radio-button label="monthly">每月1日</el-radio-button>
+            <el-radio-button label="weekly">每周</el-radio-button>
+            <el-radio-button label="monthly">每月</el-radio-button>
           </el-radio-group>
+          <span v-if="form.cycleType === 'weekly'" class="cycle-picker">
+            周
+            <el-select v-model="form.cycleDay" placeholder="周几" style="width: 90px">
+              <el-option v-for="d in 7" :key="d" :label="'周' + ['一','二','三','四','五','六','日'][d - 1]" :value="String(d)" />
+            </el-select>
+          </span>
+          <span v-else-if="form.cycleType === 'monthly'" class="cycle-picker">
+            每月
+            <el-select v-model="form.cycleDay" placeholder="几号" style="width: 90px">
+              <el-option v-for="d in 31" :key="d" :label="d + ' 日'" :value="String(d)" />
+            </el-select>
+          </span>
         </el-form-item>
         <el-form-item label="对象类型">
           <el-radio-group v-model="form.targetType">
@@ -87,11 +104,16 @@
           <el-input v-model="form.targetIds" :placeholder="form.targetType === 'device' ? '设备ID列表（JSON数组），如 [1,2,3]' : '设备类型列表（JSON数组），如 network,camera'" />
           <div class="tip">设备类型可选：network 网络设备 / camera 摄像头 / nvr NVR / door_controller 门禁</div>
         </el-form-item>
-        <el-form-item label="执行人">
-          <el-row :gutter="8">
-            <el-col :span="12"><el-input v-model="form.assigneeName" placeholder="执行人姓名" /></el-col>
-            <el-col :span="12"><el-input v-model="form.assigneeId" placeholder="执行人用户ID" /></el-col>
-          </el-row>
+        <el-form-item label="执行人" prop="assigneeId">
+          <el-select v-model="form.assigneeId" filterable placeholder="选择执行人（本租户用户）" style="width: 100%" clearable>
+            <el-option v-for="u in userOptions" :key="u.userId" :label="(u.realName || u.username) + '（' + u.username + '）'" :value="u.userId" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="点检项">
+          <el-select v-model="form.itemIds" multiple filterable collapse-tags placeholder="选择本计划应检查的点检项（空=全部启用项）" style="width: 100%">
+            <el-option v-for="it in itemOptions" :key="it.id" :label="it.itemName" :value="String(it.id)" />
+          </el-select>
+          <div class="tip">空表示执行时加载全部启用点检项；绑定后任务将固定检查所选项，项库后续增删不影响本计划</div>
         </el-form-item>
         <el-form-item label="生效期">
           <el-date-picker v-model="form.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期（空=长期）" value-format="yyyy-MM-dd" style="width: 100%" />
@@ -112,7 +134,8 @@
 </template>
 
 <script>
-import { listInspectionPlan, addInspectionPlan, updateInspectionPlan, delInspectionPlan, generateInspectionTask } from '@/api/inspection/inspection'
+import { listInspectionPlan, addInspectionPlan, updateInspectionPlan, delInspectionPlan, generateInspectionTask, listEnabledItem } from '@/api/inspection/inspection'
+import { listUser } from '@/api/system/user'
 import Pagination from '@/components/Pagination'
 
 export default {
@@ -127,16 +150,31 @@ export default {
       query: { pageNum: 1, pageSize: 10, planName: '', status: null },
       dialogVisible: false,
       form: {},
+      userOptions: [],
+      itemOptions: [],
       rules: {
         planName: [{ required: true, message: '计划名称不能为空', trigger: 'blur' }],
-        targetIds: [{ required: true, message: '目标不能为空', trigger: 'blur' }]
+        targetIds: [{ required: true, message: '目标不能为空', trigger: 'blur' }],
+        assigneeId: [{ required: true, message: '请选择执行人', trigger: 'change' }]
       }
     }
   },
   created() {
     this.getList()
+    this.loadUserOptions()
+    this.loadItemOptions()
   },
   methods: {
+    loadUserOptions() {
+      listUser({ pageNum: 1, pageSize: 999 }).then(res => {
+        this.userOptions = (res.rows && res.rows.length ? res.rows : res) || []
+      }).catch(() => {})
+    },
+    loadItemOptions() {
+      listEnabledItem().then(res => {
+        this.itemOptions = (res && res.length ? res : []) || []
+      }).catch(() => {})
+    },
     getList() {
       this.loading = true
       listInspectionPlan(this.query).then(res => {
@@ -151,19 +189,24 @@ export default {
       this.handleQuery()
     },
     openAdd() {
-      this.form = { cycleType: 'daily', targetType: 'device', status: 1, dateRange: null, assigneeId: '', assigneeName: '' }
+      this.form = { cycleType: 'daily', cycleDay: null, targetType: 'device', status: 1, dateRange: null, assigneeId: null, assigneeName: '', itemIds: [] }
       this.dialogVisible = true
       this.$nextTick(() => this.$refs.form && this.$refs.form.clearValidate())
     },
     openEdit(row) {
       this.form = {
-        id: row.id, planName: row.planName, cycleType: row.cycleType, targetType: row.targetType,
+        id: row.id, planName: row.planName, cycleType: row.cycleType, cycleDay: row.cycleDay, targetType: row.targetType,
         targetIds: row.targetIds, assigneeId: row.assigneeId, assigneeName: row.assigneeName,
+        itemIds: this.parseIdArray(row.itemIds),
         status: row.status, remark: row.remark,
         dateRange: row.startDate && row.endDate ? [row.startDate, row.endDate] : (row.startDate ? [row.startDate, null] : null)
       }
       this.dialogVisible = true
       this.$nextTick(() => this.$refs.form && this.$refs.form.clearValidate())
+    },
+    parseIdArray(str) {
+      if (!str) return []
+      return String(str).replace(/\[|\]|"/g, '').split(',').filter(s => s.trim() !== '')
     },
     handleSave() {
       this.$refs.form.validate(valid => {
@@ -177,7 +220,14 @@ export default {
           payload.startDate = null
           payload.endDate = null
         }
-        if (this.form.assigneeId === '') payload.assigneeId = null
+        if (this.form.assigneeId === '' || this.form.assigneeId === null) {
+          this.$message.warning('请选择执行人')
+          return
+        }
+        payload.assigneeId = Number(this.form.assigneeId)
+        payload.assigneeName = undefined
+        // 点检项ID列表：空数组 → null（表示全部启用项）
+        payload.itemIds = (this.form.itemIds && this.form.itemIds.length) ? JSON.stringify(this.form.itemIds) : null
         this.saving = true
         const req = this.form.id ? updateInspectionPlan(payload) : addInspectionPlan(payload)
         req.then(() => {
@@ -208,8 +258,16 @@ export default {
         })
       }).catch(() => {})
     },
-    cycleText(c) {
-      return { daily: '每日', weekly: '每周一', monthly: '每月1日' }[c] || c
+    cycleText(row) {
+      if (!row) return '-'
+      if (row.cycleType === 'weekly') {
+        const d = row.cycleDay || '1'
+        return '每周' + ['一', '二', '三', '四', '五', '六', '日'][Number(d) - 1]
+      }
+      if (row.cycleType === 'monthly') {
+        return '每月' + (row.cycleDay || '1') + '日'
+      }
+      return { daily: '每日' }[row.cycleType] || row.cycleType
     },
     hasPerm(key) {
       const perms = this.$store.getters.permissions || []
@@ -223,4 +281,5 @@ export default {
 .search-card { margin-bottom: 16px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; }
 .tip { font-size: 12px; color: #9CA3AF; line-height: 1.6; }
+.cycle-picker { margin-left: 8px; font-size: 13px; color: #6B7280; }
 </style>

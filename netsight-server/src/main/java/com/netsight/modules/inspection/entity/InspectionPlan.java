@@ -1,5 +1,6 @@
 package com.netsight.modules.inspection.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.netsight.common.core.BaseEntity;
 import lombok.Data;
@@ -22,14 +23,24 @@ public class InspectionPlan extends BaseEntity {
     /** 计划名称 */
     private String planName;
 
-    /** 周期：daily 每日 / weekly 每周一 / monthly 每月1日 */
+    /** 周期：daily 每日 / weekly 每周X / monthly 每月X日（X 见 cycleDay） */
     private String cycleType;
+
+    /** 周期自定义：weekly=周几 1-7（默认1=周一）/ monthly=每月几号 1-31（默认1） */
+    private String cycleDay;
 
     /** 对象：device 指定设备 / device_type 按类型 */
     private String targetType;
 
     /** 目标ID列表（JSON数组：设备ID 或 设备类型） */
     private String targetIds;
+
+    /** 绑定点检项ID列表（JSON数组；空=执行时加载全部启用项） */
+    private String itemIds;
+
+    /** 目标名称（解析 targetIds 后的展示名，非表字段） */
+    @TableField(exist = false)
+    private String targetNames;
 
     /** 默认执行人用户ID */
     private Long assigneeId;

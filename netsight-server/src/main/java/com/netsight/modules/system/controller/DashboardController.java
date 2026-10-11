@@ -346,6 +346,21 @@ public class DashboardController {
         data.put("todayTasks", tasks);
         data.put("todayDone", done);
         data.put("doneRate", tasks == 0 ? 0 : Math.round(done * 10000.0 / tasks) / 100.0);
+        // 近 7 日点检执行趋势（柱状图）：每天任务数与完成数
+        List<Map<String, Object>> weekTrend = new ArrayList<>();
+        for (int i = 6; i >= 0; i--) {
+            LocalDate d = today.minusDays(i);
+            Long dayTasks = inspectionTaskMapper.selectCount(
+                    new QueryWrapper<InspectionTask>().eq("plan_date", d));
+            Long dayDone = inspectionTaskMapper.selectCount(
+                    new QueryWrapper<InspectionTask>().eq("plan_date", d).eq("status", 2));
+            Map<String, Object> day = new LinkedHashMap<>();
+            day.put("date", d.format(DateTimeFormatter.ofPattern("MM-dd")));
+            day.put("tasks", dayTasks == null ? 0 : dayTasks);
+            day.put("done", dayDone == null ? 0 : dayDone);
+            weekTrend.add(day);
+        }
+        data.put("weekTrend", weekTrend);
         return data;
     }
 
@@ -504,12 +519,25 @@ public class DashboardController {
         notice.put("latest", latest);
         result.put("notice", notice);
 
-        // 点检巡检：100 计划 / 今日任务 100 / 完成 64
+        // 点检巡检：100 计划 / 今日任务 100 / 完成 64 + 近 7 日趋势（任务/完成）
         Map<String, Object> inspection = new LinkedHashMap<>();
         inspection.put("plans", 100);
         inspection.put("todayTasks", 100);
         inspection.put("todayDone", 64);
         inspection.put("doneRate", 64.0);
+        java.util.Random inspRnd = new java.util.Random(20261012L);
+        List<Map<String, Object>> inspWeek = new ArrayList<>();
+        for (int i = 6; i >= 0; i--) {
+            LocalDate d = LocalDate.now().minusDays(i);
+            int tasks = 88 + inspRnd.nextInt(13);            // 88-100
+            int done = (int) Math.round(tasks * (0.58 + inspRnd.nextDouble() * 0.16)); // 完成率 58%-74%
+            Map<String, Object> day = new LinkedHashMap<>();
+            day.put("date", d.format(DateTimeFormatter.ofPattern("MM-dd")));
+            day.put("tasks", tasks);
+            day.put("done", Math.min(done, tasks));
+            inspWeek.add(day);
+        }
+        inspection.put("weekTrend", inspWeek);
         result.put("inspection", inspection);
 
         // 通知发送监控：今日 100，成功 96

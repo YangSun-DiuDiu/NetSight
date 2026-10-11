@@ -117,14 +117,13 @@
           </div>
           <div class="panel">
             <div class="panel-title"><i class="dot"></i>点检执行情况</div>
-            <div class="insp-row">
-              <div class="insp-ring" ref="inspChart"></div>
-              <div class="insp-info">
-                <div class="insp-item"><span class="insp-key">计划总数</span><span class="insp-val">{{ data.inspection.plans }}</span></div>
-                <div class="insp-item"><span class="insp-key">今日任务</span><span class="insp-val">{{ data.inspection.todayTasks }}</span></div>
-                <div class="insp-item"><span class="insp-key">今日完成</span><span class="insp-val" style="color:#36cfc9;">{{ data.inspection.todayDone }}</span></div>
-              </div>
+            <div class="insp-stats">
+              <div class="insp-item"><span class="insp-key">计划总数</span><span class="insp-val">{{ data.inspection.plans }}</span></div>
+              <div class="insp-item"><span class="insp-key">今日任务</span><span class="insp-val">{{ data.inspection.todayTasks }}</span></div>
+              <div class="insp-item"><span class="insp-key">今日完成</span><span class="insp-val" style="color:#36cfc9;">{{ data.inspection.todayDone }}</span></div>
+              <div class="insp-item"><span class="insp-key">完成率</span><span class="insp-val" style="color:#40a9ff;">{{ data.inspection.doneRate }}%</span></div>
             </div>
+            <div ref="inspChart" class="chart chart-sm"></div>
           </div>
           <div class="panel">
             <div class="panel-title"><i class="dot"></i>近 7 日工单新增</div>
@@ -222,7 +221,7 @@ export default {
         spare: { partTypes: 0, totalQuantity: 0, lowStock: 0, lowStockList: [] },
         knowledge: { total: 0, byCategory: [] },
         notice: { total: 0, latest: [] },
-        inspection: { plans: 0, todayTasks: 0, todayDone: 0, doneRate: 0 },
+        inspection: { plans: 0, todayTasks: 0, todayDone: 0, doneRate: 0, weekTrend: [] },
         notify: { today: 0, success: 0, failed: 0, successRate: 0 },
         ops: { repairers: 0, onDuty: 0, tenants: 0, users: 0, todayStock: 0 }
       },
@@ -361,21 +360,30 @@ export default {
     renderInspChart() {
       const c = this.initChart('inspChart')
       if (!c) return
-      const done = this.data.inspection.doneRate || 0
+      const trend = this.data.inspection.weekTrend || []
+      if (!trend.length) {
+        c.clear()
+        return
+      }
       c.setOption({
         backgroundColor: 'transparent',
-        tooltip: { trigger: 'item', backgroundColor: 'rgba(10,30,60,0.9)', borderColor: '#409eff', textStyle: { color: '#fff', fontSize: 11 }, formatter: '{b}: {c}%' },
-        series: [{
-          type: 'gauge', radius: '98%', center: ['50%', '52%'], startAngle: 210, endAngle: -30,
-          min: 0, max: 100, splitNumber: 5,
-          progress: { show: true, width: 10, itemStyle: { color: '#36cfc9' } },
-          axisLine: { lineStyle: { width: 10, color: [[1, 'rgba(64,158,255,0.18)']] } },
-          axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, pointer: { show: false },
-          anchor: { show: false },
-          title: { show: true, offsetCenter: [0, '32%'], color: '#8fb8e8', fontSize: 10 },
-          detail: { valueAnimation: true, offsetCenter: [0, '-2%'], color: '#36cfc9', fontSize: 18, fontWeight: 'bold', formatter: '{value}%' },
-          data: [{ value: done, name: '完成率' }]
-        }]
+        tooltip: { trigger: 'axis', backgroundColor: 'rgba(10,30,60,0.9)', borderColor: '#409eff', textStyle: { color: '#fff', fontSize: 11 } },
+        legend: { data: ['任务数', '完成数'], textStyle: { color: '#8fb8e8', fontSize: 11 }, top: 0, itemWidth: 12, itemHeight: 8 },
+        grid: { left: 34, right: 10, top: 24, bottom: 18 },
+        xAxis: { type: 'category', data: trend.map(t => t.date), axisLine: { lineStyle: { color: '#2a5a8f' } }, axisLabel: { color: '#8fb8e8', fontSize: 10 } },
+        yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: 'rgba(64,158,255,0.15)' } }, axisLabel: { color: '#8fb8e8', fontSize: 10 } },
+        series: [
+          {
+            name: '任务数', type: 'bar', barWidth: 9, barGap: '30%',
+            itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#40a9ff' }, { offset: 1, color: 'rgba(64,169,255,0.25)' }]), borderRadius: [2, 2, 0, 0] },
+            data: trend.map(t => t.tasks)
+          },
+          {
+            name: '完成数', type: 'bar', barWidth: 9,
+            itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#36cfc9' }, { offset: 1, color: 'rgba(54,207,201,0.25)' }]), borderRadius: [2, 2, 0, 0] },
+            data: trend.map(t => t.done)
+          }
+        ]
       })
     },
     renderOrderTrendChart() {
@@ -514,7 +522,11 @@ export default {
 .screen.is-full .nt-val { font-size: 15px; }
 .screen.is-full .op-item { padding: 4px 4px; }
 .screen.is-full .op-val { font-size: 16px; }
-.screen.is-full .insp-ring { width: 84px; height: 84px; }
+.screen.is-full .insp-stats {
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 14px;
+}
 /* 全屏内容占满：固定内容垂直居中、列表均匀分布，面板内容底部与列底对齐 */
 .screen.is-full .insp-row {
   flex: 1;
@@ -836,26 +848,18 @@ export default {
   border-radius: 4px;
   padding: 1px 7px;
 }
-.insp-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.insp-ring {
-  width: 108px;
-  height: 108px;
+.insp-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 14px;
+  margin-bottom: 6px;
   flex: none;
-}
-.insp-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 .insp-item {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
+  line-height: 16px;
 }
 .insp-key { color: #6f9ed1; }
 .insp-val { color: #fff; font-weight: 600; font-family: Consolas, monospace; }

@@ -590,7 +590,8 @@ export default {
   align-items: center;
 }
 /* 标题行副标题（告警级别统计：累计告警并入标题右侧，省一行） */
-.panel-title.title-flex { justify-content: space-between; }
+.panel-title.title-flex { justify-content: flex-start; }
+.panel-title.title-flex .title-sub { margin-left: auto; }
 .title-sub { font-size: 11px; font-weight: 400; color: #6f9ed1; }
 .panel-title .dot {
   width: 6px;  height: 6px;

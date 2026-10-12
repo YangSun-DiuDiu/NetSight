@@ -6,7 +6,9 @@ import com.netsight.common.core.PageResult;
 import com.netsight.common.exception.ServiceException;
 import com.netsight.framework.security.SecurityUtils;
 import com.netsight.modules.workorder.entity.Repairer;
+import com.netsight.modules.workorder.entity.WorkOrder;
 import com.netsight.modules.workorder.mapper.RepairerMapper;
+import com.netsight.modules.workorder.mapper.WorkOrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ public class RepairerService {
     private static final DateTimeFormatter NO_FMT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final RepairerMapper repairerMapper;
+    private final WorkOrderMapper workOrderMapper;
 
     /**
      * 分页查询（租户隔离自动处理）
@@ -44,10 +47,20 @@ public class RepairerService {
     }
 
     /**
-     * 在岗维修人员选项（派单弹窗下拉）
+     * 在岗维修人员选项（派单弹窗下拉）。
+     * 【跨租户加固】必须按目标工单所属租户过滤，防止超管把 A 租户工单派给 B 租户维修人员。
+     * workOrderId 必传：派单/改派弹窗打开时传入当前工单 id。
      */
-    public List<Repairer> listOptions() {
+    public List<Repairer> listOptions(Long workOrderId) {
+        if (workOrderId == null) {
+            throw new ServiceException(500, "缺少工单编号，无法选择维修人员");
+        }
+        WorkOrder order = workOrderMapper.selectById(workOrderId);
+        if (order == null) {
+            throw new ServiceException(500, "工单不存在");
+        }
         return repairerMapper.selectList(new LambdaQueryWrapper<Repairer>()
+                .eq(Repairer::getTenantId, order.getTenantId())
                 .eq(Repairer::getStatus, 1).orderByAsc(Repairer::getId));
     }
 

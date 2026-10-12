@@ -289,6 +289,11 @@ public class WorkOrderService {
         if (repairer == null || repairer.getStatus() == null || repairer.getStatus() != 1) {
             throw new ServiceException(500, "维修人员不存在或不在岗");
         }
+        // 【跨租户加固】派单人与工单必须同租户：防止超管把 A 租户工单派给 B 租户维修人员，
+        // 导致维修人员在 H5 端因租户隔离看不到工单。
+        if (!order.getTenantId().equals(repairer.getTenantId())) {
+            throw new ServiceException(500, "维修人员与工单不属于同一租户，请重新选择");
+        }
         // 1. 更新工单
         order.setStatus(1);
         order.setRepairerId(repairerId);

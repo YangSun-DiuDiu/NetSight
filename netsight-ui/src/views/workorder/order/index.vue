@@ -452,7 +452,7 @@ export default {
     handleDispatch(row) {
       this.currentOrder = row
       this.dispatchForm = { repairerId: undefined, remark: '' }
-      listRepairerOptions().then(data => { this.repairerOptions = data })
+      listRepairerOptions(row.id).then(data => { this.repairerOptions = data })
       this.dispatchOpen = true
     },
     submitDispatch() {

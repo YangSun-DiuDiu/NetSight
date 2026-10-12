@@ -200,7 +200,7 @@ export default {
   margin-bottom: 12px;
 }
 .order-no {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ink);
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
@@ -208,7 +208,7 @@ export default {
 .card-body .row {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-muted);
   line-height: 2;
 }

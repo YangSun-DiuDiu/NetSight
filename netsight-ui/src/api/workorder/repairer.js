@@ -9,11 +9,12 @@ export function listRepairer(query) {
   }).then(res => res.data)
 }
 
-// 在岗维修人员选项（派单弹窗）
-export function listRepairerOptions() {
+// 在岗维修人员选项（派单弹窗，按工单租户过滤）
+export function listRepairerOptions(workOrderId) {
   return request({
     url: '/workorder/repairer/options',
-    method: 'get'
+    method: 'get',
+    params: { workOrderId: workOrderId }
   }).then(res => res.data)
 }
 

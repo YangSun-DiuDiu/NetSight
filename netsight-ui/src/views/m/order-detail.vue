@@ -107,8 +107,9 @@
         <van-uploader
           v-model="fileList"
           :max-count="6"
-          :max-size="5 * 1024 * 1024"
-          @after-read="afterRead"
+          :max-size="10 * 1024 * 1024"
+          :after-read="afterRead"
+          @oversize="onOversize"
         />
       </div>
 
@@ -258,6 +259,9 @@ export default {
       const items = Array.isArray(file) ? file : [file]
       items.forEach(item => this.uploadPhoto(item))
     },
+    onOversize(file) {
+      Toast('照片超过 10MB，请压缩后重传')
+    },
     uploadPhoto(item) {
       const f = item.file
       if (!f) {
@@ -381,7 +385,7 @@ export default {
 }
 .section-title {
   padding: 16px 16px 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ink-subtle);
   text-transform: uppercase;
@@ -414,7 +418,7 @@ export default {
 }
 .ai-ctx {
   margin: 4px 16px 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-subtle);
 }
 .ai-actions {
@@ -425,8 +429,8 @@ export default {
   color: #fff;
   border: none;
   border-radius: 8px;
-  height: 40px;
-  font-size: 14px;
+  height: 42px;
+  font-size: 15px;
   font-weight: 500;
 }
 .ai-result {
@@ -438,7 +442,7 @@ export default {
   display: inline-block;
   padding: 3px 10px;
   border-radius: 20px;
-  font-size: 12px;
+  font-size: 13px;
   margin-bottom: 8px;
 }
 .badge-ai {
@@ -454,7 +458,7 @@ export default {
   color: var(--ink-muted);
 }
 .ai-answer {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.7;
   color: var(--ink);
   white-space: pre-wrap;
@@ -464,7 +468,7 @@ export default {
   margin-top: 10px;
 }
 .ai-sources-title {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-subtle);
   margin-bottom: 6px;
 }
@@ -487,14 +491,14 @@ export default {
   padding: 16px;
 }
 .upload-label {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   margin-bottom: 12px;
   color: var(--ink);
 }
 .part-selected {
   color: var(--primary);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 /* Action bar */
@@ -533,7 +537,7 @@ export default {
   border: none;
   border-radius: 8px;
   height: 44px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
 }
 ::v-deep .lavender-btn:active {

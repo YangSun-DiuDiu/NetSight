@@ -1,0 +1,71 @@
+# NetSight NAMS 云端 Nginx 配置（V1.4.2 加固：/uploads 直连 + 缓存策略）
+server {
+    listen 80;
+    server_name _;
+    root /opt/nams-ui/dist;
+    index index.html;
+
+    client_max_body_size 20m;
+
+    # 后端 API
+    location /prod-api/ {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 边缘网关接入（mapping 下发 / 状态上报 / webhook 推送）
+    location /edge/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # Alertmanager 告警 webhook 直达后端（勿被 SPA fallback 劫持）
+    location = /alert/push {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+    location /alert/ {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # WebSocket 双向通信
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # 维修照片等上传文件（UUID 文件名不可变 → 长缓存；^~ 前缀优先，避免被下方正则 location 劫持到 dist）
+    location ^~ /uploads/ {
+        alias /opt/nams-server/uploads/;
+        expires 30d;
+        try_files $uri =404;
+    }
+
+    # index.html 不缓存（SPA 入口，避免旧版 JS/CSS 引用）
+    location = /index.html {
+        add_header Cache-Control "no-cache, must-revalidate";
+    }
+
+    # 带 hash 的静态资源长缓存（仅限 dist 内资源）；不存在时 404 而非回退 index.html
+    location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot)$ {
+        expires 30d;
+        try_files $uri =404;
+    }
+
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

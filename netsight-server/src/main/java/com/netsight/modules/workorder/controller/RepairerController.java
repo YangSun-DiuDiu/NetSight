@@ -36,12 +36,14 @@ public class RepairerController {
     }
 
     /**
-     * 在岗维修人员选项（派单弹窗下拉）
+     * 在岗维修人员选项（派单弹窗下拉，按工单租户过滤）
+     *
+     * @param workOrderId 当前待派单工单 id（必传，用于租户隔离过滤维修人员）
      */
     @PreAuthorize("hasRole('super_admin') or hasAuthority('workorder:repairer:list')")
     @GetMapping("/options")
-    public R<List<Repairer>> options() {
-        return R.ok(repairerService.listOptions());
+    public R<List<Repairer>> options(@RequestParam(required = false) Long workOrderId) {
+        return R.ok(repairerService.listOptions(workOrderId));
     }
 
     /**

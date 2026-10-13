@@ -14,14 +14,23 @@
             <i :class="demoMode ? 'el-icon-data-line' : 'el-icon-odometer'"></i>
             {{ demoMode ? '演示模式(100条)' : '真实数据' }}
           </el-button>
-          <el-button size="mini" plain class="fullscreen-btn" @click="toggleFullscreen">
+          <el-button size="mini" plain class="fullscreen-btn" @click="openWallDialog">
+            <i class="el-icon-setting"></i>
+            上墙配置
+          </el-button>
+          <el-button size="mini" plain class="fullscreen-btn" :class="{ 'wall-on': wallMode }" @click="toggleWall">
+            <i :class="wallMode ? 'el-icon-close' : 'el-icon-rank'"></i>
+            {{ wallMode ? '退出上墙' : '上墙' }}
+          </el-button>
+          <el-button v-if="!wallMode" size="mini" plain class="fullscreen-btn" @click="toggleFullscreen">
             <i :class="isFull ? 'el-icon-close' : 'el-icon-full-screen'"></i>
             {{ isFull ? '退出全屏' : '全屏' }}
           </el-button>
         </div>
       </header>
 
-      <main class="screen-main">
+      <!-- 普通模式：三列滚动全量 -->
+      <main v-if="!wallMode" class="screen-main">
         <!-- 左列 -->
         <section class="col">
           <div class="panel">
@@ -186,6 +195,43 @@
         </section>
       </main>
 
+      <!-- 上墙模式：3×3 网格，仅渲染勾选板块（≤9），字号正常不失真 -->
+      <main v-else class="wall-main">
+        <div v-if="wallList.length" class="wall-grid">
+          <div v-for="key in wallList" :key="key" class="wall-cell">
+            <div class="wall-cell-title"><i class="dot"></i>{{ boardName(key) }}</div>
+            <div class="wall-cell-body">
+              <board :board-key="key" :data="data" :recent-events="recentEvents" />
+            </div>
+          </div>
+        </div>
+        <el-empty v-else description="尚未配置上墙板块，请点击右上角「上墙配置」勾选" style="padding: 80px 0;">
+          <el-button type="primary" size="small" @click="openWallDialog">去配置上墙板块</el-button>
+        </el-empty>
+      </main>
+
+      <!-- 上墙配置弹窗：勾选 + 排序，最多 9 个，按租户保存 -->
+      <el-dialog title="上墙配置" :visible.sync="wallDialogVisible" width="560px" append-to-body class="wall-dialog">
+        <div class="wall-dialog-tip">
+          <i class="el-icon-info"></i>
+          勾选需要上墙的板块（最多 9 个，3×3 九宫格）。已选板块可通过上下箭头调整顺序，保存后上墙模式即时生效。
+        </div>
+        <div v-for="def in boardDefs" :key="def.key" class="wall-def">
+          <el-checkbox :value="wallDraft.includes(def.key)" @change="val => onWallCheck(def.key, val)">
+            {{ def.name }}
+          </el-checkbox>
+          <span v-if="wallDraft.includes(def.key)" class="wall-order">
+            <el-button size="mini" icon="el-icon-top" circle :disabled="wallDraft.indexOf(def.key) === 0" @click="moveWall(def.key, -1)" />
+            <el-button size="mini" icon="el-icon-bottom" circle :disabled="wallDraft.indexOf(def.key) === wallDraft.length - 1" @click="moveWall(def.key, 1)" />
+            <span class="wall-order-idx">第 {{ wallDraft.indexOf(def.key) + 1 }} 位</span>
+          </span>
+        </div>
+        <div slot="footer">
+          <el-button size="small" @click="wallDialogVisible = false">取消</el-button>
+          <el-button size="small" type="primary" :loading="wallSaving" @click="saveWall">保存</el-button>
+        </div>
+      </el-dialog>
+
       <footer class="screen-footer">NetSight NAMS · 数据实时刷新中 · {{ now }}</footer>
     </div>
   </div>
@@ -193,9 +239,10 @@
 
 <script>
 import * as echarts from 'echarts'
-import { getDashboardOverview } from '@/api/dashboard'
+import { getDashboardOverview, getWallConfig, saveWallConfig } from '@/api/dashboard'
 import { listEvent } from '@/api/alert/event'
 import { connectWebSocket, onWebSocketMessage, disconnectWebSocket } from '@/utils/websocket'
+import Board from './Board.vue'
 
 const SEV_MAP = { critical: '严重', warning: '警告', info: '提示', resolved: '恢复' }
 const TYPE_MAP = {
@@ -206,12 +253,37 @@ const TYPE_MAP = {
   manual: '手动通知'
 }
 
+/** 全部可上墙板块定义（key 与后端 DashboardWallController.BOARD_DEFS 保持一致） */
+const BOARD_DEFS = [
+  { key: 'metric_summary', name: '核心指标' },
+  { key: 'type_chart', name: '设备类型分布' },
+  { key: 'status_chart', name: '设备状态占比' },
+  { key: 'gateway', name: '边缘网关状态' },
+  { key: 'spare', name: '备件库存概览' },
+  { key: 'knowledge', name: '知识库与公告' },
+  { key: 'trend_chart', name: '近7日告警趋势' },
+  { key: 'live_alert', name: '实时告警' },
+  { key: 'inspection', name: '点检执行情况' },
+  { key: 'order_trend', name: '近7日工单新增' },
+  { key: 'order_board', name: '工单看板' },
+  { key: 'alert_level', name: '告警级别统计' },
+  { key: 'notify', name: '通知发送监控' },
+  { key: 'ops', name: '今日运营速览' }
+]
+
 export default {
   name: 'Dashboard',
+  components: { Board },
   data() {
     return {
       now: this.fmtNow(),
       isFull: false,
+      wallMode: false,
+      wallList: [],
+      wallDialogVisible: false,
+      wallDraft: [],
+      wallSaving: false,
+      boardDefs: BOARD_DEFS,
       demoMode: localStorage.getItem('netsight-dashboard-demo') === '1',
       data: {
         device: { total: 0, online: 0, offline: 0, lineAbnormal: 0, onlineRate: 0, byType: [] },
@@ -234,6 +306,7 @@ export default {
   },
   created() {
     this.refreshAll()
+    this.loadWallConfig()
     this.clockTimer = setInterval(() => { this.now = this.fmtNow() }, 1000)
     this.timer = setInterval(() => { this.refreshAll() }, 30000)
     // WebSocket 实时：任一事件/设备/工单变更 → 全量刷新
@@ -293,6 +366,88 @@ export default {
       this.demoMode = !this.demoMode
       localStorage.setItem('netsight-dashboard-demo', this.demoMode ? '1' : '0')
       this.refreshAll()
+    },
+    // ===== 上墙模式（3×3） =====
+    boardName(key) {
+      const def = this.boardDefs.find(d => d.key === key)
+      return def ? def.name : key
+    },
+    loadWallConfig() {
+      getWallConfig().then(list => {
+        this.wallList = (list || []).map(x => x.boardKey)
+      }).catch(() => { /* 无权限/未配置时忽略 */ })
+    },
+    openWallDialog() {
+      this.wallDraft = this.wallList.slice()
+      this.wallDialogVisible = true
+    },
+    onWallCheck(key, checked) {
+      const idx = this.wallDraft.indexOf(key)
+      if (checked) {
+        if (this.wallDraft.length >= 9) {
+          this.$message.warning('上墙板块最多 9 个（3×3），请先取消部分板块')
+          return
+        }
+        if (idx === -1) this.wallDraft.push(key)
+      } else if (idx !== -1) {
+        this.wallDraft.splice(idx, 1)
+      }
+    },
+    moveWall(key, dir) {
+      const idx = this.wallDraft.indexOf(key)
+      const target = idx + dir
+      if (idx === -1 || target < 0 || target >= this.wallDraft.length) return
+      const arr = this.wallDraft.slice()
+      ;[arr[idx], arr[target]] = [arr[target], arr[idx]]
+      this.wallDraft = arr
+    },
+    saveWall() {
+      this.wallSaving = true
+      saveWallConfig(this.wallDraft).then(() => {
+        this.wallList = this.wallDraft.slice()
+        this.wallDialogVisible = false
+        this.$message.success('上墙配置已保存')
+        // 上墙模式下配置变更后：图表容器尺寸可能变化，延迟 resize 保证渲染正常
+        if (this.wallMode) {
+          setTimeout(() => this.resizeWallCharts(), 300)
+        }
+      }).catch(err => {
+        this.$message.error((err && err.message) || '保存失败')
+      }).finally(() => {
+        this.wallSaving = false
+      })
+    },
+    toggleWall() {
+      if (!this.wallMode) {
+        if (!this.wallList.length) {
+          this.$message.warning('尚未配置上墙板块，请先点击「上墙配置」勾选')
+          this.openWallDialog()
+          return
+        }
+        this.wallMode = true
+        this.enterFullscreen()
+      } else {
+        this.wallMode = false
+        this.exitFullscreen()
+      }
+    },
+    enterFullscreen() {
+      const el = this.$refs.screen
+      if (!el) return
+      if (el.requestFullscreen) el.requestFullscreen()
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen()
+      else if (el.msRequestFullscreen) el.msRequestFullscreen()
+      this.isFull = true
+      setTimeout(() => this.resizeWallCharts(), 250)
+    },
+    exitFullscreen() {
+      if (document.exitFullscreen) document.exitFullscreen()
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen()
+      this.isFull = false
+    },
+    resizeWallCharts() {
+      // 上墙模式下 Board 子组件图表随窗口 resize；此处延迟触发子组件图表自适应
+      setTimeout(() => this.resizeCharts(), 100)
     },
     initChart(refName) {
       if (!this.charts[refName] && this.$refs[refName]) {
@@ -433,6 +588,10 @@ export default {
     },
     onFullscreenChange() {
       this.isFull = !!document.fullscreenElement
+      // 用户按 Esc 退出全屏时，若处于上墙模式则同步退出，避免 3×3 悬浮在普通视口
+      if (!this.isFull && this.wallMode) {
+        this.wallMode = false
+      }
       setTimeout(() => this.resizeCharts(), 200)
     }
   }
@@ -952,4 +1111,81 @@ export default {
 }
 .op-key { display: block; font-size: 11px; color: #6f9ed1; }
 .op-val { display: block; font-size: 20px; font-weight: 700; color: #fff; margin-top: 2px; font-family: Consolas, monospace; }
+/* ===== 上墙模式（3×3） ===== */
+.wall-on {
+  color: #36cfc9 !important;
+  border-color: rgba(54, 207, 201, 0.8) !important;
+  background: rgba(54, 207, 201, 0.12) !important;
+}
+/* 上墙模式下 .screen 全屏（3×3 网格铺满，字号正常不失真） */
+.screen.is-full .wall-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wall-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 14px;
+}
+.wall-cell {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(64, 158, 255, 0.28);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.wall-cell-title {
+  flex: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: #a8ccf2;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+}
+.wall-cell-body {
+  flex: 1;
+  min-height: 0;
+}
+/* 配置弹窗 */
+.wall-dialog-tip {
+  font-size: 12px;
+  color: #8fb8e8;
+  background: rgba(64, 158, 255, 0.1);
+  border: 1px solid rgba(64, 158, 255, 0.25);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+.wall-def {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px;
+  border-bottom: 1px dashed rgba(64, 158, 255, 0.15);
+}
+.wall-order {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.wall-order-idx {
+  font-size: 12px;
+  color: #36cfc9;
+  margin-left: 4px;
+  font-family: Consolas, monospace;
+}
+.wall-dialog .el-dialog__title { font-size: 16px; }
+.wall-dialog .el-dialog__body { padding-top: 6px; max-height: 60vh; overflow-y: auto; }
 </style>

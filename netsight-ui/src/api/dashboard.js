@@ -11,3 +11,22 @@ export function getDashboardOverview(demo = 0) {
     params: { demo }
   }).then(res => res.data)
 }
+
+// ===== 驾驶舱上墙配置（3×3 上墙模式，按租户隔离） =====
+
+// 查询当前租户上墙配置（返回有序 [{boardKey, boardName}]）
+export function getWallConfig() {
+  return request({
+    url: '/dashboard/wall/config',
+    method: 'get'
+  }).then(res => res.data)
+}
+
+// 全量覆盖保存上墙配置（body: 有序 boardKey 数组，最多 9 个；传空数组=全部不上墙）
+export function saveWallConfig(boardKeys) {
+  return request({
+    url: '/dashboard/wall/config',
+    method: 'post',
+    data: boardKeys
+  }).then(res => res.data)
+}

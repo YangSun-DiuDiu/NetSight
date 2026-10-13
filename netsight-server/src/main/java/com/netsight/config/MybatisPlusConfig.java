@@ -27,7 +27,11 @@ public class MybatisPlusConfig {
     private static final Set<String> IGNORE_TABLES = Set.of(
             "sys_dict_type", "sys_dict_data", "sys_config", "sys_tenant",
             // 角色/权限体系为全局公共数据，不做租户隔离
-            "sys_role", "sys_permission", "sys_user_role", "sys_role_permission"
+            "sys_role", "sys_permission", "sys_user_role", "sys_role_permission",
+            // 流程引擎表：租户隔离由 Warm-Flow 自身 TenantHandler 处理（tenant_id varchar），
+            // 避免与业务表 bigint 租户拦截器双重拼接
+            "flow_definition", "flow_node", "flow_skip", "flow_instance",
+            "flow_task", "flow_his_task", "flow_user", "flow_form"
     );
 
     /**

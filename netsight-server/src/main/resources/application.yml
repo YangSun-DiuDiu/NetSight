@@ -7,6 +7,10 @@ server:
 spring:
   application:
     name: netsight-server
+  main:
+    # warm-flow 1.8.9 同时携带 FlowAutoConfig 与 BeanConfig 两份自动配置（definitionDao 等 Bean 重名），
+    # Spring Boot 4 默认禁止 Bean 覆盖，需显式允许（仅同名 Bean 覆盖，不影响其它行为）
+    allow-bean-definition-overriding: true
   profiles:
     active: dev
   jackson:
@@ -142,6 +146,19 @@ netsight:
 file:
   upload-dir: ${FILE_UPLOAD_DIR:/opt/nams-server/uploads}
   access-prefix: /uploads
+
+# ===== 流程审批引擎 Warm-Flow（Dromara）=====
+warm-flow:
+  # 引擎开关（BeanConfig 注册条件）
+  enabled: ${WARM_FLOW_ENABLED:true}
+  # 设计器 UI（/warm-flow-ui/** 静态资源）
+  ui: ${WARM_FLOW_UI:true}
+  # 设计器 iframe 共享登录态：URL 追加 &Authorization=Bearer <token>，此配置指定 token 请求头名（可逗号分隔多个）
+  token-name: Authorization
+  # 多租户：引擎表 tenant_id（varchar）由自定义 TenantHandler 填充当前租户ID
+  tenant-handler-path: com.netsight.modules.workflow.handler.NamsTenantHandler
+  # 审批权限：permissionFlag 用角色标识（如 tenant_admin），由 PermissionHandler 提供当前用户角色
+  permission-handler-path: com.netsight.modules.workflow.handler.NamsPermissionHandler
 
 logging:
   # 显式指定 Logback 配置（Spring Boot 默认已按 logback-spring.xml 自动加载，此处声明便于排查）

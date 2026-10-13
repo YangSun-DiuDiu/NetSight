@@ -54,7 +54,10 @@ public class SecurityConfig {
             // 上传文件静态访问
             "/uploads/**",
             // 文件上传接口（需登录鉴权，但放行 OPTIONS）
-            "/file/upload"
+            "/file/upload",
+            // 流程设计器 UI 与 Warm-Flow 引擎 API（登录态经 URL 参数 token 传递，放行让设计器可加载）
+            "/warm-flow-ui/**",
+            "/warm-flow/**"
     };
 
     @Bean

@@ -23,6 +23,7 @@
         <jjwt.version>0.12.6</jjwt.version>
         <hutool.version>5.8.32</hutool.version>
         <druid.version>1.2.23</druid.version>
+        <warm-flow.version>1.8.9</warm-flow.version>
     </properties>
 
     <dependencies>
@@ -90,6 +91,20 @@
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-jsqlparser</artifactId>
             <version>${mybatis-plus.version}</version>
+        </dependency>
+
+        <!-- ===== 流程审批引擎 Warm-Flow（Dromara，Apache 2.0）===== -->
+        <!-- 引擎核心（Spring Boot 4 / MyBatis-Plus 专用 starter） -->
+        <dependency>
+            <groupId>org.dromara.warm</groupId>
+            <artifactId>warm-flow-mybatis-plus-sb4-starter</artifactId>
+            <version>${warm-flow.version}</version>
+        </dependency>
+        <!-- 流程设计器 UI（Spring Boot 版 web 设计器：/warm-flow-ui/index.html） -->
+        <dependency>
+            <groupId>org.dromara.warm</groupId>
+            <artifactId>warm-flow-plugin-ui-sb-web</artifactId>
+            <version>${warm-flow.version}</version>
         </dependency>
 
         <!-- 数据库连接池：Spring Boot 4 内置 HikariCP（Druid 3-starter 不兼容 Boot4，后续官方出 4-starter 可切换） -->

@@ -12,6 +12,7 @@ import com.netsight.modules.system.entity.SysTenant;
 import com.netsight.modules.system.mapper.SysTenantMapper;
 import com.netsight.modules.system.service.PushplusTokenService;
 import com.netsight.modules.system.service.WebhookTokenService;
+import com.netsight.modules.workflow.service.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -42,6 +43,7 @@ public class SysTenantController {
     private final NotificationTemplateMapper notificationTemplateMapper;
     private final TokenCrypto tokenCrypto;
     private final JdbcTemplate jdbcTemplate;
+    private final WorkflowService workflowService;
 
     /**
      * 含 tenant_id 的业务表清单（删除租户时级联物理清理，与「业务数据归属租户」一致）。
@@ -98,8 +100,23 @@ public class SysTenantController {
         // V1.1.10：新租户自动复制租户1（默认租户）的完整消息模板集，
         // 保证新租户通知开箱即含租户名等标准占位符，避免手工维护模板遗漏
         copyDefaultTemplates(tenant.getId());
-        log.info("新增租户[{}]，已自动生成 Webhook Token 并复制默认消息模板", tenant.getId());
+        // 审批流程：新租户自动复制租户1的预置流程模板（flow_definition/node/skip 三表，方案 B 租户隔离）
+        copyDefaultWorkflowTemplates(tenant.getId());
+        log.info("新增租户[{}]，已自动生成 Webhook Token 并复制默认消息模板与流程模板", tenant.getId());
         return R.ok("租户已创建，Webhook Token 如下", plainToken);
+    }
+
+    /**
+     * 复制租户1的预置流程模板到新租户（方案 B：租户隔离 + 注册复制）。
+     * 复制失败不阻断租户创建（日志告警，可手动在流程管理页重跑）。
+     */
+    private void copyDefaultWorkflowTemplates(Long newTenantId) {
+        try {
+            int copied = workflowService.copyFlowTemplatesToTenant(WorkflowService.DEFAULT_TEMPLATE_TENANT, newTenantId);
+            log.info("新租户[{}]已自动复制 {} 套预置流程模板", newTenantId, copied);
+        } catch (Exception e) {
+            log.error("新租户[{}]复制预置流程模板失败: {}", newTenantId, e.getMessage());
+        }
     }
 
     /**

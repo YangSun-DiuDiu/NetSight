@@ -85,7 +85,10 @@ public class WorkflowService {
      * 租户隔离：flow_definition 表由引擎 TenantHandler 过滤 tenant_id
      */
     public List<Definition> listDefinitions() {
-        return defService.list(new FlowDefinition());
+        // 多租户隔离（方案B）：仅返回当前租户的流程定义，防止越权看到其他租户模板
+        FlowDefinition query = new FlowDefinition();
+        query.setTenantId(String.valueOf(SecurityUtils.getTenantId()));
+        return defService.list(query);
     }
 
     /**
@@ -291,8 +294,11 @@ public class WorkflowService {
         identities.addAll(roles);
 
         // 用 Mapper + LambdaQueryWrapper 做 IN 查询（引擎 list(T) 是等值语义，逗号串无法命中）
+        // 多租户隔离（方案B）：flow_user 在 MP 拦截器忽略表中，需显式按当前租户过滤，防止跨租户待办越权
+        String tenantId = String.valueOf(SecurityUtils.getTenantId());
         List<FlowUser> users = flowUserMapper.selectList(new LambdaQueryWrapper<FlowUser>()
                 .eq(FlowUser::getType, UserType.APPROVAL.getKey())
+                .eq(FlowUser::getTenantId, tenantId)
                 .in(FlowUser::getProcessedBy, identities)
                 .eq(FlowUser::getDelFlag, "0"));
         if (users == null || users.isEmpty()) {

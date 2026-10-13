@@ -114,10 +114,50 @@
       </div>
 
       <div class="upload-section">
-        <div class="upload-label">领用备件（可选）</div>
+        <div class="upload-label">领料申请（提交后进入审批）</div>
         <van-cell title="选择备件" is-link @click="showPartPicker = true">
-          <span v-if="selectedPart" class="part-selected">{{ selectedPart.partName }} x{{ form.partQty }}</span>
+          <span v-if="selectedPart" class="part-selected">{{ selectedPart.partName }} x{{ outQty }}</span>
+          <span v-else class="part-placeholder">未选择</span>
         </van-cell>
+        <div class="qty-row" v-if="selectedPart">
+          <span class="qty-label">数量</span>
+          <van-stepper v-model="outQty" :min="1" :max="selectedPart.quantity" integer />
+          <span class="qty-stock">库存 {{ selectedPart.quantity }}{{ selectedPart.unit }}</span>
+        </div>
+        <van-button
+          block
+          class="out-btn"
+          :loading="outSubmitting"
+          :disabled="!selectedPart"
+          @click="submitOutRequest"
+        >提交领料申请</van-button>
+      </div>
+
+      <div class="section" v-if="outRequests.length > 0">
+        <div class="section-title">领料记录</div>
+        <van-cell-group inset class="light-group">
+          <van-cell v-for="(o, i) in outRequests" :key="i">
+            <template slot="title">
+              <div class="out-item">
+                <span class="out-biz">{{ o.bizId }}</span>
+                <van-tag :type="outStatusType(o.approvalStatus)">{{ outStatusText(o.approvalStatus) }}</van-tag>
+              </div>
+            </template>
+            <template slot="label">
+              <div class="out-items">{{ outItemsText(o.items) }}</div>
+              <div class="out-time">{{ o.createTime }}<span v-if="o.remark" class="out-remark"> · {{ o.remark }}</span></div>
+            </template>
+            <van-button
+              v-if="o.approvalStatus === 'rejected'"
+              size="mini"
+              plain
+              type="primary"
+              class="out-resubmit"
+              :loading="resubmittingBiz === o.bizId"
+              @click="resubmitOut(o.bizId)"
+            >重新提交</van-button>
+          </van-cell>
+        </van-cell-group>
       </div>
 
       <div class="submit-bar">
@@ -126,11 +166,15 @@
     </div>
 
     <van-popup v-model="showPartPicker" position="bottom" :style="{ maxHeight: '60%' }">
-      <van-picker
-        :columns="partOptions"
-        @confirm="onPartConfirm"
-        @cancel="showPartPicker = false"
+      <div class="part-picker-title">选择备件</div>
+      <van-cell
+        v-for="(p, i) in partOptions"
+        :key="i"
+        :title="p.text"
+        is-link
+        @click="onPartPick(p)"
       />
+      <div class="part-picker-cancel" @click="showPartPicker = false">取消</div>
     </van-popup>
 
     <van-image-preview v-model="showPhotoPreview" :images="photoList" />
@@ -157,6 +201,10 @@ export default {
       fileList: [],
       partOptions: [],
       selectedPart: null,
+      outRequests: [],
+      outQty: 1,
+      outSubmitting: false,
+      resubmittingBiz: '',
       aiLoading: false,
       aiResult: null,
       aiForm: {
@@ -195,6 +243,7 @@ export default {
     this.orderId = this.$route.params.id
     this.loadDetail()
     this.loadParts()
+    this.loadOutRequests()
   },
   methods: {
     loadDetail() {
@@ -245,6 +294,67 @@ export default {
         }))
       })
     },
+    loadOutRequests() {
+      request.get('/spare/out/order/' + this.orderId).then(res => {
+        this.outRequests = res.data || []
+      }).catch(() => {
+        this.outRequests = []
+      })
+    },
+    submitOutRequest() {
+      if (!this.selectedPart) {
+        Toast('请选择备件')
+        return
+      }
+      if (!this.outQty || this.outQty < 1) {
+        Toast('数量必须大于0')
+        return
+      }
+      this.outSubmitting = true
+      request.post('/spare/out/request', {
+        orderId: this.orderId,
+        items: [{ partId: this.selectedPart.value, quantity: this.outQty }],
+        remark: 'H5 领料申请'
+      }).then(res => {
+        this.outSubmitting = false
+        Toast('领料申请已提交，等待审批')
+        this.loadOutRequests()
+        this.loadDetail()
+        this.selectedPart = null
+        this.outQty = 1
+      }).catch(err => {
+        this.outSubmitting = false
+        Toast((err && err.msg) || '提交失败，请稍后重试')
+      })
+    },
+    resubmitOut(bizId) {
+      this.resubmittingBiz = bizId
+      request.post('/spare/out/resubmit', { bizId: bizId }).then(() => {
+        this.resubmittingBiz = ''
+        Toast('已重新提交，等待审批')
+        this.loadOutRequests()
+      }).catch(err => {
+        this.resubmittingBiz = ''
+        Toast((err && err.msg) || '重新提交失败')
+      })
+    },
+    outItemsText(items) {
+      if (!items) return ''
+      try {
+        const arr = JSON.parse(items)
+        return arr.map(i => (i.partName || i.partId) + ' x' + i.quantity).join('，')
+      } catch (e) {
+        return items
+      }
+    },
+    outStatusText(status) {
+      const map = { processing: '审批中', approved: '已通过', rejected: '已驳回', canceled: '已撤销' }
+      return map[status] || status
+    },
+    outStatusType(status) {
+      const map = { processing: 'warning', approved: 'success', rejected: 'danger', canceled: 'default' }
+      return map[status] || 'default'
+    },
     startRepair() {
       this.starting = true
       request.post('/m/order/' + this.orderId + '/start').then(() => {
@@ -293,10 +403,9 @@ export default {
         Toast('照片上传失败，请检查网络后重试')
       })
     },
-    onPartConfirm(value) {
-      this.selectedPart = value
-      this.form.partId = value.value
-      this.form.partQty = 1
+    onPartPick(p) {
+      this.selectedPart = p
+      this.outQty = 1
       this.showPartPicker = false
     },
     submitComplete() {
@@ -324,8 +433,8 @@ export default {
       this.submitting = true
       const body = {
         repairResult: this.form.repairResult,
-        photos: photos,
-        parts: this.form.partId ? [{ partId: this.form.partId, quantity: this.form.partQty }] : []
+        photos: photos
+        // 备件领用已迁移至出库申请审批链路（/spare/out/request），完工不再内联扣库存
       }
       request.post('/m/order/' + this.orderId + '/complete', body).then(() => {
         this.submitting = false
@@ -499,6 +608,79 @@ export default {
 .part-selected {
   color: var(--primary);
   font-size: 15px;
+}
+.part-placeholder {
+  color: var(--ink-subtle);
+  font-size: 15px;
+}
+.qty-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 4px 0;
+}
+.qty-label {
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.qty-stock {
+  font-size: 13px;
+  color: var(--ink-subtle);
+  margin-left: auto;
+}
+::v-deep .out-btn {
+  margin-top: 16px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  height: 42px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.out-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.out-biz {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.out-items {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.out-time {
+  font-size: 12px;
+  color: var(--ink-subtle);
+  margin-top: 2px;
+}
+.out-remark {
+  color: #b45309;
+}
+.out-resubmit {
+  float: right;
+  margin-top: 6px;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.part-picker-title {
+  padding: 16px 16px 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.part-picker-cancel {
+  text-align: center;
+  padding: 14px 0;
+  font-size: 15px;
+  color: var(--ink-muted);
+  border-top: 1px solid var(--hairline);
 }
 
 /* Action bar */

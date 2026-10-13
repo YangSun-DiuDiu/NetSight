@@ -6,6 +6,7 @@ import com.netsight.common.core.ResultCode;
 import com.netsight.common.exception.ServiceException;
 import com.netsight.framework.security.SecurityUtils;
 import com.netsight.modules.workflow.entity.ApprovalBill;
+import com.netsight.modules.workflow.event.WorkflowApprovalEvent;
 import com.netsight.modules.workflow.mapper.ApprovalBillMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.warm.flow.core.FlowEngine;
@@ -27,6 +28,7 @@ import org.dromara.warm.flow.orm.entity.FlowDefinition;
 import org.dromara.warm.flow.orm.entity.FlowHisTask;
 import org.dromara.warm.flow.orm.entity.FlowUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,6 +79,7 @@ public class WorkflowService {
     private final org.dromara.warm.flow.orm.mapper.FlowUserMapper flowUserMapper;
     private final ApprovalBillMapper approvalBillMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     // ==================== 流程定义 ====================
 
@@ -217,6 +220,8 @@ public class WorkflowService {
             bill.setCurrentNode("已驳回");
             bill.setRemark(comment);
             approvalBillMapper.updateById(bill);
+            // 发布审批结果事件（业务存档：出库/入库申请单状态同步）
+            publishApprovalEvent(bill, false, comment);
             log.info("审批驳回 billId={} instanceId={} 已终止，等待重新提交", billId, bill.getProcessInstanceId());
             return bill;
         }
@@ -247,7 +252,22 @@ public class WorkflowService {
 
         log.info("审批操作 billId={} pass={} flowStatus={} instanceId={}",
                 billId, pass, flowStatus, bill.getProcessInstanceId());
+        // 发布审批结果事件（业务存档：出库/入库申请单状态同步）
+        publishApprovalEvent(bill, true, comment);
         return bill;
+    }
+
+    /**
+     * 发布审批结果事件（供业务模块监听做审批存档）
+     */
+    private void publishApprovalEvent(ApprovalBill bill, boolean pass, String comment) {
+        try {
+            eventPublisher.publishEvent(new WorkflowApprovalEvent(
+                    bill.getBizType(), bill.getBizId(), pass, comment, bill.getApprovalStatus()));
+        } catch (Exception e) {
+            // 事件发布失败不影响审批主流程
+            log.error("审批事件发布失败 billId={}: {}", bill.getId(), e.getMessage());
+        }
     }
 
     /**

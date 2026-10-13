@@ -184,35 +184,8 @@ public class MobileWorkOrderController {
         orderMapper.updateById(order);
         addRecord(order, "complete", repairer.getName(), "完工：" + repairResult);
 
-        // 领用备件
-        Object partsObj = body.get("parts");
-        if (partsObj instanceof List) {
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> parts = (List<Map<String, Object>>) partsObj;
-            for (Map<String, Object> p : parts) {
-                Long partId = Long.valueOf(String.valueOf(p.get("partId")));
-                Integer qty = Integer.valueOf(String.valueOf(p.getOrDefault("quantity", 1)));
-                SparePart part = sparePartMapper.selectById(partId);
-                if (part == null) continue;
-                // 扣减库存
-                if (part.getQuantity() < qty) {
-                    throw new ServiceException(500, "备件[" + part.getPartType() + " " + part.getBrand() + " " + part.getModel() + "]库存不足");
-                }
-                part.setQuantity(part.getQuantity() - qty);
-                sparePartMapper.updateById(part);
-                // 关联工单
-                WorkOrderPart op = new WorkOrderPart();
-                op.setTenantId(order.getTenantId());
-                op.setOrderId(order.getId());
-                op.setPartId(partId);
-                op.setPartNo(part.getPartNo());
-                op.setPartName(part.getPartType() + " " + part.getBrand() + " " + part.getModel());
-                op.setQuantity(qty);
-                op.setUnit(part.getUnit());
-                orderPartMapper.insert(op);
-            }
-        }
-
+        // 领用备件已迁移至出库申请审批链路（方案B）：提交即扣库存 + 审批存档。
+        // 工单备件由 /spare/out/request（领料申请）写入 work_order_part，完工不再内联扣库存。
         return R.ok("工单已完成", null);
     }
 

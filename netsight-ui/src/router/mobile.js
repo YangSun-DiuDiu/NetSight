@@ -28,6 +28,13 @@ const mobileRoutes = [
     component: () => import('@/views/m/order-detail'),
     hidden: true,
     meta: { title: '工单详情', requireAuth: true }
+  },
+  {
+    path: '/m/out-requests',
+    name: 'MOutRequests',
+    component: () => import('@/views/m/out-requests'),
+    hidden: true,
+    meta: { title: '我的领料申请', requireAuth: true }
   }
 ]
 

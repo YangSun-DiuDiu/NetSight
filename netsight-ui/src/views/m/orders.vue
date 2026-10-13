@@ -2,6 +2,7 @@
   <div class="m-orders linear-theme">
     <van-nav-bar title="我的工单" class="light-navbar">
       <template slot="right">
+        <span class="nav-entry" @click="goOutRequests">领料申请</span>
         <van-icon name="share" size="18" color="#9ca3af" @click="handleLogout" />
       </template>
     </van-nav-bar>
@@ -104,6 +105,9 @@ export default {
     },
     goDetail(id) {
       this.$router.push('/m/order/' + id)
+    },
+    goOutRequests() {
+      this.$router.push('/m/out-requests')
     },
     handleLogout() {
       Dialog.confirm({
@@ -214,5 +218,11 @@ export default {
 }
 .label {
   color: var(--ink-subtle);
+}
+.nav-entry {
+  font-size: 13px;
+  color: var(--primary);
+  font-weight: 500;
+  margin-right: 14px;
 }
 </style>

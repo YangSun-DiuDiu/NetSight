@@ -26,13 +26,13 @@
         >
           <div class="card-header">
             <span class="order-no">{{ item.orderNo }}</span>
-            <van-tag :type="statusType(item.status)">{{ item.statusText }}</van-tag>
+            <span class="status-pill" :class="statusClass(item.status)">{{ item.statusText }}</span>
           </div>
-          <div class="card-body">
-            <div class="row"><span class="label">设备</span><span>{{ item.deviceName || '-' }}</span></div>
-            <div class="row"><span class="label">位置</span><span>{{ item.deviceLocation || '-' }}</span></div>
-            <div class="row"><span class="label">故障</span><span>{{ faultText(item.faultType) }}</span></div>
-            <div class="row"><span class="label">时间</span><span>{{ item.dispatchTime || '-' }}</span></div>
+          <div class="card-title">{{ item.deviceName || '未指定设备' }}</div>
+          <div class="card-meta">
+            <div class="meta-row"><span class="meta-dot"></span>{{ item.deviceLocation || '位置未知' }}</div>
+            <div class="meta-row"><span class="meta-dot"></span>故障：{{ faultText(item.faultType) }}</div>
+            <div class="meta-row meta-time">{{ item.dispatchTime || '' }}</div>
           </div>
         </div>
         <van-empty v-if="!loading && list.length === 0" description="暂无工单" />
@@ -125,6 +125,10 @@ export default {
       const map = { 1: 'warning', 2: 'primary', 3: 'success' }
       return map[status] || 'default'
     },
+    statusClass(status) {
+      const map = { 1: 'pill-warn', 2: 'pill-primary', 3: 'pill-success' }
+      return map[status] || 'pill-default'
+    },
     faultText(type) {
       const map = { offline: '设备离线', line_abnormal: '链路异常', manual: '手动建单' }
       return map[type] || type
@@ -189,38 +193,71 @@ export default {
   background-color: var(--hairline);
 }
 
-/* Order cards */
+/* Order cards - Linear style */
 .order-card {
-  margin: 12px 16px 0;
+  margin: 8px 16px 8px;
   padding: 16px;
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 12px;
+  transition: background 0.15s ease;
 }
 .order-card:active {
-  background: #f9fafb;
+  background: #f5f6f7;
 }
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 .order-no {
-  font-size: 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-subtle);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  letter-spacing: 0.2px;
+}
+.status-pill {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  line-height: 1.6;
+}
+.pill-warn { background: #fff7e6; color: #b45309; }
+.pill-primary { background: #eef0ff; color: #5e6ad2; }
+.pill-success { background: #e8f7ee; color: #15803d; }
+.pill-default { background: #f3f4f6; color: #6b7280; }
+.card-title {
+  font-size: 16px;
   font-weight: 600;
   color: var(--ink);
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  letter-spacing: -0.2px;
+  margin-bottom: 10px;
 }
-.card-body .row {
+.card-meta {
+  border-top: 1px solid var(--hairline);
+  padding-top: 10px;
+}
+.meta-row {
   display: flex;
-  justify-content: space-between;
-  font-size: 14px;
+  align-items: center;
+  font-size: 13px;
   color: var(--ink-muted);
-  line-height: 2;
+  line-height: 1.9;
 }
-.label {
+.meta-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c7cbe8;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+.meta-time {
   color: var(--ink-subtle);
+  font-size: 12px;
 }
 .nav-pill {
   font-size: 13px;

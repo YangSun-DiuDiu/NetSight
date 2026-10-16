@@ -68,7 +68,9 @@ public class TokenCrypto {
     }
 
     /**
-     * 解密密文 Token；非 enc: 前缀（存量明文/空值）原样返回（兼容迁移期数据）
+     * 解密密文 Token；非 enc: 前缀（存量明文/空值）原样返回（兼容迁移期数据）。
+     * 解密失败（密钥变更/密文损坏）时不抛异常，原样返回密文串——调用方应自行 mask，
+     * 避免单条脏数据拖垮整个列表接口。
      */
     public String decrypt(String cipher) {
         if (cipher == null || !cipher.startsWith(PREFIX)) {
@@ -86,7 +88,8 @@ public class TokenCrypto {
             c.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(TAG_BITS, iv));
             return new String(c.doFinal(ct), StandardCharsets.UTF_8);
         } catch (Exception e) {
-            throw new IllegalStateException("Token 解密失败（密钥变更或密文损坏）", e);
+            // 不抛异常，原样返回，由调用方 mask
+            return cipher;
         }
     }
 }

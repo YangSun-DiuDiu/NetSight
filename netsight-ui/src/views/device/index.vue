@@ -345,7 +345,50 @@ export default {
       this.topoOpen = true
       this.topoLoading = true
       getTopologyTree().then(res => {
-        this.topoData = res
+        const nodes = res.nodes || []
+        const links = res.links || []
+        // 由 main 链路推导父子关系
+        const parentOf = {}
+        const childrenOf = {}
+        links.forEach(l => {
+          if (l.lineType !== 'main') return
+          parentOf[l.to] = l.from
+          if (!childrenOf[l.from]) childrenOf[l.from] = []
+          childrenOf[l.from].push(l.to)
+        })
+        // BFS 算层级深度
+        const depthOf = {}
+        const rootIds = nodes.map(n => n.id).filter(id => parentOf[id] == null)
+        const queue = rootIds.map(id => [id, 0])
+        while (queue.length) {
+          const item = queue.shift()
+          const id = item[0]
+          const d = item[1]
+          if (depthOf[id] != null && depthOf[id] <= d) continue
+          depthOf[id] = d
+          const kids = childrenOf[id] || []
+          kids.forEach(c => queue.push([c, d + 1]))
+        }
+        // 按层级分组
+        const byDepth = {}
+        nodes.forEach(n => {
+          const d = depthOf[n.id] != null ? depthOf[n.id] : 99
+          if (!byDepth[d]) byDepth[d] = []
+          byDepth[d].push(n.id)
+        })
+        Object.keys(byDepth).forEach(d => byDepth[d].sort((a, b) => a - b))
+        // 计算坐标
+        const layout = {}
+        Object.keys(byDepth).forEach(d => {
+          const list = byDepth[d]
+          list.forEach((id, i) => {
+            layout[id] = {
+              x: 140 + i * 200,
+              y: 70 + Number(d) * 130
+            }
+          })
+        })
+        this.topoData = { nodes, links, layout }
         this.topoLoading = false
       }).catch(() => { this.topoLoading = false })
     },
@@ -449,16 +492,14 @@ export default {
       if (row.lineStatus === 1) return '在线但链路/业务异常'
       return '在线正常'
     },
-    // ===== 拓扑图布局 =====
+    // ===== 拓扑图布局（坐标在 handleTopology 里算好，存到 topoData.layout） =====
     nodeX(id) {
-      const idx = this.topoData.nodes.findIndex(n => n.id === id)
-      const col = idx % 5
-      return 80 + col * 155
+      const p = (this.topoData.layout || {})[id]
+      return p ? p.x : 140
     },
     nodeY(id) {
-      const idx = this.topoData.nodes.findIndex(n => n.id === id)
-      const row = Math.floor(idx / 5)
-      return 70 + row * 100
+      const p = (this.topoData.layout || {})[id]
+      return p ? p.y : 70
     },
     linkColor(type) {
       return type === 'main' ? '#409eff' : '#e6a23c'

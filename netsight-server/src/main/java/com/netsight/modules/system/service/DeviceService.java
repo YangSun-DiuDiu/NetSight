@@ -242,7 +242,7 @@ public class DeviceService {
         Map<Long, String> gatewayNames = gatewayIds.isEmpty() ? Map.of()
                 : edgeGatewayMapper.selectBatchIds(gatewayIds).stream()
                 .collect(Collectors.toMap(EdgeGateway::getId, EdgeGateway::getGatewayName));
-        devices.forEach(d -> d.setGatewayName(gatewayNames.get(d.getGatewayId())));
+        devices.forEach(d -> d.setGatewayName(d.getGatewayId() == null ? null : gatewayNames.get(d.getGatewayId())));
 
         // 批量查拓扑上级
         List<Long> deviceIds = devices.stream().map(Device::getId).collect(Collectors.toList());

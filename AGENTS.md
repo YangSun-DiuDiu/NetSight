@@ -1,5 +1,7 @@
 # AGENTS.md — NetSight（NAMS）项目开发上下文
 
+> **【全局硬约束】全程使用中文提示**：与用户交互、回复、错误提示、文档说明、代码注释中的用户可见文案、提交信息、commit message、备份目录说明等，一律使用中文；技术术语/类名/接口路径/变量名保留英文原文。
+
 > **GitHub 远程仓库（2026-10-04 建立并完成首次 push，权限与过程全记录）**：
 > - **仓库**：`https://github.com/YangSun-DiuDiu/NetSight.git`（**private 私有**；用户名 `YangSun-DiuDiu`，登录邮箱 4742224@qq.com 是邮箱非 username；仓库为**用户网页手动创建**——fine-grained PAT 无建仓权限）。
 > - **分支**：本地/远程均 **master**（非 main；若产品要求 main 需 `git branch -M main` 再推）；remote origin 已配置 `https://github.com/YangSun-DiuDiu/NetSight.git`（URL 不带 token，认证走环境变量）。

@@ -2,8 +2,8 @@
   <div class="m-orders linear-theme">
     <van-nav-bar title="我的工单" class="light-navbar">
       <template slot="right">
-        <span class="nav-entry" @click="goOutRequests">领料申请</span>
-        <van-icon name="share" size="18" color="#9ca3af" @click="handleLogout" />
+        <span class="nav-pill" @click="goOutRequests">领料申请</span>
+        <van-icon name="share-o" size="20" color="#5e6ad2" class="nav-icon" @click="handleLogout" />
       </template>
     </van-nav-bar>
     <van-tabs v-model="active" @change="onTabChange" class="light-tabs" line-width="24px">
@@ -159,8 +159,11 @@ export default {
   font-weight: 600;
   font-size: 16px;
 }
+::v-deep .light-navbar .van-icon {
+  color: var(--ink) !important;
+}
 ::v-deep .light-navbar::after {
-  background-color: var(--hairline);
+  background-color: transparent;
 }
 
 /* Tabs */
@@ -219,10 +222,19 @@ export default {
 .label {
   color: var(--ink-subtle);
 }
-.nav-entry {
+.nav-pill {
   font-size: 13px;
-  color: var(--primary);
+  color: #5e6ad2;
   font-weight: 500;
-  margin-right: 14px;
+  margin-right: 12px;
+  padding: 5px 10px;
+  background: #eef0ff;
+  border-radius: 9999px;
+  line-height: 1.2;
+}
+.nav-icon {
+  padding: 6px;
+  background: #f3f4f6;
+  border-radius: 8px;
 }
 </style>

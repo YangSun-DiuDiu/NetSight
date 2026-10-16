@@ -479,13 +479,19 @@ export default {
 ::v-deep .light-navbar {
   background: var(--surface);
   color: var(--ink);
+  box-shadow: 0 1px 0 0 var(--hairline);
 }
 ::v-deep .light-navbar .van-nav-bar__title {
   color: var(--ink);
   font-weight: 600;
 }
+::v-deep .light-navbar .van-icon {
+  color: var(--ink) !important;
+  font-size: 20px !important;
+  padding: 6px;
+}
 ::v-deep .light-navbar::after {
-  background-color: var(--hairline);
+  background-color: transparent;
 }
 
 /* Sections */

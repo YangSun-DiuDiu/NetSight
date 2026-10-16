@@ -1,5 +1,6 @@
 package com.netsight.modules.inspection.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.netsight.common.core.BaseEntity;
 import lombok.Data;
@@ -46,6 +47,11 @@ public class InspectionRecord extends BaseEntity {
 
     /** 异常报修关联工单ID */
     private Long orderId;
+
+    /** 关联工单业务编号（瞬态字段，不落库；仅用于详情展示时由后端反查填充，
+     *  避免前端直接展示内部自增 ID 而无法在工单管理页检索） */
+    @TableField(exist = false)
+    private String orderNo;
 
     /** 操作人用户ID */
     private Long operatorId;

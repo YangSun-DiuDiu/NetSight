@@ -19,6 +19,7 @@ import com.netsight.modules.system.entity.SysUser;
 import com.netsight.modules.system.mapper.DeviceMapper;
 import com.netsight.modules.system.mapper.SysUserMapper;
 import com.netsight.modules.workorder.entity.WorkOrder;
+import com.netsight.modules.workorder.mapper.WorkOrderMapper;
 import com.netsight.modules.workorder.service.WorkOrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +56,7 @@ public class InspectionService {
     private final DeviceMapper deviceMapper;
     private final SysUserMapper userMapper;
     private final WorkOrderService workOrderService;
+    private final WorkOrderMapper workOrderMapper;
 
     // ==================== 点检项库 ====================
 
@@ -311,12 +313,41 @@ public class InspectionService {
         checkTenantPermission(task.getTenantId());
         List<InspectionRecord> records = recordMapper.selectList(
                 new LambdaQueryWrapper<InspectionRecord>().eq(InspectionRecord::getTaskId, id));
+        // 批量补关联工单业务编号 orderNo（按 orderId 反查 work_order，展示给用户而非内部主键）
+        fillOrderNo(records);
         Map<String, Object> result = new HashMap<>();
         result.put("task", task);
         result.put("records", records);
         // 本任务应点检的项：优先任务快照 itemIds，空=全部启用项（兼容旧任务）
         result.put("taskItems", resolveTaskItems(task));
         return result;
+    }
+
+    /**
+     * 批量给点检记录填充关联工单业务编号 orderNo。
+     * 前端展示用：用户在工单管理页只能按 orderNo（WO 开头的业务单号）检索，
+     * 直接展示内部自增 orderId 会导致跨模块跳转/检索断裂。
+     * orderId 为空（正常项）或工单已删除时保持 orderNo 为 null。
+     */
+    private void fillOrderNo(List<InspectionRecord> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        List<Long> orderIds = records.stream()
+                .map(InspectionRecord::getOrderId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (orderIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> idToNo = workOrderMapper.selectBatchIds(orderIds).stream()
+                .collect(Collectors.toMap(WorkOrder::getId, WorkOrder::getOrderNo));
+        for (InspectionRecord r : records) {
+            if (r.getOrderId() != null) {
+                r.setOrderNo(idToNo.get(r.getOrderId()));
+            }
+        }
     }
 
     /** 开始执行（待执行/逾期可开始；仅执行人或管理员可操作） */
@@ -406,6 +437,11 @@ public class InspectionService {
         Map<String, Object> result = new HashMap<>();
         result.put("abnormalCount", abnormal);
         result.put("orderId", orderId);
+        // 同步返回工单业务编号，前端提示用，避免只展示内部主键
+        if (orderId != null) {
+            WorkOrder order = workOrderMapper.selectById(orderId);
+            result.put("orderNo", order != null ? order.getOrderNo() : null);
+        }
         return result;
     }
 
@@ -536,6 +572,13 @@ public class InspectionService {
 
     // ==================== 工具方法 ====================
 
+    /**
+     * 生成点检任务业务单号（与计划目标选择方式无关，仅用于任务入库时贴号）。
+     * 规则：INSP + yyyyMMddHHmmss + 2位随机数，例如 INSP2026101600103547。
+     * 使用场景：doGenerateTasks() 在定时/手动展开计划时，为每条 inspection_task 生成 taskNo；
+     * 加2位随机数是为了同一秒批量为多台设备生成任务时单号不冲突（数据库唯一键兜底）。
+     * taskNo 是给人看的业务单号（H5端、工单联动、检索），与自增主键 id 区分。
+     */
     private String genTaskNo() {
         return "INSP" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
                 + String.format("%02d", ThreadLocalRandom.current().nextInt(100));

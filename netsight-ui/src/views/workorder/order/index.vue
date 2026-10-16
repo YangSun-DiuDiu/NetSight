@@ -313,6 +313,20 @@
           <el-descriptions-item label="补充说明" :span="2">{{ detail.order.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
 
+        <el-divider content-position="left" v-if="repairPhotoList.length > 0">维修现场照片（{{ repairPhotoList.length }}）</el-divider>
+        <div v-if="repairPhotoList.length > 0" class="repair-photo-grid">
+          <el-image
+            v-for="(p, i) in repairPhotoList"
+            :key="i"
+            :src="p"
+            :preview-src-list="repairPhotoList"
+            :initial-index="i"
+            fit="cover"
+            class="repair-photo-item"
+            preview-teleported
+          />
+        </div>
+
         <el-divider content-position="left">处理记录</el-divider>
         <el-timeline v-if="detail.records && detail.records.length">
           <el-timeline-item v-for="rec in detail.records" :key="rec.id" :timestamp="rec.createTime" :color="timelineColor(rec.action)">
@@ -403,6 +417,18 @@ export default {
   created() {
     this.getList()
     this.getStats()
+  },
+  computed: {
+    repairPhotoList() {
+      const raw = this.detail && this.detail.order && this.detail.order.repairPhotos
+      if (!raw) return []
+      try {
+        const arr = JSON.parse(raw)
+        return Array.isArray(arr) ? arr.filter(u => u && typeof u === 'string') : []
+      } catch (e) {
+        return []
+      }
+    }
   },
   methods: {
     getList() {
@@ -564,4 +590,9 @@ export default {
 .knowledge-item:hover { border-color: #205CF5; background: #EAF0FB; }
 .knowledge-title { flex: 1; font-size: 13px; color: #1F2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-views { font-size: 12px; color: #6B7280; }
+.repair-photo-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px; margin-bottom: 8px;
+}
+.repair-photo-item { width: 100%; height: 90px; border-radius: 4px; border: 1px solid #EEF2F7; }
 </style>

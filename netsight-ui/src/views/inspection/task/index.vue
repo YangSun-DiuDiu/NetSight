@@ -116,8 +116,8 @@
         </el-table-column>
         <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width" fixed="right">
           <template slot-scope="scope">
-            <el-button v-if="scope.row.status === 0 && hasPerm('inspection:task:execute')" type="text" size="mini" icon="el-icon-video-play" @click="handleStart(scope.row)">开始</el-button>
-            <el-button v-if="(scope.row.status === 0 || scope.row.status === 1 || scope.row.status === 3) && hasPerm('inspection:task:execute')" type="text" size="mini" icon="el-icon-s-check" @click="handleExecute(scope.row)">执行</el-button>
+            <el-button v-if="(scope.row.status === 0 || scope.row.status === 3) && hasPerm('inspection:task:execute')" type="text" size="mini" icon="el-icon-video-play" @click="handleStart(scope.row)">开始</el-button>
+            <el-button v-if="scope.row.status === 1 && hasPerm('inspection:task:execute')" type="text" size="mini" icon="el-icon-s-check" @click="handleExecute(scope.row)">执行</el-button>
             <el-button type="text" size="mini" icon="el-icon-view" @click="handleDetail(scope.row)">详情</el-button>
           </template>
         </el-table-column>
@@ -195,9 +195,9 @@
         <el-table-column label="文本结果" prop="textResult" min-width="100" />
         <el-table-column label="备注" prop="remark" min-width="140" show-overflow-tooltip />
         <el-table-column label="操作人" prop="operatorName" width="90" align="center" />
-        <el-table-column label="关联工单" width="90" align="center">
+        <el-table-column label="关联工单" width="180" align="center">
           <template slot-scope="scope">
-            <el-tag v-if="scope.row.orderId" type="warning" size="mini">{{ scope.row.orderId }}</el-tag>
+            <el-tag v-if="scope.row.orderNo" type="warning" size="mini">{{ scope.row.orderNo }}</el-tag>
             <span v-else>-</span>
           </template>
         </el-table-column>
@@ -302,7 +302,7 @@ export default {
         const abnormal = res.abnormalCount || 0
         let msg = '点检提交成功'
         if (abnormal > 0) {
-          msg += '，发现 ' + abnormal + ' 项异常' + (res.orderId ? '，已生成报修工单 #' + res.orderId : '')
+          msg += '，发现 ' + abnormal + ' 项异常' + (res.orderNo ? '，已生成报修工单 ' + res.orderNo : '')
         }
         this.$message.success(msg)
         this.getList(); this.getStats()

@@ -95,18 +95,23 @@
           </span>
         </el-form-item>
         <el-form-item label="对象类型">
-          <el-radio-group v-model="form.targetType">
+          <el-radio-group v-model="form.targetType" @change="onTargetTypeChange">
             <el-radio-button label="device">指定设备</el-radio-button>
             <el-radio-button label="device_type">按设备类型</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="目标" prop="targetIds">
-          <el-input v-model="form.targetIds" :placeholder="form.targetType === 'device' ? '设备ID列表（JSON数组），如 [1,2,3]' : '设备类型列表（JSON数组），如 network,camera'" />
-          <div class="tip">设备类型可选：network 网络设备 / camera 摄像头 / nvr NVR / door_controller 门禁</div>
+        <el-form-item label="目标">
+          <el-select v-if="form.targetType === 'device'" v-model="form._deviceIds" multiple filterable collapse-tags placeholder="选择设备（可多选）" style="width: 100%">
+            <el-option v-for="d in deviceOptions" :key="d.id" :label="d.deviceName + '（' + (d.ip || d.deviceCode || '') + '）'" :value="d.id" />
+          </el-select>
+          <el-select v-else v-model="form._typeCodes" multiple filterable collapse-tags placeholder="选择设备类型（可多选）" style="width: 100%">
+            <el-option v-for="t in deviceTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
+          </el-select>
+          <div class="tip">{{ form.targetType === 'device' ? '选择需要点检的具体设备' : '按所选设备类型汇总该租户下全部同类设备' }}</div>
         </el-form-item>
         <el-form-item label="执行人" prop="assigneeId">
           <el-select v-model="form.assigneeId" filterable placeholder="选择执行人（本租户用户）" style="width: 100%" clearable>
-            <el-option v-for="u in userOptions" :key="u.userId" :label="(u.realName || u.username) + '（' + u.username + '）'" :value="u.userId" />
+            <el-option v-for="u in userOptions" :key="u.id" :label="(u.realName || u.username) + '（' + u.username + '）'" :value="u.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="点检项">
@@ -136,7 +141,15 @@
 <script>
 import { listInspectionPlan, addInspectionPlan, updateInspectionPlan, delInspectionPlan, generateInspectionTask, listEnabledItem } from '@/api/inspection/inspection'
 import { listUser } from '@/api/system/user'
+import { listDevice } from '@/api/device/device'
 import Pagination from '@/components/Pagination'
+
+const DEVICE_TYPES = [
+  { value: 'network', label: '网络设备' },
+  { value: 'camera', label: '摄像头' },
+  { value: 'nvr', label: 'NVR' },
+  { value: 'door_controller', label: '门禁控制器' }
+]
 
 export default {
   name: 'InspectionPlan',
@@ -152,9 +165,10 @@ export default {
       form: {},
       userOptions: [],
       itemOptions: [],
+      deviceOptions: [],
+      deviceTypeOptions: DEVICE_TYPES,
       rules: {
         planName: [{ required: true, message: '计划名称不能为空', trigger: 'blur' }],
-        targetIds: [{ required: true, message: '目标不能为空', trigger: 'blur' }],
         assigneeId: [{ required: true, message: '请选择执行人', trigger: 'change' }]
       }
     }
@@ -163,11 +177,17 @@ export default {
     this.getList()
     this.loadUserOptions()
     this.loadItemOptions()
+    this.loadDeviceOptions()
   },
   methods: {
     loadUserOptions() {
       listUser({ pageNum: 1, pageSize: 999 }).then(res => {
         this.userOptions = (res.rows && res.rows.length ? res.rows : res) || []
+      }).catch(() => {})
+    },
+    loadDeviceOptions() {
+      listDevice({ pageNum: 1, pageSize: 999 }).then(res => {
+        this.deviceOptions = (res && res.rows ? res.rows : (Array.isArray(res) ? res : [])) || []
       }).catch(() => {})
     },
     loadItemOptions() {
@@ -189,17 +209,19 @@ export default {
       this.handleQuery()
     },
     openAdd() {
-      this.form = { cycleType: 'daily', cycleDay: null, targetType: 'device', status: 1, dateRange: null, assigneeId: null, assigneeName: '', itemIds: [] }
+      this.form = { cycleType: 'daily', cycleDay: null, targetType: 'device', status: 1, dateRange: null, assigneeId: null, assigneeName: '', itemIds: [], _deviceIds: [], _typeCodes: [] }
       this.dialogVisible = true
       this.$nextTick(() => this.$refs.form && this.$refs.form.clearValidate())
     },
     openEdit(row) {
       this.form = {
         id: row.id, planName: row.planName, cycleType: row.cycleType, cycleDay: row.cycleDay, targetType: row.targetType,
-        targetIds: row.targetIds, assigneeId: row.assigneeId, assigneeName: row.assigneeName,
+        assigneeId: row.assigneeId, assigneeName: row.assigneeName,
         itemIds: this.parseIdArray(row.itemIds),
         status: row.status, remark: row.remark,
-        dateRange: row.startDate && row.endDate ? [row.startDate, row.endDate] : (row.startDate ? [row.startDate, null] : null)
+        dateRange: row.startDate && row.endDate ? [row.startDate, row.endDate] : (row.startDate ? [row.startDate, null] : null),
+        _deviceIds: row.targetType === 'device' ? this.parseIdArray(row.targetIds).map(Number) : [],
+        _typeCodes: row.targetType === 'device_type' ? this.parseIdArray(row.targetIds) : []
       }
       this.dialogVisible = true
       this.$nextTick(() => this.$refs.form && this.$refs.form.clearValidate())
@@ -213,6 +235,8 @@ export default {
         if (!valid) return
         const payload = { ...this.form }
         delete payload.dateRange
+        delete payload._deviceIds
+        delete payload._typeCodes
         if (this.form.dateRange && this.form.dateRange[0]) {
           payload.startDate = this.form.dateRange[0]
           payload.endDate = this.form.dateRange[1] || null
@@ -224,8 +248,18 @@ export default {
           this.$message.warning('请选择执行人')
           return
         }
+        // 校验目标选择非空
+        const selTargets = this.form.targetType === 'device' ? this.form._deviceIds : this.form._typeCodes
+        if (!selTargets || selTargets.length === 0) {
+          this.$message.warning(this.form.targetType === 'device' ? '请至少选择一台设备' : '请至少选择一种设备类型')
+          return
+        }
         payload.assigneeId = Number(this.form.assigneeId)
         payload.assigneeName = undefined
+        // 目标：按设备 → JSON 数字数组；按类型 → JSON 字符串数组
+        payload.targetIds = JSON.stringify(this.form.targetType === 'device'
+          ? this.form._deviceIds.map(Number)
+          : this.form._typeCodes)
         // 点检项ID列表：空数组 → null（表示全部启用项）
         payload.itemIds = (this.form.itemIds && this.form.itemIds.length) ? JSON.stringify(this.form.itemIds) : null
         this.saving = true
@@ -257,6 +291,10 @@ export default {
           this.getList()
         })
       }).catch(() => {})
+    },
+    onTargetTypeChange() {
+      this.form._deviceIds = []
+      this.form._typeCodes = []
     },
     cycleText(row) {
       if (!row) return '-'

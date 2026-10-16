@@ -31,7 +31,7 @@ export default {
   created() {
     const token = getToken()
     const flowId = this.$route.query.flowId || ''
-    let url = '/warm-flow-ui'
+    let url = '/warm-flow-ui/index.html'
     const params = []
     if (token) params.push('Authorization=' + encodeURIComponent(token))
     if (flowId) params.push('flowId=' + flowId)

@@ -63,7 +63,11 @@ public class NotificationTemplateService {
     }
 
     /**
-     * 新增模板（编码租户内唯一；必须绑定通道实例，无类型兜底）
+     * 新增模板。
+     * 设计：templateCode 是"模板组编码"——同 code 下允许挂多个通道（短信/微信/PushPlus），
+     * 由 dispatchByTemplateGroup 遍历同 code 全部启用模板实现多通道下发。
+     * 因此唯一性约束不是 (tenantId, templateCode)，而是 (tenantId, templateCode, channelId)：
+     * 同一个通道实例在同一个模板组里只能绑一次，避免重复发送。
      */
     public void addTemplate(NotificationTemplate template) {
         if (template.getChannelId() == null) {
@@ -74,9 +78,11 @@ public class NotificationTemplateService {
         }
         Long count = templateMapper.selectCount(new LambdaQueryWrapper<NotificationTemplate>()
                 .eq(NotificationTemplate::getTemplateCode, template.getTemplateCode())
-                .eq(NotificationTemplate::getTenantId, template.getTenantId()));
+                .eq(NotificationTemplate::getTenantId, template.getTenantId())
+                .eq(NotificationTemplate::getChannelId, template.getChannelId()));
         if (count > 0) {
-            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "模板编码已存在");
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(),
+                    "该通道实例已绑定到模板组[" + template.getTemplateCode() + "]，请勿重复添加（同组可挂多个不同通道）");
         }
         templateMapper.insert(template);
     }

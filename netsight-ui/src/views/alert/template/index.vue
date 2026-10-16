@@ -55,7 +55,10 @@
         <el-row :gutter="10">
           <el-col :span="12">
             <el-form-item label="模板编码" prop="templateCode">
-              <el-input v-model="templateForm.templateCode" placeholder="如 tpl_device_offline" :disabled="!!templateForm.id" />
+              <el-input v-model="templateForm.templateCode" placeholder="如 tpl_order_dispatch" :disabled="!!templateForm.id" />
+              <div style="font-size:12px;color:#909399;line-height:1.4;margin-top:4px;">
+                模板组编码：相同编码的多条模板（短信/微信/PushPlus 各一条）组成一组，触发时多通道同时下发
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="12">

@@ -69,6 +69,9 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // 跨域
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                // 安全响应头：允许同源 iframe 嵌入（流程设计器 /warm-flow-ui 需在 iframe 中打开）
+                // Spring Security 默认 X-Frame-Options: DENY 会导致 iframe 拒绝渲染
+                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 // 放行与鉴权规则
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(WHITE_LIST).permitAll()

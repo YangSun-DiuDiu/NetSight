@@ -34,9 +34,7 @@
       <el-col :span="1.5">
         <el-button v-hasRole="['super_admin','tenant_admin']" type="primary" plain icon="el-icon-plus" size="mini" @click="handleAdd">新增设备</el-button>
       </el-col>
-      <el-col :span="1.5">
-        <el-button v-hasRole="['super_admin','tenant_admin','ops']" type="info" plain icon="el-icon-share" size="mini" @click="handleTopology">拓扑维护</el-button>
-      </el-col>
+      <!-- 拓扑维护入口已下线：待接入第三方拓扑图组件（AntV G6 等）后恢复 -->
     </el-row>
 
     <!-- 设备列表 -->
@@ -179,28 +177,7 @@
       </div>
     </el-dialog>
 
-    <!-- 拓扑维护预览 -->
-    <el-dialog title="网络拓扑（主备上级关系）" :visible.sync="topoOpen" width="820px" append-to-body :close-on-click-modal="false">
-      <div class="topo-wrap" ref="topoWrap">
-        <div v-if="topoLoading" class="topo-empty">拓扑加载中...</div>
-        <div v-else-if="!topoData.nodes || topoData.nodes.length === 0" class="topo-empty">暂无设备，请先在设备列表新增设备</div>
-        <svg v-else :viewBox="'0 0 ' + svgW + ' ' + svgH" class="topo-preview-svg" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-          <!-- 连线（主备三路） -->
-          <line v-for="(l, i) in topoData.links" :key="'l' + i"
-            :x1="nodeX(l.from)" :y1="nodeY(l.from)" :x2="nodeX(l.to)" :y2="nodeY(l.to)"
-            :stroke="linkColor(l.lineType)" :stroke-width="l.lineType === 'main' ? 2.5 : 1.5"
-            :stroke-dasharray="l.lineType === 'main' ? 'none' : '6 4'" />
-          <!-- 设备节点 -->
-          <g v-for="(n, i) in topoData.nodes" :key="'n' + i" :transform="'translate(' + nodeX(n.id) + ',' + nodeY(n.id) + ')'">
-            <circle r="16" :fill="statusColorOf(n)" stroke="#fff" stroke-width="2" />
-            <text y="-24" text-anchor="middle" font-size="12" fill="#333">{{ n.name }}</text>
-          </g>
-        </svg>
-      </div>
-      <div slot="footer" class="dialog-footer">
-        <el-button type="primary" @click="topoOpen = false">关 闭</el-button>
-      </div>
-    </el-dialog>
+    <!-- 拓扑维护预览弹窗已删除（自研 SVG 下线，待接入第三方拓扑组件） -->
 
     <!-- 设备二维码弹窗（V1.2.7 demo 5/5）：点击弹窗外部不关闭 -->
     <el-dialog title="设备二维码" :visible.sync="qrOpen" width="460px" append-to-body :close-on-click-modal="false">
@@ -248,9 +225,6 @@ export default {
       queryParams: { pageNum: 1, pageSize: 10, deviceName: undefined, deviceType: undefined, status: undefined },
       title: '',
       open: false,
-      topoOpen: false,
-      topoLoading: false,
-      topoData: { nodes: [], links: [] },
       qrOpen: false,
       qrLoading: false,
       qrDevice: {},
@@ -280,9 +254,7 @@ export default {
     parentOptions() {
       const curId = this.form.id
       return this.allDevices.filter(d => d.id !== curId)
-    },
-    svgW() { return 780 },
-    svgH() { return 420 }
+    }
   },
   created() {
     this.getList()
@@ -341,57 +313,8 @@ export default {
         })
       }).catch(() => {})
     },
-    handleTopology() {
-      this.topoOpen = true
-      this.topoLoading = true
-      getTopologyTree().then(res => {
-        const nodes = res.nodes || []
-        const links = res.links || []
-        // 由 main 链路推导父子关系
-        const parentOf = {}
-        const childrenOf = {}
-        links.forEach(l => {
-          if (l.lineType !== 'main') return
-          parentOf[l.to] = l.from
-          if (!childrenOf[l.from]) childrenOf[l.from] = []
-          childrenOf[l.from].push(l.to)
-        })
-        // BFS 算层级深度
-        const depthOf = {}
-        const rootIds = nodes.map(n => n.id).filter(id => parentOf[id] == null)
-        const queue = rootIds.map(id => [id, 0])
-        while (queue.length) {
-          const item = queue.shift()
-          const id = item[0]
-          const d = item[1]
-          if (depthOf[id] != null && depthOf[id] <= d) continue
-          depthOf[id] = d
-          const kids = childrenOf[id] || []
-          kids.forEach(c => queue.push([c, d + 1]))
-        }
-        // 按层级分组
-        const byDepth = {}
-        nodes.forEach(n => {
-          const d = depthOf[n.id] != null ? depthOf[n.id] : 99
-          if (!byDepth[d]) byDepth[d] = []
-          byDepth[d].push(n.id)
-        })
-        Object.keys(byDepth).forEach(d => byDepth[d].sort((a, b) => a - b))
-        // 计算坐标
-        const layout = {}
-        Object.keys(byDepth).forEach(d => {
-          const list = byDepth[d]
-          list.forEach((id, i) => {
-            layout[id] = {
-              x: 140 + i * 200,
-              y: 70 + Number(d) * 130
-            }
-          })
-        })
-        this.topoData = { nodes, links, layout }
-        this.topoLoading = false
-      }).catch(() => { this.topoLoading = false })
-    },
+    // 自研拓扑预览 handleTopology() 已删除，待接入第三方拓扑组件后恢复入口
+
     // ===== 设备二维码（V1.2.7 demo 5/5） =====
     handleQrcode(row) {
       this.qrLoading = true
@@ -482,27 +405,10 @@ export default {
       if (row.lineStatus === 1) return '#909399'   // 灰：链路/业务异常
       return '#67c23a'                             // 绿：正常
     },
-    statusColorOf(node) {
-      if (node.status === 0) return '#f56c6c'
-      if (node.lineStatus === 1) return '#909399'
-      return '#67c23a'
-    },
     statusTooltip(row) {
       if (row.status === 0) return '离线故障'
       if (row.lineStatus === 1) return '在线但链路/业务异常'
       return '在线正常'
-    },
-    // ===== 拓扑图布局（坐标在 handleTopology 里算好，存到 topoData.layout） =====
-    nodeX(id) {
-      const p = (this.topoData.layout || {})[id]
-      return p ? p.x : 140
-    },
-    nodeY(id) {
-      const p = (this.topoData.layout || {})[id]
-      return p ? p.y : 70
-    },
-    linkColor(type) {
-      return type === 'main' ? '#409eff' : '#e6a23c'
     },
     // ===== 类型字典 =====
     typeText(type) {
@@ -529,24 +435,6 @@ export default {
   height: 12px;
   border-radius: 50%;
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
-}
-.topo-wrap {
-  width: 100%;
-  min-height: 420px;
-  background: #f5f7fa;
-  border-radius: 8px;
-  overflow: auto;
-}
-.topo-preview-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  min-width: 780px;
-}
-.topo-empty {
-  text-align: center;
-  line-height: 420px;
-  color: #909399;
 }
 /* 设备二维码弹窗（V1.2.7） */
 .qr-empty {

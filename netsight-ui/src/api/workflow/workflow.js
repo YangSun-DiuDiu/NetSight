@@ -51,6 +51,15 @@ export function listMyStarted() {
   }).then(res => res.data)
 }
 
+// 我审批过的（历史已办）
+export function listMyDone(params) {
+  return request({
+    url: '/workflow/mine/done',
+    method: 'get',
+    params
+  }).then(res => res.data)
+}
+
 // 审批单详情 + 流程历史
 export function getBillDetail(billId) {
   return request({

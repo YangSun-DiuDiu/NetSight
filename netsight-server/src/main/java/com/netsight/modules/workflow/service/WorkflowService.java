@@ -350,6 +350,58 @@ public class WorkflowService {
     }
 
     /**
+     * 我审批过的（历史已办）
+     *
+     * 数据源：flow_his_task，按 approver=当前用户ID 过滤，
+     * 关联 approval_bill（process_instance_id = instance_id）拿业务标题/发起人/当前状态。
+     * 按审批时间倒序，分页返回。
+     *
+     * @param pageNum  页码（从1开始）
+     * @param pageSize 每页条数
+     */
+    public Map<String, Object> myDone(int pageNum, int pageSize) {
+        Long userId = SecurityUtils.getUserId();
+        Map<String, Object> result = new HashMap<>();
+        if (userId == null) {
+            result.put("rows", List.of());
+            result.put("total", 0);
+            return result;
+        }
+        String tenantId = String.valueOf(SecurityUtils.getTenantId());
+        String approver = String.valueOf(userId);
+        int offset = (pageNum - 1) * pageSize;
+
+        // 总数
+        Integer total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM flow_his_task h " +
+                "WHERE h.approver = ? AND h.tenant_id = ? AND h.del_flag = '0'",
+                Integer.class, approver, tenantId);
+        result.put("total", total == null ? 0 : total);
+
+        if (total == null || total == 0) {
+            result.put("rows", List.of());
+            return result;
+        }
+
+        // 分页查询 + 关联 approval_bill
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT h.id AS hisId, h.instance_id AS instanceId, h.node_name AS nodeName, " +
+                "       h.skip_type AS skipType, h.flow_status AS flowStatus, h.message AS myComment, " +
+                "       h.create_time AS approveTime, " +
+                "       b.id AS billId, b.biz_id AS bizId, b.title AS title, b.flow_name AS flowName, " +
+                "       b.biz_type AS bizType, b.apply_user_name AS applyUserName, " +
+                "       b.approval_status AS currentBillStatus " +
+                "FROM flow_his_task h " +
+                "LEFT JOIN approval_bill b ON b.process_instance_id = h.instance_id " +
+                "WHERE h.approver = ? AND h.tenant_id = ? AND h.del_flag = '0' " +
+                "ORDER BY h.create_time DESC " +
+                "LIMIT ? OFFSET ?",
+                approver, tenantId, pageSize, offset);
+        result.put("rows", rows);
+        return result;
+    }
+
+    /**
      * 审批单详情 + 引擎流程历史轨迹
      */
     public Map<String, Object> billDetail(Long billId) {

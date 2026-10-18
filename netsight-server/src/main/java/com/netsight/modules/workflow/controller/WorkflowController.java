@@ -70,6 +70,14 @@ public class WorkflowController {
         return R.ok(workflowService.myStarted());
     }
 
+    /** 我审批过的（历史已办） */
+    @GetMapping("/mine/done")
+    public R<java.util.Map<String, Object>> myDone(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "10") int pageSize) {
+        return R.ok(workflowService.myDone(pageNum, pageSize));
+    }
+
     /** 审批单详情 + 流程历史 */
     @GetMapping("/bill/{billId}")
     public R<Map<String, Object>> billDetail(@PathVariable Long billId) {

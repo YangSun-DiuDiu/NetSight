@@ -1,6 +1,7 @@
 package com.netsight.modules.workflow.handler;
 
 import com.netsight.framework.security.SecurityUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.dromara.warm.flow.core.handler.TenantHandler;
 
 /**
@@ -11,10 +12,14 @@ import org.dromara.warm.flow.core.handler.TenantHandler;
  *
  * 配置入口：application.yml → warm-flow.tenant-handler-path
  */
+@Slf4j
 public class NamsTenantHandler implements TenantHandler {
 
     @Override
     public String getTenantId() {
-        return String.valueOf(SecurityUtils.getTenantId());
+        Long tid = SecurityUtils.getTenantId();
+        boolean auth = SecurityUtils.isAuthenticated();
+        log.info("[WarmFlow-TenantHandler] getTenantId() called: authenticated={}, tenantId={}", auth, tid);
+        return String.valueOf(tid);
     }
 }

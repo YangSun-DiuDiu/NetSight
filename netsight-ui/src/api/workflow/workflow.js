@@ -68,7 +68,15 @@ export function getBillDetail(billId) {
   }).then(res => res.data)
 }
 
-// 复制流程模板到目标租户（超管）
+// 查询预置模板库（租户1）的全部流程定义，供超管勾选复制
+export function listSourceTemplates() {
+  return request({
+    url: '/workflow/templates/source-list',
+    method: 'get'
+  }).then(res => res.data)
+}
+
+// 选择性复制流程模板到目标租户（超管）
 export function copyTemplates(data) {
   return request({
     url: '/workflow/template/copy',

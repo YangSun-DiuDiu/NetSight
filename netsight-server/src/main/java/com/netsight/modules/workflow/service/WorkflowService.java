@@ -427,42 +427,71 @@ public class WorkflowService {
     }
 
     /**
-     * 流程模板租户复制（方案 B：租户隔离 + 注册复制）
+     * 查询预置模板库（租户1）的全部流程定义，供超管勾选后复制到目标租户。
+     * 超管权限下调用，返回所有租户1的模板（含草稿）。
+     */
+    public List<Map<String, Object>> listSourceTemplates() {
+        return jdbcTemplate.queryForList(
+                "SELECT id, flow_code, flow_name, category, version, is_publish, create_time " +
+                "FROM flow_definition WHERE tenant_id = ? AND del_flag = '0' " +
+                "ORDER BY flow_code",
+                String.valueOf(DEFAULT_TEMPLATE_TENANT));
+    }
+
+    /**
+     * 选择性复制流程模板到目标租户（方案 B 改造版）
      *
-     * 将 sourceTenantId 租户的全部已发布/未发布流程定义（flow_definition）
-     * 连同节点（flow_node）与跳转（flow_skip）复制到 targetTenantId 租户。
-     *
-     * 实现要点：
-     * 1. flow_* 三表 id 为手动分配（无自增），新行统一用 IdWorker 雪花算法生成新 id；
-     * 2. flow_skip 通过 now_node_code / next_node_code（字符串节点编码）关联节点，
-     *    不引用 node 主键 → 复制 skip 无需节点 id 重映射；
-     * 3. 复制走原生 JDBC（JdbcTemplate），显式指定 tenant_id，
-     *    绕过 MP 租户拦截器（flow_* 表已在 IGNORE_TABLES 豁免）；
-     * 4. 事务内完成，任一步失败整体回滚；复制前先清空目标租户旧模板（幂等，支持重复注册/重试）。
-     *
-     * @return 复制的流程定义数量
+     * @param targetTenantId 目标租户ID
+     * @param flowCodes      要复制的流程编码列表（来自租户1）
+     * @param conflictStrategy 冲突策略：overwrite=覆盖目标租户同编码模板；skip=跳过
+     * @return 实际复制的流程数量
      */
     @Transactional(rollbackFor = Exception.class)
-    public int copyFlowTemplatesToTenant(Long sourceTenantId, Long targetTenantId) {
-        String srcTenant = String.valueOf(sourceTenantId);
+    public int copyFlowTemplatesSelectively(Long targetTenantId, List<String> flowCodes, String conflictStrategy) {
+        String srcTenant = String.valueOf(DEFAULT_TEMPLATE_TENANT);
         String tgtTenant = String.valueOf(targetTenantId);
         LocalDateTime now = LocalDateTime.now();
 
-        // 幂等：先清空目标租户已有模板（防止重复复制/重试产生脏数据）
-        jdbcTemplate.update("DELETE FROM flow_skip WHERE tenant_id = ?", tgtTenant);
-        jdbcTemplate.update("DELETE FROM flow_node WHERE tenant_id = ?", tgtTenant);
-        jdbcTemplate.update("DELETE FROM flow_definition WHERE tenant_id = ?", tgtTenant);
-
-        // 1. 读取源租户全部流程定义
-        List<Map<String, Object>> defs = jdbcTemplate.queryForList(
-                "SELECT * FROM flow_definition WHERE tenant_id = ? AND del_flag = '0'", srcTenant);
+        if (flowCodes == null || flowCodes.isEmpty()) {
+            throw new ServiceException("请选择要复制的流程模板");
+        }
 
         int copied = 0;
-        for (Map<String, Object> def : defs) {
-            long oldDefId = ((Number) def.get("id")).longValue();
-            long newDefId = IdWorker.getId();
+        int skipped = 0;
 
-            // 2. 复制流程定义（显式新 id + 目标租户）
+        for (String flowCode : flowCodes) {
+            // 查源租户该流程定义
+            List<Map<String, Object>> defs = jdbcTemplate.queryForList(
+                    "SELECT * FROM flow_definition WHERE tenant_id = ? AND flow_code = ? AND del_flag = '0'",
+                    srcTenant, flowCode);
+            if (defs.isEmpty()) {
+                log.warn("[模板复制] 源租户[{}]未找到流程编码[{}]，跳过", srcTenant, flowCode);
+                continue;
+            }
+            Map<String, Object> def = defs.get(0);
+            long oldDefId = ((Number) def.get("id")).longValue();
+
+            // 查目标租户是否已有同 flowCode
+            List<Map<String, Object>> existing = jdbcTemplate.queryForList(
+                    "SELECT id FROM flow_definition WHERE tenant_id = ? AND flow_code = ? AND del_flag = '0'",
+                    tgtTenant, flowCode);
+
+            if (!existing.isEmpty()) {
+                if ("skip".equalsIgnoreCase(conflictStrategy)) {
+                    skipped++;
+                    log.info("[模板复制] 目标租户[{}]已有流程[{}]，按策略跳过", tgtTenant, flowCode);
+                    continue;
+                }
+                // overwrite：先删目标租户该编码的旧定义（含节点/跳转）
+                long existId = ((Number) existing.get(0).get("id")).longValue();
+                jdbcTemplate.update("DELETE FROM flow_skip WHERE definition_id = ? AND tenant_id = ?", existId, tgtTenant);
+                jdbcTemplate.update("DELETE FROM flow_node WHERE definition_id = ? AND tenant_id = ?", existId, tgtTenant);
+                jdbcTemplate.update("DELETE FROM flow_definition WHERE id = ? AND tenant_id = ?", existId, tgtTenant);
+                log.info("[模板复制] 目标租户[{}]已有流程[{}]，已删除旧版本准备覆盖", tgtTenant, flowCode);
+            }
+
+            // 插入新定义
+            long newDefId = IdWorker.getId();
             jdbcTemplate.update(
                     "INSERT INTO flow_definition (id, flow_code, flow_name, model_value, category, version, is_publish, " +
                     "form_custom, form_path, activity_status, listener_type, listener_path, ext, " +
@@ -474,7 +503,7 @@ public class WorkflowService {
                     def.get("activity_status"), def.get("listener_type"), def.get("listener_path"), def.get("ext"),
                     now, "system", now, "system", def.get("del_flag"), tgtTenant);
 
-            // 3. 复制流程节点（definition_id 指向新定义 id；node 自身 id 重新生成）
+            // 复制节点
             List<Map<String, Object>> nodes = jdbcTemplate.queryForList(
                     "SELECT * FROM flow_node WHERE definition_id = ? AND tenant_id = ?", oldDefId, srcTenant);
             for (Map<String, Object> node : nodes) {
@@ -491,7 +520,7 @@ public class WorkflowService {
                         now, "system", now, "system", node.get("ext"), node.get("del_flag"), tgtTenant);
             }
 
-            // 4. 复制跳转（node_code 字符串关联，无需节点 id 重映射）
+            // 复制跳转
             List<Map<String, Object>> skips = jdbcTemplate.queryForList(
                     "SELECT * FROM flow_skip WHERE definition_id = ? AND tenant_id = ?", oldDefId, srcTenant);
             for (Map<String, Object> skip : skips) {
@@ -509,7 +538,7 @@ public class WorkflowService {
             copied++;
         }
 
-        log.info("流程模板复制完成: 源租户[{}] -> 目标租户[{}], 共 {} 个流程定义", sourceTenantId, targetTenantId, copied);
+        log.info("流程模板选择性复制完成: 目标租户[{}], 复制 {} 套, 跳过 {} 套", targetTenantId, copied, skipped);
         return copied;
     }
 

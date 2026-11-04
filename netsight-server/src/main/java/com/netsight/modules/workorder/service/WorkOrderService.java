@@ -8,6 +8,7 @@ import com.netsight.common.exception.ServiceException;
 import com.netsight.config.PushWebSocketHandler;
 import com.netsight.framework.security.SecurityUtils;
 import com.netsight.modules.alert.entity.EventRecord;
+import com.netsight.modules.workorder.constant.WorkOrderStatus;
 import com.netsight.modules.workorder.entity.Repairer;
 import com.netsight.modules.workorder.entity.WorkOrder;
 import com.netsight.modules.workorder.entity.WorkOrderPart;
@@ -51,10 +52,6 @@ public class WorkOrderService {
     private final RepairerMapper repairerMapper;
     private final WorkOrderNotifier notifier;
 
-    /** 状态映射 */
-    private static final Map<Integer, String> STATUS_TEXT = Map.of(
-            0, "待处理", 1, "已派单", 2, "维修中", 3, "已完成", 4, "已关闭", 5, "已自动恢复");
-
     /** 故障类型映射（事件类型 → 工单故障类型/描述） */
     private static final Map<String, String> FAULT_TYPE = Map.of(
             "device_offline", "offline",
@@ -86,7 +83,7 @@ public class WorkOrderService {
                             new LambdaQueryWrapper<WorkOrderPart>().in(WorkOrderPart::getOrderId, orderIds))
                     .stream().collect(Collectors.groupingBy(WorkOrderPart::getOrderId, Collectors.counting()));
             records.forEach(o -> {
-                o.setStatusText(STATUS_TEXT.getOrDefault(o.getStatus(), String.valueOf(o.getStatus())));
+                o.setStatusText(WorkOrderStatus.textOf(o.getStatus()));
                 o.setRecordCount(Math.toIntExact(recordCountMap.getOrDefault(o.getId(), 0L)));
                 o.setPartCount(Math.toIntExact(partCountMap.getOrDefault(o.getId(), 0L)));
             });
@@ -100,7 +97,7 @@ public class WorkOrderService {
     public Map<String, Object> detail(Long id) {
         WorkOrder order = checkTenantOrder(id);
         Map<String, Object> result = new HashMap<>();
-        order.setStatusText(STATUS_TEXT.getOrDefault(order.getStatus(), String.valueOf(order.getStatus())));
+        order.setStatusText(WorkOrderStatus.textOf(order.getStatus()));
         result.put("order", order);
         result.put("records", recordMapper.selectList(new LambdaQueryWrapper<WorkOrderRecord>()
                 .eq(WorkOrderRecord::getOrderId, id).orderByDesc(WorkOrderRecord::getId)));

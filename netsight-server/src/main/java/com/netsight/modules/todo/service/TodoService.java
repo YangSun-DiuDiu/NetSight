@@ -6,6 +6,7 @@ import com.netsight.framework.security.LoginUser;
 import com.netsight.framework.security.SecurityUtils;
 import com.netsight.modules.inspection.entity.InspectionTask;
 import com.netsight.modules.inspection.mapper.InspectionTaskMapper;
+import com.netsight.modules.workorder.constant.WorkOrderStatus;
 import com.netsight.modules.workorder.entity.Repairer;
 import com.netsight.modules.workorder.entity.WorkOrder;
 import com.netsight.modules.workorder.mapper.RepairerMapper;
@@ -133,7 +134,7 @@ public class TodoService {
                     .eq(WorkOrder::getStatus, 0)
                     .orderByDesc(WorkOrder::getCreateTime));
             for (WorkOrder o : pending) {
-                items.add(toWorkOrderItem(o, "待派单"));
+                items.add(toWorkOrderItem(o, WorkOrderStatus.PENDING.getText()));
             }
         }
         // 派给我的工单
@@ -144,7 +145,8 @@ public class TodoService {
                     .in(WorkOrder::getStatus, 1, 2)
                     .orderByDesc(WorkOrder::getCreateTime));
             for (WorkOrder o : mine) {
-                items.add(toWorkOrderItem(o, o.getStatus() != null && o.getStatus() == 1 ? "已派单" : "维修中"));
+                items.add(toWorkOrderItem(o, o.getStatus() != null && o.getStatus() == WorkOrderStatus.DISPATCHED.getCode()
+                        ? WorkOrderStatus.DISPATCHED.getText() : WorkOrderStatus.REPAIRING.getText()));
             }
         }
         return items;

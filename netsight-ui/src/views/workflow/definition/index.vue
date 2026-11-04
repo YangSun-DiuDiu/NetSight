@@ -51,7 +51,7 @@
     <!-- 工具栏 -->
     <el-card class="box-card filter-card">
       <el-button type="primary" icon="el-icon-plus" @click="createFlow">新建流程</el-button>
-      <el-button v-if="isSuperAdmin" type="warning" icon="el-icon-copy-document" @click="openCopyDialog">
+      <el-button v-if="isSuperAdmin" type="warning" icon="el-icon-copy-document" @click="copyVisible = true">
         复制模板到租户
       </el-button>
       <el-button icon="el-icon-refresh" style="float:right" @click="getList">刷新</el-button>
@@ -90,25 +90,50 @@
     </el-card>
 
     <!-- 复制模板弹窗（超管） -->
-    <el-dialog title="复制流程模板到租户" :visible.sync="copyVisible" width="460px" append-to-body>
-      <el-form label-width="100px">
-        <el-form-item label="源租户ID">
-          <el-input v-model="copyForm.sourceTenantId" placeholder="预置模板所在租户，默认 1" />
+    <el-dialog title="选择性复制流程模板" :visible.sync="copyVisible" width="640px" append-to-body @open="onCopyDialogOpen">
+      <el-form label-width="110px" size="small">
+        <el-form-item label="目标租户">
+          <el-select v-model="copyForm.targetTenantId" placeholder="选择要复制到的租户" filterable style="width:100%">
+            <el-option v-for="t in tenantOptions" :key="t.id" :label="t.tenantName + '（ID:' + t.id + '）'" :value="t.id" />
+          </el-select>
         </el-form-item>
-        <el-form-item label="目标租户ID">
-          <el-input v-model="copyForm.targetTenantId" placeholder="要复制到的租户" />
+
+        <el-form-item label="选择模板">
+          <el-table :data="sourceTemplates" size="mini" border height="260" @selection-change="onSourceSelectChange" ref="sourceTable">
+            <el-table-column type="selection" width="40" />
+            <el-table-column prop="flowCode" label="流程编码" width="160" align="center" />
+            <el-table-column prop="flowName" label="流程名称" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="version" label="版本" width="70" align="center" />
+            <el-table-column prop="isPublish" label="状态" width="80" align="center">
+              <template slot-scope="{ row }">
+                <el-tag :type="row.isPublish === 1 ? 'success' : 'info'" size="mini">
+                  {{ row.isPublish === 1 ? '已发布' : '草稿' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-form-item>
+
+        <el-form-item label="冲突策略">
+          <el-radio-group v-model="copyForm.conflictStrategy">
+            <el-radio label="overwrite">覆盖目标租户同编码模板（推荐）</el-radio>
+            <el-radio label="skip">跳过目标租户已有模板</el-radio>
+          </el-radio-group>
         </el-form-item>
       </el-form>
       <div slot="footer">
         <el-button @click="copyVisible = false">取消</el-button>
-        <el-button type="primary" :loading="copyLoading" @click="handleCopy">确认复制</el-button>
+        <el-button type="primary" :loading="copyLoading" @click="handleCopy">
+          复制选中（{{ selectedFlowCodes.length }} 个）
+        </el-button>
       </div>
     </el-dialog>
   </div>
 </template>
 
 <script>
-import { listDefinitions, copyTemplates } from '@/api/workflow/workflow'
+import { listDefinitions, copyTemplates, listSourceTemplates } from '@/api/workflow/workflow'
+import { listTenant } from '@/api/system/tenant'
 import { getToken } from '@/utils/auth'
 
 export default {
@@ -119,7 +144,10 @@ export default {
       list: [],
       copyVisible: false,
       copyLoading: false,
-      copyForm: { sourceTenantId: 1, targetTenantId: null },
+      copyForm: { targetTenantId: null, flowCodes: [], conflictStrategy: 'overwrite' },
+      sourceTemplates: [],
+      tenantOptions: [],
+      selectedFlowCodes: [],
       isSuperAdmin: false
     }
   },
@@ -147,17 +175,36 @@ export default {
     editFlow(row) {
       this.$router.push('/workflow/designer?flowId=' + row.id)
     },
-    openCopyDialog() {
-      this.copyForm = { sourceTenantId: 1, targetTenantId: null }
-      this.copyVisible = true
+    onCopyDialogOpen() {
+      this.copyForm = { targetTenantId: null, flowCodes: [], conflictStrategy: 'overwrite' }
+      this.selectedFlowCodes = []
+      // 加载源模板列表
+      listSourceTemplates().then(data => {
+        this.sourceTemplates = data || []
+      })
+      // 加载租户下拉
+      listTenant({ pageNum: 1, pageSize: 1000 }).then(data => {
+        this.tenantOptions = (data && data.rows) || []
+      })
+    },
+    onSourceSelectChange(rows) {
+      this.selectedFlowCodes = rows.map(r => r.flowCode)
     },
     handleCopy() {
       if (!this.copyForm.targetTenantId) {
-        this.$message.warning('请填写目标租户ID')
+        this.$message.warning('请选择目标租户')
+        return
+      }
+      if (this.selectedFlowCodes.length === 0) {
+        this.$message.warning('请至少勾选一个流程模板')
         return
       }
       this.copyLoading = true
-      copyTemplates(this.copyForm).then(data => {
+      copyTemplates({
+        targetTenantId: this.copyForm.targetTenantId,
+        flowCodes: this.selectedFlowCodes,
+        conflictStrategy: this.copyForm.conflictStrategy
+      }).then(data => {
         this.$message.success('已复制 ' + data + ' 套流程模板到目标租户')
         this.copyVisible = false
         this.copyLoading = false

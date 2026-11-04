@@ -8,6 +8,7 @@ import com.netsight.common.exception.ServiceException;
 import com.netsight.framework.security.SecurityUtils;
 import com.netsight.modules.spare.entity.SparePart;
 import com.netsight.modules.spare.mapper.SparePartMapper;
+import com.netsight.modules.workorder.constant.WorkOrderStatus;
 import com.netsight.modules.workorder.entity.Repairer;
 import com.netsight.modules.workorder.entity.WorkOrder;
 import com.netsight.modules.workorder.entity.WorkOrderPart;
@@ -78,10 +79,8 @@ public class MobileWorkOrderController {
         Page<WorkOrder> result = orderMapper.selectPage(page, wrapper);
 
         // 填充状态文本
-        Map<Integer, String> statusText = Map.of(
-                0, "待处理", 1, "已派单", 2, "维修中", 3, "已完成", 4, "已关闭", 5, "已自动恢复");
         result.getRecords().forEach(o ->
-                o.setStatusText(statusText.getOrDefault(o.getStatus(), String.valueOf(o.getStatus()))));
+                o.setStatusText(WorkOrderStatus.textOf(o.getStatus())));
 
         return R.ok(PageResult.of(result.getTotal(), result.getRecords()));
     }
@@ -113,9 +112,7 @@ public class MobileWorkOrderController {
             throw new ServiceException(500, "工单不存在或不属于当前维修人员");
         }
         Map<String, Object> result = new HashMap<>();
-        Map<Integer, String> statusText = Map.of(
-                0, "待处理", 1, "已派单", 2, "维修中", 3, "已完成", 4, "已关闭", 5, "已自动恢复");
-        order.setStatusText(statusText.getOrDefault(order.getStatus(), String.valueOf(order.getStatus())));
+        order.setStatusText(WorkOrderStatus.textOf(order.getStatus()));
         result.put("order", order);
         result.put("records", recordMapper.selectList(new LambdaQueryWrapper<WorkOrderRecord>()
                 .eq(WorkOrderRecord::getOrderId, id).orderByAsc(WorkOrderRecord::getId)));

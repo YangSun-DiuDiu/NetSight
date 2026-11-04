@@ -85,16 +85,24 @@ public class WorkflowController {
     }
 
     /**
-     * 流程模板租户复制（方案 B 手工补复制，超管权限）
-     * 场景：存量租户在方案 B 上线前已创建，无预置流程模板；或租户模板被误删需重置。
-     * 前端：流程定义页「复制模板到租户」功能。
+     * 查询预置模板库（租户1）的全部流程定义，供超管勾选后复制到目标租户。
+     */
+    @GetMapping("/templates/source-list")
+    @PreAuthorize("hasRole('super_admin')")
+    public R<java.util.List<java.util.Map<String, Object>>> sourceTemplateList() {
+        return R.ok(workflowService.listSourceTemplates());
+    }
+
+    /**
+     * 选择性复制流程模板到目标租户（超管权限）
+     * 入参：目标租户ID + 勾选的flowCode列表 + 冲突策略(overwrite/skip)
      */
     @PostMapping("/template/copy")
     @PreAuthorize("hasRole('super_admin')")
     @Log(module = "流程审批", action = "复制流程模板")
     public R<Integer> copyTemplates(@RequestBody CopyTemplateRequest request) {
-        int copied = workflowService.copyFlowTemplatesToTenant(
-                request.getSourceTenantId(), request.getTargetTenantId());
+        int copied = workflowService.copyFlowTemplatesSelectively(
+                request.getTargetTenantId(), request.getFlowCodes(), request.getConflictStrategy());
         return R.ok("已复制 " + copied + " 套流程模板到目标租户", copied);
     }
 
@@ -102,12 +110,14 @@ public class WorkflowController {
 
     @Data
     public static class CopyTemplateRequest {
-        /** 源租户ID（预置模板所在租户，默认1） */
-        @NotNull(message = "源租户ID不能为空")
-        private Long sourceTenantId;
         /** 目标租户ID */
         @NotNull(message = "目标租户ID不能为空")
         private Long targetTenantId;
+        /** 要复制的流程编码列表（来自租户1预置模板库） */
+        @jakarta.validation.constraints.NotEmpty(message = "请选择要复制的流程模板")
+        private List<String> flowCodes;
+        /** 冲突策略：overwrite=覆盖目标租户同编码模板；skip=跳过 */
+        private String conflictStrategy = "overwrite";
     }
 
     @Data

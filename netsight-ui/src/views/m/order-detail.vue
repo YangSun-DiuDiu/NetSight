@@ -330,6 +330,7 @@ export default {
         Toast('领料申请已提交，等待审批')
         this.loadOutRequests()
         this.loadDetail()
+        this.loadParts()
         this.selectedParts = []
       }).catch(err => {
         this.outSubmitting = false

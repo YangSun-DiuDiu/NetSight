@@ -116,19 +116,22 @@
       <div class="upload-section">
         <div class="upload-label">领料申请（提交后进入审批）</div>
         <van-cell title="选择备件" is-link @click="showPartPicker = true">
-          <span v-if="selectedPart" class="part-selected">{{ selectedPart.partName }} x{{ outQty }}</span>
+          <span v-if="selectedParts.length" class="part-selected">已选 {{ selectedParts.length }} 种备件</span>
           <span v-else class="part-placeholder">未选择</span>
         </van-cell>
-        <div class="qty-row" v-if="selectedPart">
-          <span class="qty-label">数量</span>
-          <van-stepper v-model="outQty" :min="1" :max="selectedPart.quantity" integer />
-          <span class="qty-stock">库存 {{ selectedPart.quantity }}{{ selectedPart.unit }}</span>
+        <div v-for="(sp, i) in selectedParts" :key="i" class="part-line">
+          <div class="part-line-info">
+            <div class="part-line-name">{{ sp.partName }}</div>
+            <div class="part-line-stock">库存 {{ sp.quantity }}{{ sp.unit }}</div>
+          </div>
+          <van-stepper v-model="sp.qty" :min="1" :max="sp.quantity" integer />
+          <van-icon name="clear" class="part-line-del" @click="removePart(i)" />
         </div>
         <van-button
           block
           class="out-btn"
           :loading="outSubmitting"
-          :disabled="!selectedPart"
+          :disabled="selectedParts.length === 0"
           @click="submitOutRequest"
         >提交领料申请</van-button>
       </div>
@@ -166,15 +169,21 @@
     </div>
 
     <van-popup v-model="showPartPicker" position="bottom" :style="{ maxHeight: '60%' }">
-      <div class="part-picker-title">选择备件</div>
+      <div class="part-picker-title">选择备件（可多选）</div>
       <van-cell
         v-for="(p, i) in partOptions"
         :key="i"
         :title="p.text"
-        is-link
-        @click="onPartPick(p)"
-      />
-      <div class="part-picker-cancel" @click="showPartPicker = false">取消</div>
+        clickable
+        :class="{ 'part-picked': isPicked(p) }"
+        @click="togglePart(p)"
+      >
+        <van-icon v-if="isPicked(p)" name="success" color="#5e6ad2" slot="right-icon" />
+      </van-cell>
+      <div class="part-picker-footer">
+        <div class="part-picker-cancel" @click="showPartPicker = false">取消</div>
+        <div class="part-picker-ok" @click="confirmParts">确定{{ selectedParts.length ? '（' + selectedParts.length + '）' : '' }}</div>
+      </div>
     </van-popup>
 
     <van-image-preview v-model="showPhotoPreview" :images="photoList" />
@@ -200,9 +209,8 @@ export default {
       showPhotoPreview: false,
       fileList: [],
       partOptions: [],
-      selectedPart: null,
+      selectedParts: [],
       outRequests: [],
-      outQty: 1,
       outSubmitting: false,
       resubmittingBiz: '',
       aiLoading: false,
@@ -289,6 +297,7 @@ export default {
       request.get('/m/order/parts').then(res => {
         this.partOptions = (res.data || []).map(p => ({
           text: p.partType + ' ' + p.brand + ' ' + p.model + '（库存' + p.quantity + p.unit + '）',
+          partName: p.partType + ' ' + p.brand + ' ' + p.model,
           value: p.id,
           ...p
         }))
@@ -302,26 +311,26 @@ export default {
       })
     },
     submitOutRequest() {
-      if (!this.selectedPart) {
+      if (!this.selectedParts.length) {
         Toast('请选择备件')
         return
       }
-      if (!this.outQty || this.outQty < 1) {
+      const bad = this.selectedParts.find(sp => !sp.qty || sp.qty < 1)
+      if (bad) {
         Toast('数量必须大于0')
         return
       }
       this.outSubmitting = true
       request.post('/spare/out/request', {
         orderId: this.orderId,
-        items: [{ partId: this.selectedPart.value, quantity: this.outQty }],
+        items: this.selectedParts.map(sp => ({ partId: sp.value, quantity: sp.qty })),
         remark: 'H5 领料申请'
       }).then(res => {
         this.outSubmitting = false
         Toast('领料申请已提交，等待审批')
         this.loadOutRequests()
         this.loadDetail()
-        this.selectedPart = null
-        this.outQty = 1
+        this.selectedParts = []
       }).catch(err => {
         this.outSubmitting = false
         Toast((err && err.msg) || '提交失败，请稍后重试')
@@ -403,10 +412,22 @@ export default {
         Toast('照片上传失败，请检查网络后重试')
       })
     },
-    onPartPick(p) {
-      this.selectedPart = p
-      this.outQty = 1
+    togglePart(p) {
+      const idx = this.selectedParts.findIndex(sp => sp.value === p.value)
+      if (idx >= 0) {
+        this.selectedParts.splice(idx, 1)
+      } else {
+        this.selectedParts.push({ ...p, qty: 1 })
+      }
+    },
+    isPicked(p) {
+      return this.selectedParts.some(sp => sp.value === p.value)
+    },
+    confirmParts() {
       this.showPartPicker = false
+    },
+    removePart(i) {
+      this.selectedParts.splice(i, 1)
     },
     submitComplete() {
       if (!this.form.repairResult) {
@@ -687,6 +708,58 @@ export default {
   font-size: 15px;
   color: var(--ink-muted);
   border-top: 1px solid var(--hairline);
+}
+.part-picked {
+  background: rgba(94, 106, 210, 0.06);
+}
+.part-picker-footer {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--hairline);
+}
+.part-picker-cancel {
+  flex: 1;
+  border-top: none;
+}
+.part-picker-ok {
+  flex: 1;
+  text-align: center;
+  padding: 14px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary);
+}
+.part-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 4px 0;
+  padding: 10px 12px;
+  background: rgba(94, 106, 210, 0.05);
+  border-radius: 8px;
+}
+.part-line-info {
+  flex: 1;
+  min-width: 0;
+}
+.part-line-name {
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.part-line-stock {
+  font-size: 12px;
+  color: var(--ink-subtle);
+  margin-top: 2px;
+}
+.part-line-del {
+  color: var(--ink-subtle);
+  font-size: 18px;
+  padding: 4px;
 }
 
 /* Action bar */

@@ -6,26 +6,24 @@ import com.netsight.common.core.ResultCode;
 import com.netsight.common.exception.ServiceException;
 import com.netsight.framework.security.SecurityUtils;
 import com.netsight.modules.workflow.entity.ApprovalBill;
+import com.netsight.modules.workflow.enums.ApprovalAction;
+import com.netsight.modules.workflow.enums.WorkflowStatus;
 import com.netsight.modules.workflow.event.WorkflowApprovalEvent;
 import com.netsight.modules.workflow.mapper.ApprovalBillMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.warm.flow.core.FlowEngine;
 import org.dromara.warm.flow.core.dto.FlowParams;
 import org.dromara.warm.flow.core.entity.Definition;
-import org.dromara.warm.flow.core.entity.HisTask;
 import org.dromara.warm.flow.core.entity.Instance;
 import org.dromara.warm.flow.core.entity.Task;
 import org.dromara.warm.flow.core.entity.User;
-import org.dromara.warm.flow.core.enums.FlowStatus;
 import org.dromara.warm.flow.core.enums.SkipType;
 import org.dromara.warm.flow.core.enums.UserType;
 import org.dromara.warm.flow.core.service.DefService;
-import org.dromara.warm.flow.core.service.HisTaskService;
 import org.dromara.warm.flow.core.service.InsService;
 import org.dromara.warm.flow.core.service.TaskService;
 import org.dromara.warm.flow.core.service.UserService;
 import org.dromara.warm.flow.orm.entity.FlowDefinition;
-import org.dromara.warm.flow.orm.entity.FlowHisTask;
 import org.dromara.warm.flow.orm.entity.FlowUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -74,7 +72,6 @@ public class WorkflowService {
     private final DefService defService;
     private final InsService insService;
     private final TaskService taskService;
-    private final HisTaskService hisTaskService;
     private final UserService flowUserService;
     private final org.dromara.warm.flow.orm.mapper.FlowUserMapper flowUserMapper;
     private final ApprovalBillMapper approvalBillMapper;
@@ -105,6 +102,21 @@ public class WorkflowService {
         return definition;
     }
 
+    /**
+     * 当前租户是否已发布指定流程（用于业务侧“可选审批”分支判断，未配置时保持原逻辑）
+     */
+    public boolean hasPublishedFlow(String flowCode) {
+        if (!StringUtils.hasText(flowCode)) {
+            return false;
+        }
+        try {
+            return defService.getPublishByFlowCode(flowCode) != null;
+        } catch (Exception e) {
+            log.warn("流程定义查询失败 flowCode={}: {}", flowCode, e.getMessage());
+            return false;
+        }
+    }
+
     // ==================== 发起 ====================
 
     /**
@@ -124,8 +136,8 @@ public class WorkflowService {
         if (!StringUtils.hasText(flowCode) || !StringUtils.hasText(bizId)) {
             throw new ServiceException("flowCode 与 bizId 不能为空");
         }
-        // 发起前校验流程已发布
-        getPublishedByFlowCode(flowCode);
+        // 发起前校验流程已发布，同时取流程名用于审批单冗余展示
+        Definition definition = getPublishedByFlowCode(flowCode);
 
         // 1. 引擎发起：变量携带业务上下文，供后续节点/监听器使用
         Map<String, Object> variable = new HashMap<>();
@@ -141,13 +153,9 @@ public class WorkflowService {
         if (instance == null || instance.getId() == null) {
             throw new ServiceException("流程发起失败，引擎未返回实例");
         }
-        // 引擎 1.8.9 运行时表（flow_instance/flow_task/flow_user）写入时不填充 tenant_id，
-        // 而引擎所有查询都会按 TenantHandler 追加租户过滤 → 需发起后立即回填，否则待办/流转查不到。
-        String tenant = String.valueOf(SecurityUtils.getTenantId());
-        jdbcTemplate.update("UPDATE flow_instance SET tenant_id = ? WHERE id = ?", tenant, instance.getId());
-        jdbcTemplate.update("UPDATE flow_task SET tenant_id = ? WHERE instance_id = ?", tenant, instance.getId());
-        jdbcTemplate.update("UPDATE flow_user SET tenant_id = ? WHERE associated IN (SELECT id FROM flow_task WHERE instance_id = ?)",
-                tenant, instance.getId());
+        // 引擎 1.8.9 运行时表写入时不填 tenant_id，而引擎查询会按 TenantHandler 追加租户过滤，
+        // 因此每次流转后都要把实例、任务、审批人、历史四张表补齐（只填 NULL，幂等）。
+        syncRuntimeTenant(instance.getId(), SecurityUtils.getTenantId());
 
         // 2. 登记统一审批单
         ApprovalBill bill = new ApprovalBill();
@@ -155,7 +163,7 @@ public class WorkflowService {
         bill.setBizType(bizType);
         bill.setBizId(bizId);
         bill.setFlowCode(flowCode);
-        bill.setFlowName(instance.getFlowName());
+        bill.setFlowName(definition.getFlowName() != null ? definition.getFlowName() : instance.getFlowName());
         bill.setProcessInstanceId(instance.getId());
         bill.setApprovalStatus(STATUS_PROCESSING);
         bill.setApplyUserId(userId);
@@ -216,6 +224,7 @@ public class WorkflowService {
                     .handler(String.valueOf(SecurityUtils.getUserId()))
                     .message(comment);
             taskService.terminationByInsId(bill.getProcessInstanceId(), params);
+            syncRuntimeTenant(bill.getProcessInstanceId(), bill.getTenantId());
             bill.setApprovalStatus(STATUS_REJECTED);
             bill.setCurrentNode("已驳回");
             bill.setRemark(comment);
@@ -235,17 +244,14 @@ public class WorkflowService {
                 .message(comment)
                 .ignoreCooperate(true);
         Instance instance = taskService.skip(task.getId(), params);
+        // 新任务/新审批人由引擎写入，同样可能缺租户，流转后立即补齐
+        syncRuntimeTenant(bill.getProcessInstanceId(), bill.getTenantId());
 
-        // 同步审批单状态（依据引擎流程状态）
+        // 同步审批单状态：只有整条流程结束（8）才算通过；
+        // 2 PASS 在多节点流程里只是"当前节点通过"，不能提前把单据置为已通过。
         String flowStatus = instance == null ? null : instance.getFlowStatus();
-        if (flowStatus != null && (FlowStatus.isFinished(flowStatus)
-                || FlowStatus.PASS.getKey().equals(flowStatus))) {
-            bill.setApprovalStatus(STATUS_APPROVED);
-        } else if (flowStatus != null && FlowStatus.REJECT.getKey().equals(flowStatus)) {
-            bill.setApprovalStatus(STATUS_REJECTED);
-        } else {
-            bill.setApprovalStatus(STATUS_PROCESSING);
-        }
+        WorkflowStatus status = WorkflowStatus.resolve(flowStatus, bill.getApprovalStatus());
+        bill.setApprovalStatus(status.getCode());
         bill.setCurrentNode(instance == null ? bill.getCurrentNode() : instance.getNodeName());
         bill.setRemark(comment);
         approvalBillMapper.updateById(bill);
@@ -280,6 +286,7 @@ public class WorkflowService {
         }
         FlowParams params = FlowParams.build().handler(String.valueOf(SecurityUtils.getUserId()));
         taskService.terminationByInsId(bill.getProcessInstanceId(), params);
+        syncRuntimeTenant(bill.getProcessInstanceId(), bill.getTenantId());
         bill.setApprovalStatus(STATUS_CANCELED);
         approvalBillMapper.updateById(bill);
         log.info("流程撤销 billId={} instanceId={}", billId, bill.getProcessInstanceId());
@@ -367,14 +374,19 @@ public class WorkflowService {
             result.put("total", 0);
             return result;
         }
-        String tenantId = String.valueOf(SecurityUtils.getTenantId());
+        Long tenantId = SecurityUtils.getTenantId();
         String approver = String.valueOf(userId);
         int offset = (pageNum - 1) * pageSize;
 
+        // 租户以 approval_bill 为权威（历史表 tenant_id 由引擎写入，可能为空）；
+        // node_type <> 0 排除发起节点：发起节点的 approver 也记发起人，混进来会变成"我审批了我自己"。
+        String from = "FROM flow_his_task h " +
+                "INNER JOIN approval_bill b ON b.process_instance_id = h.instance_id " +
+                "WHERE h.approver = ? AND b.tenant_id = ? AND h.node_type <> 0 " +
+                "AND h.del_flag = '0' AND b.del_flag = '0'";
+
         // 总数
-        Integer total = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM flow_his_task h " +
-                "WHERE h.approver = ? AND h.tenant_id = ? AND h.del_flag = '0'",
+        Integer total = jdbcTemplate.queryForObject("SELECT COUNT(*) " + from,
                 Integer.class, approver, tenantId);
         result.put("total", total == null ? 0 : total);
 
@@ -385,20 +397,47 @@ public class WorkflowService {
 
         // 分页查询 + 关联 approval_bill
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT h.id AS hisId, h.instance_id AS instanceId, h.node_name AS nodeName, " +
+                "SELECT h.id AS hisId, h.instance_id AS instanceId, h.node_code AS nodeCode, " +
+                "       h.node_name AS nodeName, h.node_type + 0 AS nodeType, " +
                 "       h.skip_type AS skipType, h.flow_status AS flowStatus, h.message AS myComment, " +
                 "       h.create_time AS approveTime, " +
                 "       b.id AS billId, b.biz_id AS bizId, b.title AS title, b.flow_name AS flowName, " +
-                "       b.biz_type AS bizType, b.apply_user_name AS applyUserName, " +
+                "       b.flow_code AS flowCode, b.biz_type AS bizType, b.apply_user_name AS applyUserName, " +
                 "       b.approval_status AS currentBillStatus " +
-                "FROM flow_his_task h " +
-                "LEFT JOIN approval_bill b ON b.process_instance_id = h.instance_id " +
-                "WHERE h.approver = ? AND h.tenant_id = ? AND h.del_flag = '0' " +
-                "ORDER BY h.create_time DESC " +
-                "LIMIT ? OFFSET ?",
+                from +
+                " ORDER BY h.create_time DESC LIMIT ? OFFSET ?",
                 approver, tenantId, pageSize, offset);
+
+        // 动作/状态统一在本层翻译，前端不再自行判断 skipType
+        for (Map<String, Object> row : rows) {
+            decorateDoneRow(row);
+        }
         result.put("rows", rows);
         return result;
+    }
+
+    /** 为历史已办行补齐动作与状态的展示字段（保留旧字段，向后兼容） */
+    private void decorateDoneRow(Map<String, Object> row) {
+        Object nodeTypeObj = row.get("nodeType");
+        Integer nodeType = nodeTypeObj instanceof Number ? ((Number) nodeTypeObj).intValue() : null;
+        String flowStatus = row.get("flowStatus") == null ? null : String.valueOf(row.get("flowStatus"));
+        String billStatus = row.get("currentBillStatus") == null ? null : String.valueOf(row.get("currentBillStatus"));
+
+        ApprovalAction action = ApprovalAction.resolve(nodeType, flowStatus, billStatus);
+        row.put("actionCode", action.getCode());
+        row.put("actionText", action.getText());
+        row.put("actionTag", action.getTag());
+
+        WorkflowStatus status = WorkflowStatus.of(billStatus);
+        if (status == null) {
+            status = WorkflowStatus.PROCESSING;
+        }
+        row.put("currentStatusText", status.getText());
+        row.put("currentStatusTag", status.getTag());
+
+        if (row.get("flowName") == null || String.valueOf(row.get("flowName")).isEmpty()) {
+            row.put("flowName", row.get("flowCode"));
+        }
     }
 
     /**
@@ -408,11 +447,33 @@ public class WorkflowService {
         ApprovalBill bill = getBill(billId);
         Map<String, Object> detail = new HashMap<>();
         detail.put("bill", bill);
-        // 流程历史（flow_his_task 按实例ID倒序）
-        FlowHisTask hisQuery = new FlowHisTask();
-        hisQuery.setInstanceId(bill.getProcessInstanceId());
-        List<HisTask> history = hisTaskService.list(hisQuery);
-        detail.put("history", history == null ? List.of() : history);
+        WorkflowStatus status = WorkflowStatus.of(bill.getApprovalStatus());
+        if (status == null) {
+            status = WorkflowStatus.PROCESSING;
+        }
+        detail.put("statusCode", status.getCode());
+        detail.put("statusText", status.getText());
+        detail.put("statusTag", status.getTag());
+
+        // 流程历史：直接用 JDBC 按实例ID读取。
+        // 引擎 list 会走租户过滤，而历史行的 tenant_id 可能为空，会导致轨迹查不到。
+        List<Map<String, Object>> history = jdbcTemplate.queryForList(
+                "SELECT id, instance_id AS instanceId, node_code AS nodeCode, node_name AS nodeName, " +
+                "       node_type + 0 AS nodeType, approver, skip_type AS skipType, flow_status AS flowStatus, " +
+                "       message, create_time AS createTime " +
+                "FROM flow_his_task WHERE instance_id = ? AND del_flag = '0' " +
+                "ORDER BY create_time ASC, id ASC",
+                bill.getProcessInstanceId());
+        for (Map<String, Object> row : history) {
+            Object nodeTypeObj = row.get("nodeType");
+            Integer nodeType = nodeTypeObj instanceof Number ? ((Number) nodeTypeObj).intValue() : null;
+            String flowStatus = row.get("flowStatus") == null ? null : String.valueOf(row.get("flowStatus"));
+            ApprovalAction action = ApprovalAction.resolve(nodeType, flowStatus, bill.getApprovalStatus());
+            row.put("actionCode", action.getCode());
+            row.put("actionText", action.getText());
+            row.put("actionTag", action.getTag());
+        }
+        detail.put("history", history);
         return detail;
     }
 
@@ -460,9 +521,11 @@ public class WorkflowService {
         int skipped = 0;
 
         for (String flowCode : flowCodes) {
-            // 查源租户该流程定义
+            // 查源租户该流程定义：同编码可能存在多条历史/空定义，取已发布且节点最完整的一条作为模板源
             List<Map<String, Object>> defs = jdbcTemplate.queryForList(
-                    "SELECT * FROM flow_definition WHERE tenant_id = ? AND flow_code = ? AND del_flag = '0'",
+                    "SELECT d.*, (SELECT COUNT(*) FROM flow_node n WHERE n.definition_id = d.id) AS node_cnt " +
+                    "FROM flow_definition d WHERE d.tenant_id = ? AND d.flow_code = ? AND d.del_flag = '0' " +
+                    "AND d.is_publish = 1 ORDER BY node_cnt DESC, d.id DESC LIMIT 1",
                     srcTenant, flowCode);
             if (defs.isEmpty()) {
                 log.warn("[模板复制] 源租户[{}]未找到流程编码[{}]，跳过", srcTenant, flowCode);
@@ -504,8 +567,11 @@ public class WorkflowService {
                     now, "system", now, "system", def.get("del_flag"), tgtTenant);
 
             // 复制节点
+            // node_type 是 tinyint(1)，JDBC 可能映射为 Boolean（2 会被读成 true=1，导致 end 节点被当成审批节点），
+            // 必须用 node_type + 0 强制取数值
             List<Map<String, Object>> nodes = jdbcTemplate.queryForList(
-                    "SELECT * FROM flow_node WHERE definition_id = ? AND tenant_id = ?", oldDefId, srcTenant);
+                    "SELECT *, node_type + 0 AS node_type_num FROM flow_node WHERE definition_id = ? AND tenant_id = ?",
+                    oldDefId, srcTenant);
             for (Map<String, Object> node : nodes) {
                 jdbcTemplate.update(
                         "INSERT INTO flow_node (id, node_type, definition_id, node_code, node_name, permission_flag, " +
@@ -513,7 +579,7 @@ public class WorkflowService {
                         "version, create_time, create_by, update_time, update_by, ext, del_flag, tenant_id) " +
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         IdWorker.getId(),
-                        node.get("node_type"), newDefId, node.get("node_code"), node.get("node_name"),
+                        node.get("node_type_num"), newDefId, node.get("node_code"), node.get("node_name"),
                         node.get("permission_flag"), node.get("node_ratio"), node.get("coordinate"),
                         node.get("any_node_skip"), node.get("listener_type"), node.get("listener_path"),
                         node.get("form_custom"), node.get("form_path"), node.get("version"),
@@ -521,8 +587,10 @@ public class WorkflowService {
             }
 
             // 复制跳转
+            // 跳转上的节点类型同为 tinyint(1)，同样用 + 0 取数值，避免 PASS/REJECT 判定错位
             List<Map<String, Object>> skips = jdbcTemplate.queryForList(
-                    "SELECT * FROM flow_skip WHERE definition_id = ? AND tenant_id = ?", oldDefId, srcTenant);
+                    "SELECT *, now_node_type + 0 AS now_node_type_num, next_node_type + 0 AS next_node_type_num " +
+                    "FROM flow_skip WHERE definition_id = ? AND tenant_id = ?", oldDefId, srcTenant);
             for (Map<String, Object> skip : skips) {
                 jdbcTemplate.update(
                         "INSERT INTO flow_skip (id, definition_id, now_node_code, now_node_type, next_node_code, " +
@@ -530,8 +598,8 @@ public class WorkflowService {
                         "create_time, create_by, update_time, update_by, del_flag, tenant_id) " +
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         IdWorker.getId(),
-                        newDefId, skip.get("now_node_code"), skip.get("now_node_type"),
-                        skip.get("next_node_code"), skip.get("next_node_type"), skip.get("skip_name"),
+                        newDefId, skip.get("now_node_code"), skip.get("now_node_type_num"),
+                        skip.get("next_node_code"), skip.get("next_node_type_num"), skip.get("skip_name"),
                         skip.get("skip_type"), skip.get("skip_condition"), skip.get("coordinate"),
                         now, "system", now, "system", skip.get("del_flag"), tgtTenant);
             }
@@ -540,6 +608,39 @@ public class WorkflowService {
 
         log.info("流程模板选择性复制完成: 目标租户[{}], 复制 {} 套, 跳过 {} 套", targetTenantId, copied, skipped);
         return copied;
+    }
+
+    /**
+     * 补齐运行时表的租户ID（幂等，只填 NULL，不覆盖已有值）
+     *
+     * 引擎 1.8.9 写 flow_instance / flow_task / flow_user / flow_his_task 时不填 tenant_id，
+     * 而查询会按租户过滤。漏任何一张都会导致"待办看不到"或"历史已办为空"。
+     */
+    private void syncRuntimeTenant(Long instanceId, Long tenantId) {
+        if (instanceId == null || tenantId == null) {
+            return;
+        }
+        String tenant = String.valueOf(tenantId);
+        try {
+            int instanceRows = jdbcTemplate.update(
+                    "UPDATE flow_instance SET tenant_id = ? WHERE id = ? AND (tenant_id IS NULL OR tenant_id = '')",
+                    tenant, instanceId);
+            int taskRows = jdbcTemplate.update(
+                    "UPDATE flow_task SET tenant_id = ? WHERE instance_id = ? AND (tenant_id IS NULL OR tenant_id = '')",
+                    tenant, instanceId);
+            int userRows = jdbcTemplate.update(
+                    "UPDATE flow_user SET tenant_id = ? WHERE tenant_id IS NULL " +
+                    "AND associated IN (SELECT id FROM flow_task WHERE instance_id = ?)",
+                    tenant, instanceId);
+            int hisRows = jdbcTemplate.update(
+                    "UPDATE flow_his_task SET tenant_id = ? WHERE instance_id = ? AND (tenant_id IS NULL OR tenant_id = '')",
+                    tenant, instanceId);
+            log.info("[租户回填] instanceId={} tenant={} instance={} task={} user={} hisTask={}",
+                    instanceId, tenant, instanceRows, taskRows, userRows, hisRows);
+        } catch (Exception e) {
+            // 回填失败不阻断审批主流程，但必须留痕，便于后续补偿
+            log.error("[租户回填] 失败 instanceId={} tenant={}: {}", instanceId, tenant, e.getMessage());
+        }
     }
 
     /**
@@ -556,8 +657,9 @@ public class WorkflowService {
         item.put("flowStatus", task.getFlowStatus());
         item.put("createTime", task.getCreateTime());
         // 关联审批单标题
+        ApprovalBill bill = null;
         if (task.getInstanceId() != null) {
-            ApprovalBill bill = approvalBillMapper.selectOne(new LambdaQueryWrapper<ApprovalBill>()
+            bill = approvalBillMapper.selectOne(new LambdaQueryWrapper<ApprovalBill>()
                     .eq(ApprovalBill::getProcessInstanceId, task.getInstanceId())
                     .last("limit 1"));
             item.put("billId", bill == null ? null : bill.getId());
@@ -565,6 +667,12 @@ public class WorkflowService {
             item.put("bizType", bill == null ? null : bill.getBizType());
             item.put("applyUserName", bill == null ? null : bill.getApplyUserName());
         }
+        // 待办一律是"审批中"，但仍按统一模型输出，避免前端再出现裸数字
+        WorkflowStatus status = WorkflowStatus.resolve(task.getFlowStatus(),
+                bill == null ? null : bill.getApprovalStatus());
+        item.put("statusCode", status.getCode());
+        item.put("statusText", status.getText());
+        item.put("statusTag", status.getTag());
         return item;
     }
 }

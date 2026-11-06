@@ -8,6 +8,10 @@ import com.netsight.common.exception.ServiceException;
 import com.netsight.config.PushWebSocketHandler;
 import com.netsight.framework.security.SecurityUtils;
 import com.netsight.modules.alert.entity.EventRecord;
+import com.netsight.modules.alert.entity.NotificationContact;
+import com.netsight.modules.alert.entity.NotificationRule;
+import com.netsight.modules.alert.mapper.NotificationContactMapper;
+import com.netsight.modules.alert.mapper.NotificationRuleMapper;
 import com.netsight.modules.workorder.constant.WorkOrderStatus;
 import com.netsight.modules.workorder.entity.Repairer;
 import com.netsight.modules.workorder.entity.WorkOrder;
@@ -17,6 +21,9 @@ import com.netsight.modules.workorder.mapper.RepairerMapper;
 import com.netsight.modules.workorder.mapper.WorkOrderMapper;
 import com.netsight.modules.workorder.mapper.WorkOrderPartMapper;
 import com.netsight.modules.workorder.mapper.WorkOrderRecordMapper;
+import com.netsight.modules.workflow.entity.ApprovalBill;
+import com.netsight.modules.workflow.mapper.ApprovalBillMapper;
+import com.netsight.modules.workflow.service.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -50,7 +57,15 @@ public class WorkOrderService {
     private final WorkOrderRecordMapper recordMapper;
     private final WorkOrderPartMapper orderPartMapper;
     private final RepairerMapper repairerMapper;
+    private final NotificationRuleMapper ruleMapper;
+    private final NotificationContactMapper contactMapper;
     private final WorkOrderNotifier notifier;
+    private final WorkflowService workflowService;
+    private final ApprovalBillMapper approvalBillMapper;
+
+    /** 工单完工验收流程（租户未发布时走原有直接完工逻辑，保持向后兼容） */
+    public static final String FLOW_WORKORDER_ACCEPT = "work_order_accept";
+    public static final String BIZ_WORKORDER_ACCEPT = "work_order_accept";
 
     /** 故障类型映射（事件类型 → 工单故障类型/描述） */
     private static final Map<String, String> FAULT_TYPE = Map.of(
@@ -82,8 +97,19 @@ public class WorkOrderService {
             Map<Long, Long> partCountMap = orderPartMapper.selectList(
                             new LambdaQueryWrapper<WorkOrderPart>().in(WorkOrderPart::getOrderId, orderIds))
                     .stream().collect(Collectors.groupingBy(WorkOrderPart::getOrderId, Collectors.counting()));
+            // 待验收标记：批量查询验收审批中的审批单（bizId=工单编号），状态文案补充“待验收”
+            List<String> orderNos = records.stream().map(WorkOrder::getOrderNo).collect(Collectors.toList());
+            Map<String, Long> pendingAcceptMap = approvalBillMapper.selectList(new LambdaQueryWrapper<ApprovalBill>()
+                            .eq(ApprovalBill::getBizType, BIZ_WORKORDER_ACCEPT)
+                            .eq(ApprovalBill::getApprovalStatus, WorkflowService.STATUS_PROCESSING)
+                            .in(ApprovalBill::getBizId, orderNos))
+                    .stream().collect(Collectors.toMap(ApprovalBill::getBizId, ApprovalBill::getId, (a, b) -> b));
             records.forEach(o -> {
-                o.setStatusText(WorkOrderStatus.textOf(o.getStatus()));
+                String text = WorkOrderStatus.textOf(o.getStatus());
+                if (o.getStatus() != null && o.getStatus() == 2 && pendingAcceptMap.containsKey(o.getOrderNo())) {
+                    text = text + "（待验收）";
+                }
+                o.setStatusText(text);
                 o.setRecordCount(Math.toIntExact(recordCountMap.getOrDefault(o.getId(), 0L)));
                 o.setPartCount(Math.toIntExact(partCountMap.getOrDefault(o.getId(), 0L)));
             });
@@ -103,6 +129,11 @@ public class WorkOrderService {
                 .eq(WorkOrderRecord::getOrderId, id).orderByDesc(WorkOrderRecord::getId)));
         result.put("parts", orderPartMapper.selectList(new LambdaQueryWrapper<WorkOrderPart>()
                 .eq(WorkOrderPart::getOrderId, id).orderByDesc(WorkOrderPart::getId)));
+        // 完工验收审批信息（未配置该流程的租户返回空列表）
+        result.put("acceptBills", approvalBillMapper.selectList(new LambdaQueryWrapper<ApprovalBill>()
+                .eq(ApprovalBill::getBizType, BIZ_WORKORDER_ACCEPT)
+                .eq(ApprovalBill::getBizId, order.getOrderNo())
+                .orderByDesc(ApprovalBill::getId)));
         return result;
     }
 
@@ -236,12 +267,95 @@ public class WorkOrderService {
         order.setFaultType(faultType);
         order.setSeverity(event.getSeverity() == null ? "warning" : event.getSeverity());
         order.setDescription(event.getContent());
-        order.setStatus(0);
+        // 【微信告警直达接单】解析该租户 device_offline/line_abnormal 规则的接收人，
+        // 若接收人手机号能与本租户维修人员档案精确匹配，则建单即指派（status=1 待接单），
+        // 使维修人员从微信公众号「查看详情」进入 H5 待接单列表时能直接看到并接单；
+        // 未命中则保持 status=0，仍走管理员派单流程（不改变原有审核路径）。
+        Repairer assignee = resolveAlertAssignee(event);
+        if (assignee != null) {
+            order.setRepairerId(assignee.getId());
+            order.setStatus(1);
+        } else {
+            order.setStatus(0);
+        }
         orderMapper.insert(order);
-        addRecord(event.getTenantId(), order.getId(), "auto_create", "系统", "告警事件[" + event.getEventType() + "]自动生成联系单，等待管理员审核");
-        log.info("告警事件[{}]自动生成工单[{}]", event.getId(), order.getOrderNo());
+        String recordContent = assignee != null
+                ? "告警事件[" + event.getEventType() + "]自动生成工单，已指派给告警接收人[" + assignee.getName() + "]"
+                : "告警事件[" + event.getEventType() + "]自动生成联系单，等待管理员审核";
+        addRecord(event.getTenantId(), order.getId(), "auto_create", "系统", recordContent);
+        log.info("告警事件[{}]自动生成工单[{}]{}", event.getId(), order.getOrderNo(),
+                assignee != null ? "，已指派给维修人员[" + assignee.getName() + "]" : "");
         pushOrder(order, "auto_create");
         return order.getId();
+    }
+
+    /**
+     * 解析告警接收人对应的本租户维修人员档案。
+     *
+     * <p>链路：按 event_type 取该租户已启用规则 → 解析 receiver_strategy_json 的 contactIds
+     * → 取联系人 mobile → 按同租户 repairer.phone 精确匹配（启用、未删除）。
+     * 命中第一个即返回；任一步失败只记 warn 并回退为"待派单"，不影响建单。
+     *
+     * <p>注意：本方法运行在事件异步线程，无登录租户上下文，所有查询必须显式带 tenantId。
+     */
+    private Repairer resolveAlertAssignee(EventRecord event) {
+        if (event.getTenantId() == null) {
+            return null;
+        }
+        try {
+            List<NotificationRule> rules = ruleMapper.selectList(new LambdaQueryWrapper<NotificationRule>()
+                    .eq(NotificationRule::getTenantId, event.getTenantId())
+                    .eq(NotificationRule::getEventType, event.getEventType())
+                    .eq(NotificationRule::getEnabled, 1)
+                    .orderByAsc(NotificationRule::getId));
+            for (NotificationRule rule : rules) {
+                for (Long contactId : parseContactIds(rule.getReceiverStrategyJson())) {
+                    NotificationContact contact = contactMapper.selectOne(new LambdaQueryWrapper<NotificationContact>()
+                            .eq(NotificationContact::getTenantId, event.getTenantId())
+                            .eq(NotificationContact::getId, contactId)
+                            .eq(NotificationContact::getStatus, 1)
+                            .last("LIMIT 1"));
+                    if (contact == null || !StringUtils.hasText(contact.getMobile())) {
+                        continue;
+                    }
+                    Repairer repairer = repairerMapper.selectOne(new LambdaQueryWrapper<Repairer>()
+                            .eq(Repairer::getTenantId, event.getTenantId())
+                            .eq(Repairer::getPhone, contact.getMobile())
+                            .eq(Repairer::getStatus, 1)
+                            .last("LIMIT 1"));
+                    if (repairer != null) {
+                        return repairer;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("事件[{}]解析告警接收人失败，工单保持待派单: {}", event.getId(), e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * 从接收人策略 JSON 中提取 contactIds。
+     * 用正则而非 JSON 解析，是为兼容历史脏数据（如 {type: fixed, contactIds: [2]} 缺引号）——
+     * 这类脏数据不匹配带引号的键名，直接按"无接收人"处理，避免反序列化异常打断建单。
+     */
+    private List<Long> parseContactIds(String json) {
+        List<Long> ids = new java.util.ArrayList<>();
+        if (!StringUtils.hasText(json)) {
+            return ids;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("\"contactIds\"\\s*:\\s*\\[([^\\]]*)]")
+                .matcher(json);
+        if (matcher.find()) {
+            for (String part : matcher.group(1).split(",")) {
+                String trimmed = part.trim();
+                if (trimmed.matches("\\d+")) {
+                    ids.add(Long.valueOf(trimmed));
+                }
+            }
+        }
+        return ids;
     }
 
     /**
@@ -336,13 +450,44 @@ public class WorkOrderService {
     }
 
     /**
-     * 完工：回填维修结果，管理员确认后完成
+     * 完工：回填维修结果。
+     * 若租户已发布“工单完工验收”流程（work_order_accept），完工不直接置为已完成，
+     * 而是发起审批并保持“维修中（待验收）”，审批通过后由监听器置为已完成；
+     * 未发布该流程的租户保持原有直接完工逻辑（向后兼容）。
+     *
+     * @return 验收审批单；直接完工时返回 null
      */
     @Transactional(rollbackFor = Exception.class)
-    public void complete(Long id, String repairResult) {
+    public ApprovalBill complete(Long id, String repairResult) {
         WorkOrder order = checkTenantOrder(id);
         if (order.getStatus() != 1 && order.getStatus() != 2) {
             throw new ServiceException(500, "仅已派单/维修中状态可完工");
+        }
+        boolean needAccept = workflowService.hasPublishedFlow(FLOW_WORKORDER_ACCEPT);
+        if (needAccept) {
+            ApprovalBill pending = approvalBillMapper.selectOne(new LambdaQueryWrapper<ApprovalBill>()
+                    .eq(ApprovalBill::getBizType, BIZ_WORKORDER_ACCEPT)
+                    .eq(ApprovalBill::getBizId, order.getOrderNo())
+                    .eq(ApprovalBill::getApprovalStatus, WorkflowService.STATUS_PROCESSING)
+                    .orderByDesc(ApprovalBill::getId)
+                    .last("limit 1"));
+            if (pending != null) {
+                throw new ServiceException("该工单已提交验收，请等待审批（审批单 #" + pending.getId() + "）");
+            }
+            order.setRepairResult(repairResult);
+            order.setRepairEndTime(LocalDateTime.now());
+            if (order.getRepairStartTime() == null) {
+                order.setRepairStartTime(LocalDateTime.now());
+            }
+            order.setRemark("完工待验收");
+            orderMapper.updateById(order);
+            addRecord(SecurityUtils.getTenantId(), order.getId(), "complete_submit", currentUsername(),
+                    "完工提交验收：" + (StringUtils.hasText(repairResult) ? repairResult : "维修完成"));
+            pushOrder(order, "complete_submit");
+            ApprovalBill bill = workflowService.start(FLOW_WORKORDER_ACCEPT, BIZ_WORKORDER_ACCEPT,
+                    order.getOrderNo(), "工单完工验收 #" + order.getOrderNo());
+            log.info("工单完工已提交验收 orderId={} orderNo={} billId={}", order.getId(), order.getOrderNo(), bill.getId());
+            return bill;
         }
         order.setStatus(3);
         order.setRepairResult(repairResult);
@@ -353,6 +498,43 @@ public class WorkOrderService {
         orderMapper.updateById(order);
         addRecord(SecurityUtils.getTenantId(), order.getId(), "complete", currentUsername(), "完工：" + (StringUtils.hasText(repairResult) ? repairResult : "维修完成"));
         pushOrder(order, "complete");
+        return null;
+    }
+
+    /**
+     * 完工验收审批结果回调（由 WorkOrderAcceptanceListener 调用）
+     * 通过 → 工单置为已完成；驳回 → 回到维修中并记录驳回意见，可重新提交完工。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void onAcceptance(String orderNo, boolean pass, String comment) {
+        if (!StringUtils.hasText(orderNo)) {
+            return;
+        }
+        WorkOrder order = orderMapper.selectOne(new LambdaQueryWrapper<WorkOrder>()
+                .eq(WorkOrder::getOrderNo, orderNo).last("limit 1"));
+        if (order == null) {
+            log.warn("完工验收回调未找到工单 orderNo={}", orderNo);
+            return;
+        }
+        Long tenantId = order.getTenantId();
+        if (pass) {
+            order.setStatus(3);
+            if (order.getRepairEndTime() == null) {
+                order.setRepairEndTime(LocalDateTime.now());
+            }
+            order.setRemark("验收通过");
+            orderMapper.updateById(order);
+            addRecord(tenantId, order.getId(), "accept_pass", currentUsername(), "验收通过：" + (StringUtils.hasText(comment) ? comment : "维修结果确认"));
+            pushOrder(order, "accept_pass");
+        } else {
+            // 驳回：保持维修中（允许维修人员重新提交完工），仅记录驳回意见
+            order.setStatus(2);
+            order.setRemark("验收驳回：" + (StringUtils.hasText(comment) ? comment : "维修结果未通过"));
+            orderMapper.updateById(order);
+            addRecord(tenantId, order.getId(), "accept_reject", currentUsername(), "验收驳回：" + (StringUtils.hasText(comment) ? comment : "请重新处理"));
+            pushOrder(order, "accept_reject");
+        }
+        log.info("工单验收结果同步 orderNo={} pass={} status={}", orderNo, pass, order.getStatus());
     }
 
     /**

@@ -125,7 +125,10 @@ public class WorkOrderController {
     public R<Void> complete(@RequestBody Map<String, Object> body) {
         Long id = Long.valueOf(String.valueOf(body.get("id")));
         String result = body.get("repairResult") == null ? null : String.valueOf(body.get("repairResult"));
-        workOrderService.complete(id, result);
+        com.netsight.modules.workflow.entity.ApprovalBill bill = workOrderService.complete(id, result);
+        if (bill != null) {
+            return R.ok("已提交完工验收，等待审批（审批单 #" + bill.getId() + "）", null);
+        }
         return R.ok("工单已完成", null);
     }
 

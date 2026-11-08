@@ -23,6 +23,7 @@ _GenHash.java
 deploy/_wechat/certs/
 deploy/_wechat/*.env
 deploy/_wechat/*_out.txt
+deploy/_wechat/deploy_out*.txt
 
 # ===== 环境与密钥 =====
 .env

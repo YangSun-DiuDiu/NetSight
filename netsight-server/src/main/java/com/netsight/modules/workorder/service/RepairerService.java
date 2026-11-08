@@ -166,6 +166,9 @@ public class RepairerService {
         boolean accountCreated = false;
         if (users.size() == 1) {
             user = users.get(0);
+            if (!StringUtils.hasText(user.getRealName())) {
+                throw new ServiceException(500, "该用户未维护姓名，无法绑定为维修人员");
+            }
             if (sysUserService.hasRole(user.getId(), "super_admin")) {
                 throw new ServiceException(500, "超级管理员不能绑定为维修人员");
             }
@@ -219,8 +222,14 @@ public class RepairerService {
                     throw new ServiceException(500, "该手机号已存在其他维修人员档案");
                 }
             }
-            if (existing.getUserId() != null) {
-                sysUserService.syncRepairerProfile(existing.getUserId(), name, phone);
+            if (existing.getUserId() != null
+                    && (!Objects.equals(name, existing.getName())
+                        || !Objects.equals(phone, existing.getPhone()))) {
+                SysUser userUpdate = new SysUser();
+                userUpdate.setId(existing.getUserId());
+                userUpdate.setRealName(name);
+                userUpdate.setPhone(phone);
+                sysUserMapper.updateById(userUpdate);
             }
             update.setName(name);
             update.setPhone(phone);

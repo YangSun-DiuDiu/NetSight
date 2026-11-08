@@ -29,8 +29,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -193,5 +191,33 @@ class RepairerServiceTest {
 
         verify(sysUserService).disableRepairerAccountIfOnlyRole(99L);
         verify(repairerMapper).deleteById(102L);
+    }
+
+    @Test
+    void updateExternalRepairerPhoneSyncsSysUser() {
+        Repairer existing = new Repairer();
+        existing.setId(102L);
+        existing.setTenantId(14L);
+        existing.setRepairerType(2);
+        existing.setUserId(99L);
+        existing.setName("张三");
+        existing.setPhone("19900000009");
+        existing.setStatus(1);
+        when(repairerMapper.selectOne(any())).thenReturn(existing);
+        when(sysUserService.countUsersByPhoneInTenant(14L, "19900000099", 99L)).thenReturn(0L);
+        when(repairerMapper.selectCount(any())).thenReturn(0L);
+
+        Repairer request = new Repairer();
+        request.setId(102L);
+        request.setPhone("19900000099");
+        request.setStatus(1);
+        service.updateRepairer(request);
+
+        ArgumentCaptor<SysUser> captor = ArgumentCaptor.forClass(SysUser.class);
+        verify(sysUserMapper).updateById(captor.capture());
+        SysUser synced = captor.getValue();
+        assertEquals(99L, synced.getId());
+        assertEquals("19900000099", synced.getPhone());
+        assertEquals("张三", synced.getRealName());
     }
 }

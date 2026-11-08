@@ -17,6 +17,12 @@ deploy_notice_err.log
 _*.py
 _*.json
 _*.txt
+_GenHash.java
+
+# 微信公众号部署目录中的证书、环境文件与输出日志（不入库）
+deploy/_wechat/certs/
+deploy/_wechat/*.env
+deploy/_wechat/*_out.txt
 
 # ===== 环境与密钥 =====
 .env

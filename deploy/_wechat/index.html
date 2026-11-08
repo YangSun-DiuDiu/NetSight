@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>NetSight 微信公众号 JS-SDK 调用测试</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f5f6f7; color: #1f2937; padding: 24px 16px; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+          max-width: 640px; margin: 0 auto 16px; padding: 20px; }
+  h1 { font-size: 18px; margin-bottom: 4px; }
+  .sub { color: #6b7280; font-size: 13px; margin-bottom: 16px; }
+  .row { display: flex; align-items: center; justify-content: space-between;
+         padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+  .row:last-child { border-bottom: none; }
+  .label { color: #6b7280; }
+  .val { font-weight: 600; word-break: break-all; text-align: right; max-width: 70%; }
+  .ok { color: #16a34a; } .err { color: #dc2626; } .warn { color: #d97706; }
+  pre { background: #f8fafc; border-radius: 8px; padding: 12px; font-size: 12px;
+        overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin-top: 12px; }
+  button { background: #205CF5; color: #fff; border: none; border-radius: 8px;
+           padding: 10px 18px; font-size: 14px; cursor: pointer; }
+  button:disabled { background: #cbd5e1; cursor: not-allowed; }
+  .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .env-badge { display: inline-block; background: #e8f1ff; color: #205CF5;
+               border-radius: 20px; padding: 2px 10px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>NetSight 微信公众号 JS-SDK 调用测试 <span class="env-badge">测试环境</span></h1>
+  <div class="sub">JS 接口安全域名：api.netsightplus.cn（https）</div>
+  <div class="row"><span class="label">页面 URL</span><span class="val" id="pageUrl">-</span></div>
+  <div class="row"><span class="label">协议</span><span class="val" id="proto">-</span></div>
+  <div class="row"><span class="label">appId</span><span class="val" id="appId">-</span></div>
+  <div class="row"><span class="label">timestamp</span><span class="val" id="ts">-</span></div>
+  <div class="row"><span class="label">nonceStr</span><span class="val" id="nonce">-</span></div>
+  <div class="row"><span class="label">signature</span><span class="val" id="sig">-</span></div>
+  <div class="row"><span class="label">wx.config 结果</span><span class="val" id="cfg">等待执行…</span></div>
+  <div class="row"><span class="label">wx.ready</span><span class="val" id="ready">未触发</span></div>
+  <div class="row"><span class="label">wx.error</span><span class="val" id="err">未触发</span></div>
+  <div class="btn-group">
+    <button id="btnSign" onclick="doSign()">① 获取签名</button>
+    <button id="btnConfig" onclick="doConfig()" disabled>② 执行 wx.config</button>
+    <button id="btnCheck" onclick="doCheckApi()" disabled>③ checkJsApi</button>
+  </div>
+  <pre id="log">点击「① 获取签名」开始测试。</pre>
+</div>
+<script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+<script>
+var pageUrl = location.href.split('#')[0];
+document.getElementById('pageUrl').textContent = pageUrl;
+document.getElementById('proto').textContent = location.protocol;
+
+var lastCfg = null;
+
+function log(msg) {
+  var el = document.getElementById('log');
+  el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n' + el.textContent;
+}
+
+function doSign() {
+  log('请求签名接口 /wx-sign/sign?url=' + encodeURIComponent(pageUrl));
+  fetch('/wx-sign/sign?url=' + encodeURIComponent(pageUrl))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.ok) { log('签名失败: ' + (d.error || JSON.stringify(d))); return; }
+      document.getElementById('appId').textContent = d.appId;
+      document.getElementById('ts').textContent = d.timestamp;
+      document.getElementById('nonce').textContent = d.nonceStr;
+      document.getElementById('sig').textContent = d.signature;
+      lastCfg = d;
+      log('签名成功 appId=' + d.appId);
+      document.getElementById('btnConfig').disabled = false;
+      document.getElementById('btnCheck').disabled = false;
+    })
+    .catch(function (e) { log('请求签名接口异常: ' + e); });
+}
+
+function doConfig() {
+  if (!lastCfg) { log('请先获取签名'); return; }
+  log('执行 wx.config({ appId, timestamp, nonceStr, signature, jsApiList:[checkJsApi, getLocation, updateAppMessageShareData] })');
+  wx.config({
+    debug: false,
+    appId: lastCfg.appId,
+    timestamp: parseInt(lastCfg.timestamp, 10),
+    nonceStr: lastCfg.nonceStr,
+    signature: lastCfg.signature,
+    jsApiList: ['checkJsApi', 'getLocation', 'updateAppMessageShareData', 'scanQRCode']
+  });
+}
+
+wx.ready(function () {
+  document.getElementById('ready').textContent = '✓ 已就绪';
+  document.getElementById('ready').className = 'val ok';
+  log('wx.ready 触发：JS-SDK 签名验证通过');
+});
+
+wx.error(function (res) {
+  document.getElementById('err').textContent = '✗ ' + (res && res.errMsg || '未知错误');
+  document.getElementById('err').className = 'val err';
+  log('wx.error 触发: ' + JSON.stringify(res));
+  document.getElementById('cfg').textContent = '失败';
+  document.getElementById('cfg').className = 'val err';
+});
+
+function doCheckApi() {
+  wx.checkJsApi({
+    jsApiList: ['getLocation', 'updateAppMessageShareData', 'scanQRCode'],
+    success: function (res) {
+      document.getElementById('cfg').textContent = '✓ checkJsApi 成功';
+      document.getElementById('cfg').className = 'val ok';
+      log('checkJsApi 返回: ' + JSON.stringify(res.checkResult));
+    },
+    fail: function (res) {
+      document.getElementById('cfg').textContent = '✗ ' + res.errMsg;
+      document.getElementById('cfg').className = 'val err';
+      log('checkJsApi 失败: ' + JSON.stringify(res));
+    }
+  });
+}
+</script>
+</body>
+</html>

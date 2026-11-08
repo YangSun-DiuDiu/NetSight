@@ -1,34 +1,7 @@
 <template>
   <div class="app-container todo-page">
-    <!-- 统计卡（5 卡 flex 布局） -->
+    <!-- 统计卡（只统计审批数据） -->
     <div class="stat-row flex-stats">
-      <div class="stat-card">
-        <div class="stat-icon" style="background:#FDF3E7;color:#F59E0B">
-          <i class="el-icon-document" />
-        </div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.workOrderPending }}</div>
-          <div class="stat-label">待处理工单</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:#EAF0FB;color:#205CF5">
-          <i class="el-icon-user" />
-        </div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.workOrderMine }}</div>
-          <div class="stat-label">我的维修工单</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:#E8F8F2;color:#10B981">
-          <i class="el-icon-date" />
-        </div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.inspectionTodo }}</div>
-          <div class="stat-label">待执行点检</div>
-        </div>
-      </div>
       <div class="stat-card">
         <div class="stat-icon" style="background:#F1F0FE;color:#8B5CF6">
           <i class="el-icon-s-check" />
@@ -39,100 +12,85 @@
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon" style="background:#EEF5FF;color:#409EFF">
-          <i class="el-icon-s-order" />
+        <div class="stat-icon" style="background:#E8F8F2;color:#10B981">
+          <i class="el-icon-document-checked" />
         </div>
         <div class="stat-info">
-          <div class="stat-num">{{ stats.total }}</div>
-          <div class="stat-label">总待办</div>
+          <div class="stat-num">{{ stats.doneTotal }}</div>
+          <div class="stat-label">历史已办</div>
         </div>
       </div>
     </div>
 
-    <!-- 类型筛选 -->
+    <!-- 类型筛选：仅保留审批待办与历史已办 -->
     <el-card class="box-card filter-card">
       <el-radio-group v-model="query.type" @change="handleSearch" class="type-group">
-        <el-radio-button label="all">全部待办</el-radio-button>
-        <el-radio-button label="work_order">工单待办</el-radio-button>
-        <el-radio-button label="inspection">点检待办</el-radio-button>
-        <el-radio-button label="workflow">审批待办</el-radio-button>
+        <el-radio-button label="workflow">待办</el-radio-button>
         <el-radio-button label="done">历史已办</el-radio-button>
       </el-radio-group>
       <el-button type="primary" icon="el-icon-refresh" style="float:right" @click="handleRefresh">刷新</el-button>
     </el-card>
 
-    <!-- 待办列表 -->
     <el-card class="box-card">
-      <el-table v-loading="loading" :data="list" border stripe>
-        <!-- 历史已办列 -->
-        <template v-if="query.type === 'done'">
-          <el-table-column prop="bizId" label="业务编号" width="160" show-overflow-tooltip align="center" />
-          <el-table-column prop="title" label="审批标题" min-width="220" show-overflow-tooltip align="center" />
-          <el-table-column prop="flowName" label="流程" width="140" show-overflow-tooltip align="center" />
-          <el-table-column prop="applyUserName" label="发起人" width="110" align="center" />
-          <el-table-column label="我的结果" width="110" align="center">
-            <template slot-scope="{ row }">
-              <el-tag v-if="row.skipType === 'PASS'" type="success" size="mini">通过</el-tag>
-              <el-tag v-else-if="row.skipType === 'REJECT'" type="danger" size="mini">驳回</el-tag>
-              <el-tag v-else size="mini">{{ row.skipType || '—' }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="myComment" label="我的意见" min-width="160" show-overflow-tooltip align="center">
-            <template slot-scope="{ row }">{{ row.myComment || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="单据当前状态" width="120" align="center">
-            <template slot-scope="{ row }">
-              <el-tag v-if="row.currentBillStatus === 'approved'" type="success" size="mini">已通过</el-tag>
-              <el-tag v-else-if="row.currentBillStatus === 'rejected'" type="danger" size="mini">已驳回</el-tag>
-              <el-tag v-else-if="row.currentBillStatus === 'processing'" type="warning" size="mini">审批中</el-tag>
-              <el-tag v-else-if="row.currentBillStatus === 'canceled'" type="info" size="mini">已撤销</el-tag>
-              <el-tag v-else size="mini">{{ row.currentBillStatus || '—' }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="approveTime" label="审批时间" width="170" align="center" />
-          <el-table-column label="操作" align="center" width="100" class-name="small-padding fixed-width">
-            <template slot-scope="{ row }">
-              <el-button type="text" size="mini" icon="el-icon-view" @click="openDetailReadOnly(row)">查看</el-button>
-            </template>
-          </el-table-column>
-        </template>
-
-        <!-- 待办列 -->
-        <template v-else>
-          <el-table-column label="待办类型" width="110" align="center">
-            <template slot-scope="{ row }">
-              <el-tag v-if="row.bizType === 'work_order'" type="warning" effect="light">工单</el-tag>
-              <el-tag v-else-if="row.bizType === 'workflow'" type="primary" effect="light">审批</el-tag>
-              <el-tag v-else type="success" effect="light">点检</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="bizNo" label="业务编号" width="160" show-overflow-tooltip align="center" />
-          <el-table-column prop="title" label="待办事项" min-width="200" show-overflow-tooltip align="center" />
-          <el-table-column prop="deviceName" label="关联设备" min-width="150" show-overflow-tooltip align="center">
-            <template slot-scope="{ row }">{{ row.deviceName || '—' }}</template>
-          </el-table-column>
-          <el-table-column prop="source" label="来源" width="140" show-overflow-tooltip align="center" />
-          <el-table-column prop="statusText" label="状态" width="110" align="center">
-            <template slot-scope="{ row }">
-              <el-tag :type="row.statusTag || (row.statusText === '待派单' ? 'danger' : (row.statusText === '待执行' ? 'primary' : 'warning'))"
-                      size="mini">{{ row.statusText }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="createTime" label="创建时间" width="170" align="center" />
-          <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
-            <template slot-scope="{ row }">
-              <el-button v-if="row.bizType === 'workflow'" type="text" size="mini"
-                         icon="el-icon-s-check" @click="openApprove(row)">去审批</el-button>
-              <el-button v-else-if="row.bizType === 'work_order'" type="text" size="mini"
-                         icon="el-icon-s-order" @click="goWorkOrder">去处理</el-button>
-              <el-button v-else type="text" size="mini"
-                         icon="el-icon-s-check" @click="goInspection">去处理</el-button>
-            </template>
-          </el-table-column>
-        </template>
+      <!-- 历史已办 -->
+      <el-table key="doneTable" v-if="query.type === 'done'" v-loading="loading" :data="list" border stripe>
+        <el-table-column prop="bizId" label="业务编号" width="150" show-overflow-tooltip align="center" />
+        <el-table-column prop="title" label="审批标题" min-width="160" show-overflow-tooltip align="center" />
+        <el-table-column label="流程" width="110" show-overflow-tooltip align="center">
+          <template slot-scope="{ row }">{{ row.flowName || row.flowCode || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="applyUserName" label="发起人" width="100" align="center" />
+        <el-table-column label="我的结果" width="80" align="center">
+          <template slot-scope="{ row }">
+            <status-tag :text="row.actionText || row.skipType || '—'"
+                        :type="row.actionTag || (row.skipType === 'PASS' ? 'success' : (row.skipType === 'REJECT' ? 'danger' : 'info'))" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="myComment" label="我的意见" min-width="130" show-overflow-tooltip align="center">
+          <template slot-scope="{ row }">{{ row.myComment || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="单据当前状态" width="110" align="center">
+          <template slot-scope="{ row }">
+            <status-tag :text="row.currentStatusText || billStatusText(row.currentBillStatus)"
+                        :type="row.currentStatusTag || billStatusTag(row.currentBillStatus)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="审批时间" width="165" align="center">
+          <template slot-scope="{ row }">{{ formatTime(row.approveTime) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" align="center" width="80" class-name="small-padding fixed-width">
+          <template slot-scope="{ row }">
+            <el-button type="text" size="mini" icon="el-icon-view" @click="openDetailReadOnly(row)">查看</el-button>
+          </template>
+        </el-table-column>
       </el-table>
+
+      <!-- 待办（仅审批） -->
+      <el-table key="todoTable" v-else v-loading="loading" :data="list" border stripe>
+        <el-table-column prop="bizNo" label="业务编号" width="150" show-overflow-tooltip align="center" />
+        <el-table-column prop="title" label="审批标题" min-width="180" show-overflow-tooltip align="center" />
+        <el-table-column label="流程" width="120" show-overflow-tooltip align="center">
+          <template slot-scope="{ row }">{{ row.flowName || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="applyUserName" label="发起人" width="100" align="center" />
+        <el-table-column label="当前节点" width="130" show-overflow-tooltip align="center">
+          <template slot-scope="{ row }">{{ row.nodeName || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90" align="center">
+          <template slot-scope="{ row }">
+            <status-tag :text="row.statusText || '审批中'" :type="row.statusTag || 'warning'" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="createTime" label="提交时间" width="165" align="center" />
+        <el-table-column label="操作" align="center" width="100" class-name="small-padding fixed-width">
+          <template slot-scope="{ row }">
+            <el-button type="text" size="mini" icon="el-icon-s-check" @click="openApprove(row)">去审批</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
       <pagination v-show="total > 0" :total="total" :page.sync="query.pageNum" :limit.sync="query.pageSize"
-                  @pagination="getList" />
+                  @pagination="handlePageChange" />
     </el-card>
 
     <!-- 审批弹窗 -->
@@ -140,21 +98,20 @@
       <el-descriptions :column="1" border v-if="approveDetail.bill">
         <el-descriptions-item label="审批标题">{{ approveDetail.bill.title }}</el-descriptions-item>
         <el-descriptions-item label="业务单号">{{ approveDetail.bill.bizId }}</el-descriptions-item>
-        <el-descriptions-item label="流程">{{ approveDetail.bill.flowName }}（{{ approveDetail.bill.flowCode }}）</el-descriptions-item>
+        <el-descriptions-item label="流程">{{ approveDetail.bill.flowName || approveDetail.bill.flowCode }}（{{ approveDetail.bill.flowCode }}）</el-descriptions-item>
         <el-descriptions-item label="发起人">{{ approveDetail.bill.applyUserName }}</el-descriptions-item>
         <el-descriptions-item label="当前节点">{{ approveDetail.bill.currentNode || '—' }}</el-descriptions-item>
         <el-descriptions-item label="备注">{{ approveDetail.bill.remark || '—' }}</el-descriptions-item>
       </el-descriptions>
 
-      <!-- 流程轨迹 -->
+      <!-- 审批轨迹 -->
       <div v-if="approveDetail.history && approveDetail.history.length" style="margin-top:16px">
         <div style="font-weight:600;margin-bottom:8px">审批轨迹</div>
         <el-timeline>
           <el-timeline-item v-for="(h, idx) in approveDetail.history" :key="idx"
-                            :timestamp="h.createTime" placement="top">
-            <el-tag size="mini" :type="h.skipType === 'PASS' ? 'success' : (h.skipType === 'REJECT' ? 'danger' : 'info')">
-              {{ h.nodeName }}
-            </el-tag>
+                            :timestamp="formatTime(h.createTime)" placement="top">
+            <status-tag :text="h.actionText || h.nodeName" :type="h.actionTag || 'info'" />
+            <span style="margin-left:8px;font-weight:600">{{ h.nodeName }}</span>
             <div style="margin-top:4px;font-size:13px;color:#666">
               处理人：{{ h.approver || '—' }}
               <span v-if="h.message">　意见：{{ h.message }}</span>
@@ -186,25 +143,23 @@
 </template>
 
 <script>
-import { getTodoStats, listTodo } from '@/api/todo/todo'
 import { listMyTodo, listMyDone, getBillDetail, approveFlow } from '@/api/workflow/workflow'
 import Pagination from '@/components/Pagination'
-
-const FLOW_STATUS_TEXT = {
-  TOBESUBMIT: '待提交', APPROVAL: '审批中', PASS: '已通过', REJECT: '已驳回',
-  TERMINATE: '已终止', CANCEL: '已撤销', RETRIEVE: '已撤回', FINISHED: '已完成'
-}
+import StatusTag from '@/components/StatusTag'
+import { billStatusText as statusTextOf, billStatusTag as statusTagOf } from '@/utils/workflowStatus'
 
 export default {
   name: 'Todo',
-  components: { Pagination },
+  components: { Pagination, StatusTag },
   data() {
     return {
       loading: false,
       list: [],
       total: 0,
-      stats: { workOrderPending: 0, workOrderMine: 0, inspectionTodo: 0, workflowTodo: 0, total: 0 },
-      query: { type: 'all', pageNum: 1, pageSize: 10 },
+      // 待办全量缓存（myTodo 接口暂未分页，前端切片展示）
+      todoAll: [],
+      stats: { workflowTodo: 0, doneTotal: 0 },
+      query: { type: 'workflow', pageNum: 1, pageSize: 10 },
       approveVisible: false,
       approveLoading: false,
       approveComment: '',
@@ -219,18 +174,18 @@ export default {
   },
   methods: {
     getStats() {
-      getTodoStats().then(data => {
-        this.stats = Object.assign({}, this.stats, data || {})
-      })
-      // 审批待办数量单独取（引擎层接口）
+      // 待我审批：引擎待办数组长度
       listMyTodo().then(data => {
         this.stats.workflowTodo = (data || []).length
+      }).catch(() => {})
+      // 历史已办：取分页总数（pageSize=1 只取 total，避免拉全量）
+      listMyDone({ pageNum: 1, pageSize: 1 }).then(data => {
+        this.stats.doneTotal = (data && data.total) || 0
       }).catch(() => {})
     },
     getList() {
       this.loading = true
       if (this.query.type === 'done') {
-        // 历史已办
         listMyDone({ pageNum: this.query.pageNum, pageSize: this.query.pageSize }).then(data => {
           this.list = (data && data.rows) || []
           this.total = (data && data.total) || 0
@@ -238,44 +193,54 @@ export default {
         }).catch(() => { this.loading = false })
         return
       }
-      if (this.query.type === 'workflow') {
-        listMyTodo().then(data => {
-          this.list = (data || []).map(t => ({
-            bizType: 'workflow',
-            bizNo: t.businessId || '',
-            title: t.title || t.flowName || '',
-            deviceName: '',
-            source: t.flowName || '',
-            statusText: FLOW_STATUS_TEXT[t.flowStatus] || t.flowStatus || '审批中',
-            statusTag: t.flowStatus === 'APPROVAL' ? 'primary' : 'warning',
-            createTime: t.createTime || '',
-            billId: t.billId,
-            taskId: t.taskId
-          }))
-          this.total = this.list.length
-          this.loading = false
-        }).catch(() => { this.loading = false })
-      } else {
-        listTodo(this.query).then(data => {
-          this.list = data.rows || []
-          this.total = data.total || 0
-          this.loading = false
-        }).catch(() => { this.loading = false })
-      }
+      // 待办：myTodo 返回全量，前端按页码切片
+      listMyTodo().then(data => {
+        this.todoAll = (data || []).map(t => ({
+          bizNo: t.businessId || '',
+          title: t.title || t.flowName || '',
+          flowName: t.flowName || '',
+          nodeName: t.nodeName || '',
+          applyUserName: t.applyUserName || '',
+          statusText: t.statusText || '审批中',
+          statusTag: t.statusTag || 'warning',
+          createTime: t.createTime || '',
+          billId: t.billId,
+          taskId: t.taskId
+        }))
+        this.total = this.todoAll.length
+        // 总待办统计同步
+        this.stats.workflowTodo = this.total
+        this.sliceTodoPage()
+        this.loading = false
+      }).catch(() => { this.loading = false })
+    },
+    sliceTodoPage() {
+      const from = (this.query.pageNum - 1) * this.query.pageSize
+      this.list = this.todoAll.slice(from, from + this.query.pageSize)
     },
     handleSearch() {
       this.query.pageNum = 1
       this.getList()
     },
+    handlePageChange() {
+      if (this.query.type === 'done') {
+        this.getList()
+      } else {
+        this.sliceTodoPage()
+      }
+    },
     handleRefresh() {
       this.getStats()
       this.getList()
     },
-    goWorkOrder() {
-      this.$router.push('/workorder/order')
+    billStatusText(code) {
+      return statusTextOf(code)
     },
-    goInspection() {
-      this.$router.push('/inspection/task')
+    billStatusTag(code) {
+      return statusTagOf(code)
+    },
+    formatTime(value) {
+      return value ? String(value).replace('T', ' ') : '—'
     },
     openApprove(row) {
       this.readOnlyMode = false

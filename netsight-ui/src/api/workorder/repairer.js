@@ -43,3 +43,21 @@ export function delRepairer(id) {
     method: 'delete'
   }).then(res => res.data)
 }
+
+// 维修人员新增页的选人候选
+export function listRepairerUserOptions(query) {
+  return request({
+    url: '/workorder/repairer/user-options',
+    method: 'get',
+    params: query
+  }).then(res => res.data)
+}
+
+// 给存量维修人员补建账号
+export function bindRepairerAccount(id, data) {
+  return request({
+    url: '/workorder/repairer/' + id + '/account',
+    method: 'post',
+    data: data
+  }).then(res => res.data)
+}

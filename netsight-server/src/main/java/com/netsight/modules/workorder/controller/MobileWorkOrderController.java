@@ -13,10 +13,10 @@ import com.netsight.modules.workorder.entity.Repairer;
 import com.netsight.modules.workorder.entity.WorkOrder;
 import com.netsight.modules.workorder.entity.WorkOrderPart;
 import com.netsight.modules.workorder.entity.WorkOrderRecord;
-import com.netsight.modules.workorder.mapper.RepairerMapper;
 import com.netsight.modules.workorder.mapper.WorkOrderMapper;
 import com.netsight.modules.workorder.mapper.WorkOrderPartMapper;
 import com.netsight.modules.workorder.mapper.WorkOrderRecordMapper;
+import com.netsight.modules.workorder.service.RepairerAccountResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,25 +41,15 @@ public class MobileWorkOrderController {
     private final WorkOrderMapper orderMapper;
     private final WorkOrderRecordMapper recordMapper;
     private final WorkOrderPartMapper orderPartMapper;
-    private final RepairerMapper repairerMapper;
+    private final RepairerAccountResolver repairerAccountResolver;
     private final SparePartMapper sparePartMapper;
 
     /**
-     * 当前登录用户对应的维修人员（按手机号匹配）
+     * 当前登录用户对应的维修人员（统一走 RepairerAccountResolver：
+     * JWT repairerId → userId → 存量手机号）
      */
-    private Repairer currentRepairer() {
-        String phone = SecurityUtils.getLoginUser().getPhone();
-        if (!StringUtils.hasText(phone)) {
-            throw new ServiceException(500, "当前账号未绑定维修人员手机号");
-        }
-        Repairer repairer = repairerMapper.selectOne(new LambdaQueryWrapper<Repairer>()
-                .eq(Repairer::getPhone, phone)
-                .eq(Repairer::getTenantId, SecurityUtils.getTenantId())
-                .last("LIMIT 1"));
-        if (repairer == null) {
-            throw new ServiceException(500, "当前账号未关联维修人员档案，请联系管理员");
-        }
-        return repairer;
+    Repairer currentRepairer() {
+        return repairerAccountResolver.resolve(SecurityUtils.getLoginUser());
     }
 
     /**

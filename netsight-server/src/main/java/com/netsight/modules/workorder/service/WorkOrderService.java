@@ -12,6 +12,8 @@ import com.netsight.modules.alert.entity.NotificationContact;
 import com.netsight.modules.alert.entity.NotificationRule;
 import com.netsight.modules.alert.mapper.NotificationContactMapper;
 import com.netsight.modules.alert.mapper.NotificationRuleMapper;
+import com.netsight.modules.system.entity.SysUser;
+import com.netsight.modules.system.mapper.SysUserMapper;
 import com.netsight.modules.workorder.constant.WorkOrderStatus;
 import com.netsight.modules.workorder.entity.Repairer;
 import com.netsight.modules.workorder.entity.WorkOrder;
@@ -62,6 +64,7 @@ public class WorkOrderService {
     private final WorkOrderNotifier notifier;
     private final WorkflowService workflowService;
     private final ApprovalBillMapper approvalBillMapper;
+    private final SysUserMapper sysUserMapper;
 
     /** 工单完工验收流程（租户未发布时走原有直接完工逻辑，保持向后兼容） */
     public static final String FLOW_WORKORDER_ACCEPT = "work_order_accept";
@@ -405,6 +408,7 @@ public class WorkOrderService {
         if (!order.getTenantId().equals(repairer.getTenantId())) {
             throw new ServiceException(500, "维修人员与工单不属于同一租户，请重新选择");
         }
+        validateRepairerAccount(repairer);
         // 1. 更新工单
         order.setStatus(1);
         order.setRepairerId(repairerId);
@@ -553,6 +557,28 @@ public class WorkOrderService {
     }
 
     // ==================== 内部 ====================
+
+    /**
+     * 派单前校验维修员是否拥有可登录账号。
+     * 存量 type=0 且未绑定账号的档案保留可派，避免历史工单无法流转。
+     */
+    void validateRepairerAccount(Repairer repairer) {
+        if (repairer.getUserId() != null) {
+            SysUser user = sysUserMapper.selectById(repairer.getUserId());
+            if (user == null) {
+                throw new ServiceException(500, "维修人员账号不存在，请重新选择");
+            }
+            if (user.getStatus() == null || user.getStatus() != 1) {
+                throw new ServiceException(500, "该维修人员账号已被禁用，无法接单");
+            }
+        }
+        if (repairer.getRepairerType() != null
+                && repairer.getRepairerType() == 2
+                && repairer.getUserId() == null) {
+            throw new ServiceException(500,
+                    "该外聘维修人员未绑定登录账号，无法 H5 接单，请先补建账号");
+        }
+    }
 
     /**
      * 工单变更实时推送（前端工单列表/大屏看板刷新）

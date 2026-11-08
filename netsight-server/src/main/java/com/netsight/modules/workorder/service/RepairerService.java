@@ -1,6 +1,7 @@
 package com.netsight.modules.workorder.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.netsight.common.core.PageResult;
 import com.netsight.common.exception.ServiceException;
@@ -247,6 +248,14 @@ public class RepairerService {
                 && existing.getRepairerType() == RepairerType.EXTERNAL
                 && existing.getUserId() != null) {
             sysUserService.disableRepairerAccountIfOnlyRole(existing.getUserId());
+        }
+        // 软删（del_flag=2）的墓碑行仍占用 uk_repairer_user(tenant_id,user_id)，
+        // 后续用内聘/补建重新绑定同一用户时 countBound 看不到墓碑行会放行，进而触发 DB 唯一键冲突。
+        // 删除前先把 user_id 置空以释放唯一键（updateById 对 null 字段默认不写，故用 UpdateWrapper 显式 SET）。
+        if (existing.getUserId() != null) {
+            repairerMapper.update(null, new LambdaUpdateWrapper<Repairer>()
+                    .eq(Repairer::getId, id)
+                    .set(Repairer::getUserId, null));
         }
         repairerMapper.deleteById(id);
     }

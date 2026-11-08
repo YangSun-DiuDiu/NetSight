@@ -1,6 +1,7 @@
 package com.netsight.modules.workorder.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.netsight.common.exception.ServiceException;
 import com.netsight.framework.security.LoginUser;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -29,6 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -178,7 +183,7 @@ class RepairerServiceTest {
     }
 
     @Test
-    void removeExternalRepairerDisablesAccountWhenOnlyRepairerRole() {
+    void removeExternalRepairerDisablesAccountBeforeClearingBindingThenSoftDeletes() {
         Repairer existing = new Repairer();
         existing.setId(102L);
         existing.setTenantId(14L);
@@ -189,8 +194,48 @@ class RepairerServiceTest {
 
         service.removeRepairer(102L);
 
-        verify(sysUserService).disableRepairerAccountIfOnlyRole(99L);
-        verify(repairerMapper).deleteById(102L);
+        // 外聘：先禁用账号，再把 user_id 置空释放唯一键，最后软删
+        ArgumentCaptor<LambdaUpdateWrapper<Repairer>> wrapperCaptor = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        InOrder inOrder = inOrder(sysUserService, repairerMapper);
+        inOrder.verify(sysUserService).disableRepairerAccountIfOnlyRole(99L);
+        inOrder.verify(repairerMapper).update(isNull(Repairer.class), wrapperCaptor.capture());
+        inOrder.verify(repairerMapper).deleteById(102L);
+        assertTrue(wrapperCaptor.getValue().getSqlSet().contains("user_id"));
+    }
+
+    @Test
+    void removeInternalBoundRepairerClearsUserIdBeforeSoftDeleteWithoutDisablingAccount() {
+        Repairer existing = new Repairer();
+        existing.setId(103L);
+        existing.setTenantId(14L);
+        existing.setRepairerType(1); // 内聘
+        existing.setUserId(22L);
+        existing.setStatus(1);
+        when(repairerMapper.selectOne(any())).thenReturn(existing);
+
+        service.removeRepairer(103L);
+
+        ArgumentCaptor<LambdaUpdateWrapper<Repairer>> wrapperCaptor = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(repairerMapper).update(isNull(Repairer.class), wrapperCaptor.capture());
+        verify(repairerMapper).deleteById(103L);
+        verify(sysUserService, never()).disableRepairerAccountIfOnlyRole(any());
+        assertTrue(wrapperCaptor.getValue().getSqlSet().contains("user_id"));
+    }
+
+    @Test
+    void removeUnboundRepairerSkipsUserIdClearAndSoftDeletes() {
+        Repairer existing = new Repairer();
+        existing.setId(104L);
+        existing.setTenantId(14L);
+        existing.setRepairerType(0);
+        existing.setUserId(null);
+        existing.setStatus(1);
+        when(repairerMapper.selectOne(any())).thenReturn(existing);
+
+        service.removeRepairer(104L);
+
+        verify(repairerMapper, never()).update(any(), any());
+        verify(repairerMapper).deleteById(104L);
     }
 
     @Test

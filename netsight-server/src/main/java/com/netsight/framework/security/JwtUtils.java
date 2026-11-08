@@ -41,7 +41,7 @@ public class JwtUtils {
     public String createToken(LoginUser loginUser) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expireMinutes * 60 * 1000);
-        return Jwts.builder()
+        io.jsonwebtoken.JwtBuilder builder = Jwts.builder()
                 .subject(String.valueOf(loginUser.getUserId()))
                 .claim("username", loginUser.getUsername())
                 .claim("realName", loginUser.getRealName())
@@ -51,9 +51,11 @@ public class JwtUtils {
                 .claim("roles", loginUser.getRoles() == null ? new java.util.HashSet<>() : loginUser.getRoles())
                 .claim("permissions", loginUser.getPermissions() == null ? new java.util.HashSet<>() : loginUser.getPermissions())
                 .issuedAt(now)
-                .expiration(expiry)
-                .signWith(key)
-                .compact();
+                .expiration(expiry);
+        if (loginUser.getRepairerId() != null) {
+            builder.claim("repairerId", loginUser.getRepairerId());
+        }
+        return builder.signWith(key).compact();
     }
 
     /**

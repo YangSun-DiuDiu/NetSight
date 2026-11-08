@@ -93,6 +93,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         loginUser.setRealName(claims.get("realName", String.class));
         loginUser.setPhone(claims.get("phone", String.class));
         loginUser.setTenantId(claims.get("tenantId", Long.class));
+        Object repairerId = claims.get("repairerId");
+        if (repairerId instanceof Number number) {
+            loginUser.setRepairerId(number.longValue());
+        }
         loginUser.setClientType(claims.get("clientType", String.class));
         // 角色与权限从 JWT Claims 恢复（骨架阶段方案；生产可切换 Redis 缓存用户权限）
         // JJWT 反序列化 JSON 数组为 List，需转 Set

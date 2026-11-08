@@ -10,7 +10,7 @@ import com.netsight.modules.system.mapper.SysRolePermissionMapper;
 import com.netsight.modules.system.mapper.SysUserMapper;
 import com.netsight.modules.system.mapper.SysUserRoleMapper;
 import com.netsight.modules.workorder.entity.Repairer;
-import com.netsight.modules.workorder.mapper.RepairerMapper;
+import com.netsight.modules.workorder.service.RepairerAccountResolver;
 import com.netsight.modules.alert.channel.ChannelRegistry;
 import com.netsight.modules.alert.channel.NotificationChannelSender;
 import com.netsight.modules.alert.channel.SendRequest;
@@ -49,7 +49,7 @@ public class AuthService {
     private final StringRedisTemplate redisTemplate;
     private final NotifyChannelService notifyChannelService;
     private final ChannelRegistry channelRegistry;
-    private final RepairerMapper repairerMapper;
+    private final RepairerAccountResolver repairerAccountResolver;
 
     /** 验证码 Redis Key 前缀 */
     private static final String SMS_CODE_KEY = "netsight:sms:code:";
@@ -141,41 +141,70 @@ public class AuthService {
      * 手机号 + 验证码登录
      */
     public Map<String, Object> loginByPhone(String phone, String code, String clientType) {
-        // 1. 校验验证码
         String redisKey = SMS_CODE_KEY + phone;
         String savedCode = redisTemplate.opsForValue().get(redisKey);
         if (savedCode == null || !savedCode.equals(code)) {
             throw new ServiceException(ResultCode.VERIFY_CODE_ERROR);
         }
-        // 2. 验证码一次性使用，校验后删除
         redisTemplate.delete(redisKey);
-        // 3. 按手机号查用户
-        SysUser user = sysUserMapper.selectOne(new LambdaQueryWrapper<SysUser>()
+
+        List<SysUser> users = sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getPhone, phone)
-                .last("LIMIT 1"));
-        if (user == null) {
+                .orderByAsc(SysUser::getId));
+        if (users.isEmpty()) {
             throw new ServiceException(ResultCode.PASSWORD_ERROR);
         }
-        if (user.getStatus() == null || user.getStatus() == 0) {
-            throw new ServiceException(ResultCode.USER_DISABLED);
-        }
-        // 4. H5 维修端登录前置校验：clientType='m' 时必须已关联维修人员档案
+
+        SysUser user;
+        Repairer repairer = null;
         if ("m".equals(clientType)) {
-            Repairer repairer = repairerMapper.selectOne(new LambdaQueryWrapper<Repairer>()
-                    .eq(Repairer::getPhone, phone)
-                    .eq(Repairer::getTenantId, user.getTenantId())
-                    .last("LIMIT 1"));
-            if (repairer == null) {
+            List<LoginCandidate> candidates = new java.util.ArrayList<>();
+            for (SysUser candidateUser : users) {
+                List<Repairer> bound = repairerAccountResolver.listBound(
+                        candidateUser.getTenantId(), candidateUser.getId());
+                List<Repairer> legacy = bound.isEmpty()
+                        ? repairerAccountResolver.listLegacyByPhone(
+                                candidateUser.getTenantId(), candidateUser.getPhone())
+                        : List.of();
+                for (Repairer candidateRepairer : bound) {
+                    candidates.add(new LoginCandidate(candidateUser, candidateRepairer));
+                }
+                for (Repairer candidateRepairer : legacy) {
+                    candidates.add(new LoginCandidate(candidateUser, candidateRepairer));
+                }
+            }
+            if (candidates.isEmpty()) {
                 throw new ServiceException(500, "当前账号未关联维修人员档案，请联系管理员");
             }
+            if (candidates.size() > 1) {
+                throw new ServiceException(500, "手机号关联多个维修人员账号，请联系管理员处理");
+            }
+            user = candidates.get(0).user();
+            repairer = candidates.get(0).repairer();
+            if (user.getStatus() == null || user.getStatus() != 1) {
+                throw new ServiceException(500, "当前账号已被禁用，请联系管理员");
+            }
+            repairerAccountResolver.assertUsable(repairer);
+        } else {
+            List<SysUser> enabled = users.stream()
+                    .filter(item -> item.getStatus() != null && item.getStatus() == 1)
+                    .toList();
+            if (enabled.isEmpty()) {
+                throw new ServiceException(ResultCode.USER_DISABLED);
+            }
+            if (enabled.size() > 1) {
+                throw new ServiceException(500, "手机号关联多个账号，请联系管理员");
+            }
+            user = enabled.get(0);
         }
-        // 5. 构造 LoginUser 并签发 Token
+
         LoginUser loginUser = new LoginUser();
         loginUser.setUserId(user.getId());
         loginUser.setUsername(user.getUsername());
         loginUser.setRealName(user.getRealName());
         loginUser.setPhone(user.getPhone());
         loginUser.setTenantId(user.getTenantId());
+        loginUser.setRepairerId(repairer == null ? null : repairer.getId());
         // 从数据库加载真实角色与权限：sys_user_role -> sys_role -> sys_role_permission -> sys_permission
         Set<String> roles = loadRoles(user.getId());
         loginUser.setRoles(roles);
@@ -189,6 +218,9 @@ public class AuthService {
         result.put("token", token);
         result.put("user", loginUser);
         return result;
+    }
+
+    private record LoginCandidate(SysUser user, Repairer repairer) {
     }
 
     /**

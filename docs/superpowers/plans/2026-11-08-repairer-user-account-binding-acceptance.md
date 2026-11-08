@@ -67,3 +67,22 @@
 - repairer：id=13(已绑用户22)、id=14(张三，已删)、id=15(存量乙)、id=18(李四)；work_order 193 派给李四。
 - sys_user：id=81(张三账号，已禁用)、id=82(禁用用户)、id=83(无号用户)。
 - 项15 的同号双档案临时数据已在验收后清理。
+
+## 6. 验收后修复与回归（提交 0b448df）
+
+- 修复提交：0b448df「fix: 删除维修档案时释放绑定唯一键并注明升级脚本只执行一次」。
+- 修复内容：removeRepairer 在禁用外聘账号后、deleteById 之前，用 LambdaUpdateWrapper 显式把该行 user_id 置空，释放 uk_repairer_user(tenant_id,user_id)，避免软删墓碑行导致重新绑定同一用户时触发 DB 唯一键冲突（裸 Duplicate entry 500）。
+- 重新部署：mvn clean package -DskipTests 重新构建，新 jar 构建时间 2026-11-08 13:03:09（110,598,636 字节）；远端旧 jar 备份为 netsight-server.jar.bak-20261108-fix；start.sh 重启后 Started NetsightApplication in 11.127s，无 WeakKeyException / BeanCreationException。
+- 升级 SQL 说明：本次仅在头部追加一次性执行说明，表结构未变，无需在测试库重跑。
+
+回归项（均在测试 115.159.194.149 实测）：
+
+| 回归项 | 结果 | 证据 |
+|---|---|---|
+| 项6 外聘建号成功 | 通过 | 创建外聘王五(id=19, phone=19900000011)，生成 sys_user(ext_14_6e1zy4ml, id=87)，档案 repairer_type=2 |
+| 项17 删除外聘 | 通过 | 删除 id=19：墓碑 del_flag=2、账号 id=87 status=0，H5 登录 19900000011 → “当前账号未关联维修人员档案” |
+| 修复直接验证（删除后重新绑定无 Duplicate entry） | 通过 | 墓碑 id=19 的 user_id 已被置空(NULL)；重启用账号 87(status=1) 后以 userId=87 内聘绑定 → code=200 新建档案 id=20(user_id=87, repairer_type=1)，未出现 Duplicate entry 裸 500 |
+| 项1 内聘绑定 | 通过 | 同上内聘绑定 userId=87 成功 |
+
+构造方式：先建外聘王五(phone=19900000011)→删除（触发修复路径）→确认墓碑 user_id=NULL→重启用该账号→再做内聘绑定，复现“删除后重新绑定同一用户”场景并验证唯一键已释放。
+

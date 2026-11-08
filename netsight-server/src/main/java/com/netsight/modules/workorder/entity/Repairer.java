@@ -1,5 +1,6 @@
 package com.netsight.modules.workorder.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.netsight.common.core.BaseEntity;
 import lombok.Data;
@@ -18,6 +19,12 @@ public class Repairer extends BaseEntity {
 
     /** 维修人员编号 REP+时间戳+随机 */
     private String repairerNo;
+
+    /** 绑定系统用户ID（sys_user.id） */
+    private Long userId;
+
+    /** 人员类型 1内聘 2外聘 0存量未分类 */
+    private Integer repairerType;
 
     /** 姓名 */
     private String name;
@@ -42,4 +49,12 @@ public class Repairer extends BaseEntity {
 
     /** 备注 */
     private String remark;
+
+    /** 列表回填：登录账号（非表字段） */
+    @TableField(exist = false)
+    private String loginUsername;
+
+    /** 列表回填：账号状态 1正常 0禁用（非表字段） */
+    @TableField(exist = false)
+    private Integer userStatus;
 }

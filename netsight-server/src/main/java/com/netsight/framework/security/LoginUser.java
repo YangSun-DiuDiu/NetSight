@@ -39,6 +39,9 @@ public class LoginUser implements UserDetails, Serializable {
     /** 所属租户ID（数据隔离关键字段） */
     private Long tenantId;
 
+    /** 当前登录人对应的维修档案ID（repairer.id），由 H5 端 JWT 携带；旧 token 可能为空 */
+    private Long repairerId;
+
     /** 角色编码列表 */
     private Set<String> roles;
 

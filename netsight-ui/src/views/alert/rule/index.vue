@@ -296,7 +296,7 @@ export default {
       return ch ? ch.channelName : ('渠道#' + cid)
     },
     channelTypeName(t) {
-      const map = { aliyun_sms: '阿里云短信', tencent_sms: '腾讯云短信', dingtalk: '钉钉', wechat_work: '企业微信群', wechat_app: '企业微信应用', feishu: '飞书', serverchan: 'Server酱', pushplus: 'PushPlus', email: '邮件', webhook: 'Webhook' }
+      const map = { aliyun_sms: '阿里云短信', tencent_sms: '腾讯云短信', dingtalk: '钉钉', wechat_work: '企业微信群', wechat_app: '企业微信应用', wechat: '微信公众号', feishu: '飞书', serverchan: 'Server酱', pushplus: 'PushPlus', email: '邮件', webhook: 'Webhook' }
       return map[t] || t
     },
     channelTagType(cid) {

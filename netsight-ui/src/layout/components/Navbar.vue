@@ -110,7 +110,7 @@ import Screenfull from '@/components/Screenfull'
 import SizeSelect from '@/components/SizeSelect'
 import Search from '@/components/HeaderSearch'
 import { listPublishedNotice, getUnreadNoticeCount, getNotice } from '@/api/notice/notice'
-import { getTodoStats } from '@/api/todo/todo'
+import { listMyTodo } from '@/api/workflow/workflow'
 
 export default {
   emits: ['setLayout'],
@@ -203,10 +203,10 @@ export default {
     levelText(level) {
       return level === 'urgent' ? '紧急' : (level === 'important' ? '重要' : '普通')
     },
-    // 统一待办：角标统计 + 跳转
+    // 统一待办：角标只统计审批待办
     loadTodo() {
-      getTodoStats().then(res => {
-        this.todoTotal = Number((res && res.total) || 0)
+      listMyTodo().then(res => {
+        this.todoTotal = (res || []).length
       }).catch(() => {})
     },
     goTodo() {

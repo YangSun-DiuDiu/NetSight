@@ -66,7 +66,7 @@
         </el-table-column>
         <el-table-column prop="approvalStatus" label="状态" width="110" align="center">
           <template slot-scope="{ row }">
-            <el-tag :type="statusTag(row.approvalStatus)" size="mini">{{ statusText(row.approvalStatus) }}</el-tag>
+            <status-tag :text="statusText(row.approvalStatus)" :type="statusTag(row.approvalStatus)" />
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="发起时间" width="170" align="center" />
@@ -84,9 +84,10 @@
         <el-descriptions-item label="审批标题">{{ detail.bill.title }}</el-descriptions-item>
         <el-descriptions-item label="业务类型">{{ bizTypeText(detail.bill.bizType) }}</el-descriptions-item>
         <el-descriptions-item label="业务单号">{{ detail.bill.bizId }}</el-descriptions-item>
-        <el-descriptions-item label="流程">{{ detail.bill.flowName }}（{{ detail.bill.flowCode }}）</el-descriptions-item>
+        <el-descriptions-item label="流程">{{ detail.bill.flowName || detail.bill.flowCode }}</el-descriptions-item>
         <el-descriptions-item label="状态">
-          <el-tag :type="statusTag(detail.bill.approvalStatus)" size="mini">{{ statusText(detail.bill.approvalStatus) }}</el-tag>
+          <status-tag :text="detail.statusText || statusText(detail.bill.approvalStatus)"
+                      :type="detail.statusTag || statusTag(detail.bill.approvalStatus)" />
         </el-descriptions-item>
         <el-descriptions-item label="当前节点">{{ detail.bill.currentNode || '—' }}</el-descriptions-item>
         <el-descriptions-item label="备注">{{ detail.bill.remark || '—' }}</el-descriptions-item>
@@ -100,8 +101,8 @@
           placement="top"
         >
           <div class="his-item">
-            <b>{{ h.nodeName || h.nodeCode }}</b>
-            <span class="his-op">{{ h.handlerType || h.flowStatus || '' }}</span>
+            <status-tag :text="h.actionText || h.handlerType || '—'" :type="h.actionTag || 'info'" />
+            <b style="margin-left:8px">{{ h.nodeName || h.nodeCode }}</b>
             <span class="his-op">{{ h.message || '' }}</span>
           </div>
         </el-timeline-item>
@@ -113,6 +114,7 @@
 
 <script>
 import { listMyStarted, getBillDetail } from '@/api/workflow/workflow'
+import StatusTag from '@/components/StatusTag'
 
 const BIZ_TYPES = {
   out_stock: '备件出库',
@@ -133,6 +135,7 @@ const STATUS_MAP = {
 
 export default {
   name: 'WorkflowStarted',
+  components: { StatusTag },
   data() {
     return {
       loading: false,

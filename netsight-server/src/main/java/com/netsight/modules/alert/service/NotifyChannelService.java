@@ -73,6 +73,14 @@ public class NotifyChannelService {
                     field("corpSecret", "应用 Secret", "password", true),
                     field("toUser", "默认接收人(@all 可选)", "text", false)
             )),
+            // 微信公众号（服务号）模板消息：我方主动推送，接收人为联系人的 wechat_openid
+            meta("wechat", "微信公众号（模板消息）", List.of(
+                    field("appId", "AppID", "text", true),
+                    field("appSecret", "AppSecret", "password", true),
+                    field("templateId", "模板 ID", "text", true),
+                    field("url", "点击跳转地址", "text", false,
+                            "模板消息点击后跳转的地址，默认 http://www.netsightplus.cn/m/orders（移动端待接单列表）")
+            )),
             meta("feishu", "飞书群机器人", List.of(
                     field("webhook", "Webhook 地址", "text", true),
                     field("secret", "签名密钥", "password", false)

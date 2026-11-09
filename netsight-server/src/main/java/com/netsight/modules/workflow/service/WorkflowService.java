@@ -666,6 +666,15 @@ public class WorkflowService {
             item.put("title", bill == null ? task.getBusinessId() : bill.getTitle());
             item.put("bizType", bill == null ? null : bill.getBizType());
             item.put("applyUserName", bill == null ? null : bill.getApplyUserName());
+            // 引擎 task 上的 businessId/flowName 可能为空，用审批单字段兜底，避免待办列表出现空列
+            if (bill != null) {
+                if (item.get("businessId") == null) {
+                    item.put("businessId", bill.getBizId());
+                }
+                if (item.get("flowName") == null) {
+                    item.put("flowName", bill.getFlowName() == null ? bill.getFlowCode() : bill.getFlowName());
+                }
+            }
         }
         // 待办一律是"审批中"，但仍按统一模型输出，避免前端再出现裸数字
         WorkflowStatus status = WorkflowStatus.resolve(task.getFlowStatus(),

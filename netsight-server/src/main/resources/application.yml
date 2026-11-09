@@ -129,15 +129,21 @@ netsight:
     api-key: ${DEEPSEEK_API_KEY:}
     api-url: ${DEEPSEEK_API_URL:https://api.deepseek.com/chat/completions}
     model: ${DEEPSEEK_MODEL:deepseek-chat}
-    # 超时与重试（connect 5s / read 30s / 指数退避重试 2 次）
-    connect-timeout-ms: 5000
-    read-timeout-ms: 30000
-    max-retries: 2
+    # 超时与重试（同步交互：connect 3s / read 15s / 默认不重试；最坏 18s 内返回）
+    connect-timeout-ms: ${AI_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AI_READ_TIMEOUT_MS:15000}
+    max-retries: ${AI_MAX_RETRIES:0}
+    # 并发舱壁与熔断：单实例最多 10 个并发；连续 5 次失败熔断 60s
+    max-concurrent: ${AI_MAX_CONCURRENT:10}
+    failure-threshold: ${AI_FAILURE_THRESHOLD:5}
+    open-seconds: ${AI_OPEN_SECONDS:60}
+    # 单租户每日模型调用上限（0=不限制），用于 P0 成本兜底
+    daily-call-limit: ${AI_DAILY_CALL_LIMIT:200}
     # RAG 检索条数与问答缓存（同租户同问题）
     knowledge-topk: 5
     answer-cache-minutes: 10
-    # 数据脱敏：true=设备名/IP 出域前打码（生产建议开）
-    mask-sensitive: ${AI_MASK_SENSITIVE:false}
+    # 数据脱敏：true=设备名/IP/手机号出域前打码（生产默认开）
+    mask-sensitive: ${AI_MASK_SENSITIVE:true}
     # 费用估算单价（元/百万 tokens，deepseek-chat 官方价）
     price-input-per-m: 0.5
     price-output-per-m: 2

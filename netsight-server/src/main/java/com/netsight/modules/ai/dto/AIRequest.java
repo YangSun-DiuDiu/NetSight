@@ -26,4 +26,16 @@ public class AIRequest {
 
     /** 能力标识：knowledge_ask */
     private String feature;
+
+    /** 发起用户ID（审计用，可空） */
+    private Long userId;
+
+    /** 关联工单ID（审计用，可空） */
+    private Long orderId;
+
+    /** 请求链路ID（审计/排障用） */
+    private String requestId;
+
+    /** 提示词版本（审计用） */
+    private String promptVersion;
 }

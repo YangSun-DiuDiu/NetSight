@@ -13,6 +13,9 @@ public class AiAskRequest {
     /** 故障现象/问题（必填，作为检索关键词与 user prompt 主体） */
     private String question;
 
+    /** 工单ID（可选，用于审计关联；H5 从路由带入） */
+    private Long orderId;
+
     /** 设备名称（工单自动带入） */
     private String deviceName;
 

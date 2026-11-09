@@ -39,10 +39,11 @@
             block
             class="ai-btn"
             :loading="aiLoading"
-            :disabled="!order.deviceName && !aiForm.question"
+            :disabled="aiLoading || !aiForm.question.trim()"
             @click="aiAsk"
           >AI 分析</van-button>
         </div>
+        <div class="ai-disclaimer">AI 建议仅供参考，请以现场确认结果为准；涉及带电操作请按安全规程执行。</div>
 
         <div class="ai-result" v-if="aiResult">
           <div class="ai-badge" :class="aiBadgeClass">{{ aiBadgeText }}</div>
@@ -279,18 +280,27 @@ export default {
       this.aiLoading = true
       const body = {
         question: question,
+        orderId: this.orderId,
         deviceName: this.order.deviceName || '',
         deviceType: this.order.deviceType || '',
         deviceLocation: this.order.deviceLocation || '',
         faultType: this.order.faultType || '',
         description: this.order.description || ''
       }
-      request.post('/ai/knowledge/ask', body).then(res => {
+      request.post('/ai/knowledge/ask', body, { timeout: 30000 }).then(res => {
         this.aiLoading = false
         this.aiResult = res.data
       }).catch(err => {
         this.aiLoading = false
-        Toast((err && err.msg) || 'AI 问诊失败，请稍后重试')
+        const status = err && err.response && err.response.status
+        const isTimeout = err && (err.code === 'ECONNABORTED' || (err.message || '').indexOf('timeout') >= 0)
+        let msg = err && err.msg
+        if (status === 403) {
+          msg = '无 AI 诊断权限，请联系管理员开通'
+        } else if (isTimeout) {
+          msg = 'AI 响应超时，请重试或查看知识库原文'
+        }
+        Toast(msg || 'AI 问诊失败，请稍后重试')
       })
     },
     loadParts() {
@@ -617,6 +627,12 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ai-disclaimer {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-subtle);
 }
 
 /* Upload section */

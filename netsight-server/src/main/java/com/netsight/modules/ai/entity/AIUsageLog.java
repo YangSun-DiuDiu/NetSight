@@ -19,6 +19,15 @@ public class AIUsageLog extends BaseEntity {
     /** 所属租户ID */
     private Long tenantId;
 
+    /** 发起用户ID（可空，H5 维修员） */
+    private Long userId;
+
+    /** 关联工单ID（可空） */
+    private Long orderId;
+
+    /** 请求链路ID（用于日志/工单/调用记录关联） */
+    private String requestId;
+
     /** 能力标识：knowledge_ask（阶段1仅知识库问诊） */
     private String feature;
 
@@ -33,6 +42,12 @@ public class AIUsageLog extends BaseEntity {
 
     /** 估算费用（元） */
     private BigDecimal costYuan;
+
+    /** 本次调用耗时（毫秒） */
+    private Integer latencyMs;
+
+    /** 提示词版本 */
+    private String promptVersion;
 
     /** 调用状态 success/timeout/failed */
     private String status;

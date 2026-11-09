@@ -28,6 +28,8 @@
           v-model="aiForm.question"
           rows="3"
           type="textarea"
+          maxlength="500"
+          show-word-limit
           label="故障现象"
           placeholder="可补充或修改故障现象，例如：指示灯不亮、网络不通、无法开门…"
           class="ai-input"
@@ -275,6 +277,10 @@ export default {
       const question = (this.aiForm.question || '').trim()
       if (!question) {
         Toast('请描述故障现象')
+        return
+      }
+      if (question.length > 500) {
+        Toast('故障描述请精简到 500 字以内')
         return
       }
       this.aiLoading = true

@@ -32,7 +32,7 @@
 | `netsight-server/src/main/java/com/netsight/modules/ai/KnowledgeAskService.java` | 缓存读写 try/catch；缓存 key 改 SHA-256 且含设备上下文；关键词为空即 `noHit`；按 `deviceType` 软过滤；租户日额度；问题/上下文/知识库字段截断；服务层设备名/位置脱敏；prompt 注入防护；纯文本输出 | 解决缓存故障、检索退化、成本、脱敏、注入、展示不一致 |
 | `netsight-server/src/main/java/com/netsight/modules/ai/CloudModelClient.java` | 超时默认 3s/15s、重试 0；并发 Semaphore；连续失败熔断 60s；审计补字段与 latency；脱敏覆盖全部 IPv4/手机号/身份证/中文设备名 | 避免 108s 长尾、雪崩、审计不足、数据出域 |
 | `netsight-server/src/main/resources/application.yml` | `netsight.ai.*` 默认值与环境变量：`AI_CONNECT_TIMEOUT_MS=3000`、`AI_READ_TIMEOUT_MS=15000`、`AI_MAX_RETRIES=0`、`AI_MAX_CONCURRENT=10`、`AI_FAILURE_THRESHOLD=5`、`AI_OPEN_SECONDS=60`、`AI_DAILY_CALL_LIMIT=200`、`AI_MASK_SENSITIVE=true` | 配置化，生产可按环境覆盖 |
-| `netsight-ui/src/views/m/order-detail.vue` | 请求单独 `timeout:30000`；body 增加 `orderId`；按钮按 loading/空问题禁用；403/超时错误提示；免责声明 | 前端不再 10s 误杀；提示可定位；合规提示 |
+| `netsight-ui/src/views/m/order-detail.vue` | 请求单独 `timeout:30000`；body 增加 `orderId`；按钮按 loading/空问题禁用；textarea `maxlength=500`；403/超时错误提示；免责声明 | 前端不再 10s 误杀；提示可定位；输入有边界；合规提示 |
 | `docs/sql/ai_p0_migration.sql` | 新增审计字段、`ai:diagnose` 权限、租户 7 知识库种子 | DB 侧一次性迁移 |
 | `docs/sql/ai_p0_data.sql` | 权限与种子数据（可重复执行，不含 ALTER） | 结构已迁移时补数据 |
 | `deploy/apply_ai_p0_115.py` | 备份相关表 → 执行迁移/补数据 → 回读 → 更新 `nams.env` | 测试环境可重复执行 |
@@ -86,7 +86,7 @@ python deploy/verify_ai_p0_115.py --no-e2e   # 只做结构检查
 - [x] 租户 7 知识库条目 > 0（实测 17 条启用）。
 - [x] `nams.env` 已显式设置脱敏/重试/读超时。
 - [x] 线上 jar 含 `AiController.class`。
-- [x] 前端产物含「AI 建议仅供参考」「AI 响应超时」。
+- [x] 前端产物含「AI 建议仅供参考」「AI 响应超时」与 500 字输入限制。
 - [x] `/actuator/health` 200。
 - [x] H5 维修员登录成功，`POST /ai/knowledge/ask` 返回 200、有 answer、非 noHit。
 - [x] 最新 `ai_usage_log` 含 `request_id` 与 `knowledge_ask_v1`。
@@ -112,30 +112,31 @@ python deploy/verify_ai_p0_115.py --no-e2e   # 只做结构检查
 - 检索仍为 `LIKE`，P1 再上 IK/全文索引/向量+rerank。
 - 当前无 AI 单测；建议后续用 WireMock 覆盖成功/超时/5xx/空 choices/usage 缺失/429/跨租户隔离/降级。
 
-## 8. 本轮执行结果（2026-11-10 05:21 CST，测试环境 115）
+## 8. 本轮执行结果（2026-11-10 05:31 CST，测试环境 115）
 
 **构建**
 - 后端：`mvn clean package -DskipTests` 成功（187 源文件，`target/netsight-server.jar` 110,603,389 B，MD5 `60b51276147b293a7c804c2652165a3b`）。
-- 前端：`npm run build:prod` 成功（9 个历史 warning，非本次引入；`chunk-acee6814.b4b44965.js` 同时含免责/超时文案）。
+- 前端：`npm run build:prod` 成功（9 个历史 warning，非本次引入；产物含免责/超时/500 字限制文案）。
 
 **SQL / 配置**
 - 执行前备份：`/opt/nams-server/ai-p0-backup-20261110-052046.sql`（37,330 B；`mysqldump` 报 PROCESS 权限 warning，表数据已导出）。
 - `ai_usage_log` 新增 5 字段 + 索引；`ai:diagnose` 权限 id=159，已授 `repairer(role_id=4)`；租户 7 复制 17 条启用知识库。
 - `/opt/nams-server/nams.env` 备份 `nams.env.bak-20261110-052046` 后显式写入 8 个 AI 配置：`AI_MASK_SENSITIVE=true`、`AI_CONNECT_TIMEOUT_MS=3000`、`AI_READ_TIMEOUT_MS=15000`、`AI_MAX_RETRIES=0`、`AI_MAX_CONCURRENT=10`、`AI_FAILURE_THRESHOLD=5`、`AI_OPEN_SECONDS=60`、`AI_DAILY_CALL_LIMIT=200`；`DEEPSEEK_API_KEY` 原值未改、未打印。
 
-**部署**
-- 后端：`/opt/nams-server/netsight-server.jar`（MD5 双端一致）；旧 jar 备份 `/opt/nams-server/netsight-server.jar.bak-ai-p0-20261110-052101`；新 PID 1452675；`/actuator/health` 200。
-- 前端：`/opt/nams-ui/dist`（tar 3,609,519 B，MD5 `e3af8283d2641627bf14d5a14e2e5f48`）；旧 dist 备份 `/opt/nams-ui/dist.bak-ai-p0-20261110-052101`。
+**部署（05:30:04 二次发布，仅前端变化）**
+- 后端：`/opt/nams-server/netsight-server.jar`（MD5 双端一致）；旧 jar 备份 `/opt/nams-server/netsight-server.jar.bak-ai-p0-20261110-053004`；新 PID 1456101；`/actuator/health` 200。
+- 前端：`/opt/nams-ui/dist`（tar 3,610,356 B，MD5 `62f48f7fc9fb23e554d99ab2e6796f32`）；旧 dist 备份 `/opt/nams-ui/dist.bak-ai-p0-20261110-053004`。
+- 首次部署备份保留：`netsight-server.jar.bak-ai-p0-20261110-052101`、`dist.bak-ai-p0-20261110-052101`。
 
 **验收（`verify_ai_p0_115.py` 全部 PASS）**
-- 结构/权限/配置/产物/健康全部通过。
+- 结构/权限/配置/产物/健康全部通过（含新增的 500 字限制产物检查）。
 - H5 维修员 `15657477316` 短信登录成功；`POST /prod-api/ai/knowledge/ask` 返回 200、`aiUsed=true`、`noHit=false`、`sources=1`。
-- `ai_usage_log` 最新行：`tenant=7 / user=5 / order=0 / requestId=0a7998b7-... / latency=2118ms / prompt_version=knowledge_ask_v1 / success`。
-- 缓存复测：同一问题第 1 次 `fromCache=false`，第 2 次 `fromCache=true`（`deploy/check_ai_cache_115.py`）。
+- `ai_usage_log` 最新行：`tenant=7 / user=5 / order=0 / requestId=480fdb94-... / latency=2661ms / prompt_version=knowledge_ask_v1 / success`。
+- 缓存复测（二次发布后）：同一问题第 1 次 `fromCache=false`，第 2 次 `fromCache=true`（`deploy/check_ai_cache_115.py`）。
 - 运行日志：`app.log` 最近 AI 调用均为 `success`，无 `ERROR/Exception`。
 
 **未做 / 未验证**
 - 未触碰生产 `1.94.26.126` / `netsight-producton`。
-- 未做浏览器目视验收（H5 页面按钮/免责声明为构建产物字符串核验 + API E2E，未截图）。
-- 未提交 git；未推送远端。
+- 未做浏览器目视验收（H5 页面按钮/免责声明/字数限制为构建产物字符串核验 + API E2E，未截图）。
+- 已提交 git（首版 `638f519`；本次前端 500 字限制与文档回填见后续提交），未推送远端。
 - 未覆盖模型超时/5xx/429/熔断/额度耗尽等故障注入场景；这些需 P1 WireMock/混沌测试。

@@ -117,6 +117,8 @@ def main():
         check("前端产物含 AI 免责声明", front.strip().isdigit() and int(front) > 0, "files=" + front)
         front_to = run(cli, "grep -R -l 'AI 响应超时' /opt/nams-ui/dist/static/js 2>/dev/null | wc -l")
         check("前端产物含 AI 超时提示", front_to.strip().isdigit() and int(front_to) > 0, "files=" + front_to)
+        front_len = run(cli, "grep -R -l '故障描述请精简到 500 字以内' /opt/nams-ui/dist/static/js 2>/dev/null | wc -l")
+        check("前端产物含 500 字输入限制", front_len.strip().isdigit() and int(front_len) > 0, "files=" + front_len)
 
         # 6. 健康
         health = run(cli, "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/actuator/health || echo 000")

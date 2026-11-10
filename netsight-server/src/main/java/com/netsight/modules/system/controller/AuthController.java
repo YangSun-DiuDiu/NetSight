@@ -48,7 +48,8 @@ public class AuthController {
     @Log(module = "系统认证", action = "用户登录")
     @RateLimit(key = "phone,ip", limit = 5, window = 60, message = "登录尝试过于频繁，请1分钟后再试")
     public R<Map<String, Object>> login(@RequestBody @Validated LoginRequest request) {
-        return R.ok(authService.loginByPhone(request.getPhone(), request.getCode(), request.getClientType()));
+        return R.ok(authService.loginByPhone(request.getPhone(), request.getCode(),
+                request.getClientType(), request.getWechatBindTicket()));
     }
 
     /**
@@ -83,5 +84,8 @@ public class AuthController {
          * m：维修人员H5移动端（会额外校验维修人员档案）
          */
         private String clientType = "pc";
+
+        /** 微信网页授权 bindTicket；为空表示普通登录 */
+        private String wechatBindTicket;
     }
 }

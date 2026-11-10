@@ -6,6 +6,7 @@ import com.netsight.framework.security.JwtUtils;
 import com.netsight.framework.security.LoginUser;
 import com.netsight.modules.alert.channel.ChannelRegistry;
 import com.netsight.modules.alert.service.NotifyChannelService;
+import com.netsight.modules.alert.wechat.WechatBindingService;
 import com.netsight.modules.system.entity.SysUser;
 import com.netsight.modules.system.mapper.SysRolePermissionMapper;
 import com.netsight.modules.system.mapper.SysUserMapper;
@@ -41,6 +42,7 @@ class AuthServiceTest {
     @Mock private NotifyChannelService notifyChannelService;
     @Mock private ChannelRegistry channelRegistry;
     @Mock private RepairerAccountResolver repairerAccountResolver;
+    @Mock private WechatBindingService wechatBindingService;
 
     private AuthService service;
 
@@ -48,7 +50,7 @@ class AuthServiceTest {
     void setUp() {
         service = new AuthService(sysUserMapper, sysUserRoleMapper, sysRolePermissionMapper,
                 jwtUtils, redisTemplate, notifyChannelService, channelRegistry,
-                repairerAccountResolver);
+                repairerAccountResolver, wechatBindingService);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(anyString())).thenReturn("123456");
     }

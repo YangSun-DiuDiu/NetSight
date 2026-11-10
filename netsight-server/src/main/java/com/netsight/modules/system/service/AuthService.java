@@ -16,12 +16,15 @@ import com.netsight.modules.alert.channel.NotificationChannelSender;
 import com.netsight.modules.alert.channel.SendRequest;
 import com.netsight.modules.alert.channel.SendResult;
 import com.netsight.modules.alert.service.NotifyChannelService;
+import com.netsight.modules.alert.wechat.WechatBindResult;
+import com.netsight.modules.alert.wechat.WechatBindingService;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.util.Date;
@@ -50,6 +53,7 @@ public class AuthService {
     private final NotifyChannelService notifyChannelService;
     private final ChannelRegistry channelRegistry;
     private final RepairerAccountResolver repairerAccountResolver;
+    private final WechatBindingService wechatBindingService;
 
     /** 验证码 Redis Key 前缀 */
     private static final String SMS_CODE_KEY = "netsight:sms:code:";
@@ -141,6 +145,13 @@ public class AuthService {
      * 手机号 + 验证码登录
      */
     public Map<String, Object> loginByPhone(String phone, String code, String clientType) {
+        return loginByPhone(phone, code, clientType, null);
+    }
+
+    /**
+     * 手机号 + 验证码登录；可选微信 bindTicket 在登录成功后追加绑定，绑定失败不影响登录。
+     */
+    public Map<String, Object> loginByPhone(String phone, String code, String clientType, String wechatBindTicket) {
         String redisKey = SMS_CODE_KEY + phone;
         String savedCode = redisTemplate.opsForValue().get(redisKey);
         if (savedCode == null || !savedCode.equals(code)) {
@@ -217,6 +228,19 @@ public class AuthService {
         Map<String, Object> result = new HashMap<>();
         result.put("token", token);
         result.put("user", loginUser);
+        if (StringUtils.hasText(wechatBindTicket)) {
+            try {
+                result.put("wechatBind", wechatBindingService.bindByTicket(
+                        loginUser.getTenantId(), phone, wechatBindTicket));
+            } catch (Exception e) {
+                log.warn("微信绑定失败，不影响登录: {}", e.getMessage());
+                result.put("wechatBind", WechatBindResult.builder().bound(false)
+                        .reason("BIND_ERROR").message("微信绑定失败，请稍后重试或联系管理员。").build());
+            }
+        } else {
+            result.put("wechatBind", WechatBindResult.builder().bound(false)
+                    .reason("NO_TICKET").message("").build());
+        }
         return result;
     }
 

@@ -159,6 +159,14 @@
         <finalName>netsight-server</finalName>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- JDK21 下允许 Mockito/ByteBuddy 自附加，避免 Could not self-attach 偶发失败 -->
+                    <argLine>-Djdk.attach.allowAttachSelf=true</argLine>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>

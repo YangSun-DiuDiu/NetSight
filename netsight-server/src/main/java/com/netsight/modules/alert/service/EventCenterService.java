@@ -26,6 +26,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
@@ -96,8 +98,20 @@ public class EventCenterService {
         }
         eventMapper.insert(event);
         Long eventId = event.getId();
-        // 异步处理（通过 Spring 代理调用，确保 @Async 生效落到 eventExecutor 线程池，不阻塞调用方）
-        selfProvider.getObject().asyncProcess(eventId);
+        // 异步处理必须等事务提交后再触发：REQUIRES_NEW 的提交发生在方法返回后，
+        // 若在事务内直接调用，异步线程 selectById 可能读不到未提交的事件而直接返回，
+        // 事件会永久停留在 pending。注册 afterCommit 回调可消除该竞态。
+        Runnable dispatch = () -> selfProvider.getObject().asyncProcess(eventId);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    dispatch.run();
+                }
+            });
+        } else {
+            dispatch.run();
+        }
         return eventId;
     }
 

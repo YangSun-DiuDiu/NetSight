@@ -114,6 +114,11 @@ netsight:
         app-id: ${WECHAT_APP_ID:}
         app-secret: ${WECHAT_APP_SECRET:}
         template-id: ${WECHAT_TEMPLATE_ID:}
+        # 模板消息点击跳转地址（渠道实例 config_json.url 优先）
+        jump-url: ${WECHAT_JUMP_URL:http://www.netsightplus.cn/m/orders}
+        timeout-ms: ${WECHAT_TIMEOUT_MS:5000}
+        # 微信网页授权外部基址：需在公众号后台配置该域名，并由反向代理转发 /prod-api/**
+        oauth-public-base-url: ${WECHAT_OAUTH_PUBLIC_BASE_URL:https://api.netsightplus.cn/prod-api}
       # PushPlus 通道（租户级 Token：云端租户管理配置 sys_tenant.pushplus_token，发送时按事件租户取用）
       # 开发默认 mock；生产设环境变量 PUSHPLUS_MOCK=false + 租户配置真实 Token 即生效（代码层默认值亦为 false 兜底）
       pushplus:

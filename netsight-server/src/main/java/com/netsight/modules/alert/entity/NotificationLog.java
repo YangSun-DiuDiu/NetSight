@@ -32,6 +32,15 @@ public class NotificationLog extends BaseEntity {
     /** 发送通道：sms / wechat */
     private String channelType;
 
+    /** 渠道实例 ID */
+    private Long channelId;
+
+    /** 实际使用的模板 ID（微信公众号模板 ID） */
+    private String templateId;
+
+    /** 接收人逐人结果 JSON（微信公众号） */
+    private String recipientResultsJson;
+
     /** 接收人列表 JSON */
     private String receiversJson;
 

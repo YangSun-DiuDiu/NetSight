@@ -23,6 +23,9 @@ public class SendRequest {
     /** 已渲染好的通知内容（通道中心渲染后传入，适配器直接发送） */
     private String content;
 
+    /** 渠道实例 ID（日志审计与去重 key 使用，可为空） */
+    private Long channelId;
+
     /** 关联业务 ID（去重和追溯） */
     private String bizId;
 

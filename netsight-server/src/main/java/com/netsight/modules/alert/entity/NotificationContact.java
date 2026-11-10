@@ -5,6 +5,8 @@ import com.netsight.common.core.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 /**
  * 通知联系人（接收人）
  * 单独维护的人员通讯录：短信通道用 mobile 投递，公众号/小程序通道用 wechat_openid 投递；
@@ -24,8 +26,14 @@ public class NotificationContact extends BaseEntity {
     /** 手机号（短信通道投递地址） */
     private String mobile;
 
-    /** 微信openid（公众号/小程序通道投递地址，授权绑定后回填；本期预留） */
+    /** 微信openid（公众号/小程序通道投递地址，授权绑定后回填） */
     private String wechatOpenid;
+
+    /** 绑定的微信 AppID（openid 按 appId 隔离） */
+    private String wechatAppId;
+
+    /** 最近一次绑定时间 */
+    private LocalDateTime wechatBoundAt;
 
     /** 备注 */
     private String remark;

@@ -212,6 +212,11 @@ public class NotificationContactService {
         return list.size() == 1 ? list.get(0) : null;
     }
 
+    /** 计划约定的方法名：返回全部同手机号联系人（含停用），由绑定服务判定 0/1/多条 */
+    public List<NotificationContact> findByTenantAndPhone(Long tenantId, String phone) {
+        return listByTenantAndPhone(tenantId, phone);
+    }
+
     /** 按租户 + openid 查已绑定联系人（用于检测 openid 已绑其他联系人） */
     public NotificationContact findByTenantAndOpenid(Long tenantId, String openid, String appId) {
         if (tenantId == null || !StringUtils.hasText(openid)) {
@@ -224,6 +229,60 @@ public class NotificationContactService {
                         .eq(StringUtils.hasText(appId), NotificationContact::getWechatAppId, appId)
                         .last("LIMIT 1"));
         return list.isEmpty() ? null : list.get(0);
+    }
+
+    /** 按租户 + openid 查（不区分 appId） */
+    public NotificationContact findByTenantAndOpenid(Long tenantId, String openid) {
+        return findByTenantAndOpenid(tenantId, openid, null);
+    }
+
+    /** 绑定微信 openid（只更新已登记联系人，不新建） */
+    @Transactional(rollbackFor = Exception.class)
+    public void bindWechat(Long contactId, String openid, String appId) {
+        NotificationContact contact = contactMapper.selectById(contactId);
+        if (contact == null) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "联系人不存在");
+        }
+        NotificationContact update = new NotificationContact();
+        update.setId(contactId);
+        update.setWechatOpenid(openid);
+        update.setWechatAppId(appId);
+        update.setWechatBoundAt(java.time.LocalDateTime.now());
+        contactMapper.updateById(update);
+    }
+
+    /** 解绑微信 */
+    @Transactional(rollbackFor = Exception.class)
+    public void unbindWechat(Long contactId) {
+        NotificationContact contact = contactMapper.selectById(contactId);
+        if (contact == null) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "联系人不存在");
+        }
+        checkTenantPermission(contact.getTenantId());
+        NotificationContact update = new NotificationContact();
+        update.setId(contactId);
+        update.setWechatOpenid("");
+        update.setWechatAppId("");
+        contactMapper.updateById(update);
+    }
+
+    /** 按 ID 取联系人并校验当前租户权限 */
+    public NotificationContact getByIdChecked(Long contactId) {
+        NotificationContact contact = contactMapper.selectById(contactId);
+        if (contact == null) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "联系人不存在");
+        }
+        checkTenantPermission(contact.getTenantId());
+        return contact;
+    }
+
+    /** 按 ID + 指定租户取联系人（OAuth 回调无登录态时使用） */
+    public NotificationContact getByIdForTenant(Long contactId, Long tenantId) {
+        NotificationContact contact = contactMapper.selectById(contactId);
+        if (contact == null || tenantId == null || !tenantId.equals(contact.getTenantId())) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "联系人不存在");
+        }
+        return contact;
     }
 
     /** 租户全部联系人（绑定/管理页使用） */

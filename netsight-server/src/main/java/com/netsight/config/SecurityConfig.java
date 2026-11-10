@@ -51,6 +51,8 @@ public class SecurityConfig {
             "/edge/config/**",
             // AlertManager Webhook 接入（Header 密钥鉴权，非用户 JWT）
             "/alert/push",
+            // 微信公众号网页授权（微信回调无 JWT）
+            "/wechat/oauth/**",
             // 上传文件静态访问
             "/uploads/**",
             // 文件上传接口（需登录鉴权，但放行 OPTIONS）

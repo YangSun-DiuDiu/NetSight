@@ -180,6 +180,7 @@ public class NotifyChannelService {
             decryptConfig(cfg);
             Map<String, Object> item = new HashMap<>();
             item.put("channelId", id);
+            item.put("tenantId", c.getTenantId());
             item.put("channelType", c.getChannelType());
             item.put("channelName", c.getChannelName());
             item.put("config", cfg);

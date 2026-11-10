@@ -27,6 +27,8 @@ module.exports = {
   assetsDir: 'static',
   // 如果你不需要生产环境的 source map，可以将其设置为 false 以加速生产环境构建。
   productionSourceMap: false,
+  // 8GB 开发机多进程压缩会 Zone OOM，改为单进程构建以保证稳定出包
+  parallel: false,
   transpileDependencies: ['quill'],
   // webpack-dev-server 相关配置
   devServer: {

@@ -16,6 +16,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -130,6 +131,14 @@ public class NotificationContactService {
      * </ul>
      */
     public List<String> resolveReceiversByChannel(List<NotificationContact> contacts, String channelType) {
+        return resolveReceiversByChannel(contacts, channelType, null);
+    }
+
+    /**
+     * 按通道解析投递地址（wechat 可带 appId 过滤，避免跨公众号 openid 串用）
+     */
+    public List<String> resolveReceiversByChannel(List<NotificationContact> contacts,
+                                                  String channelType, String appId) {
         if (CollectionUtils.isEmpty(contacts)) {
             return Collections.emptyList();
         }
@@ -144,14 +153,19 @@ public class NotificationContactService {
                     .collect(Collectors.toList());
         }
         if (CHANNEL_WECHAT.equals(channelType)) {
-            List<String> openids = contacts.stream()
+            List<NotificationContact> bound = contacts.stream()
+                    .filter(c -> StringUtils.hasText(c.getWechatOpenid()))
+                    .filter(c -> !StringUtils.hasText(appId)
+                            || !StringUtils.hasText(c.getWechatAppId())
+                            || appId.equals(c.getWechatAppId()))
+                    .toList();
+            List<String> openids = bound.stream()
                     .map(NotificationContact::getWechatOpenid)
-                    .filter(StringUtils::hasText)
                     .distinct()
                     .collect(Collectors.toList());
-            int noOpenid = contacts.size() - openids.size();
+            int noOpenid = contacts.size() - bound.size();
             if (noOpenid > 0) {
-                log.warn("[通知联系人] {} 个联系人未绑定微信openid，公众号通道将跳过", noOpenid);
+                log.warn("[通知联系人] {} 个联系人未绑定微信openid或appId不匹配，公众号通道将跳过", noOpenid);
             }
             return openids;
         }
@@ -161,6 +175,64 @@ public class NotificationContactService {
                 .filter(StringUtils::hasText)
                 .distinct()
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * openid → 绑定的 appId 映射，供 sender 标记 app_id_mismatch。
+     */
+    public Map<String, String> resolveReceiverAppIds(List<NotificationContact> contacts,
+                                                     String channelType) {
+        if (CollectionUtils.isEmpty(contacts) || !CHANNEL_WECHAT.equals(channelType)) {
+            return Collections.emptyMap();
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        for (NotificationContact c : contacts) {
+            if (StringUtils.hasText(c.getWechatOpenid()) && StringUtils.hasText(c.getWechatAppId())) {
+                out.putIfAbsent(c.getWechatOpenid(), c.getWechatAppId());
+            }
+        }
+        return out;
+    }
+
+    /** 按租户 + 手机号查联系人（含停用，用于绑定判定 0/1/多条） */
+    public List<NotificationContact> listByTenantAndPhone(Long tenantId, String phone) {
+        if (tenantId == null || !StringUtils.hasText(phone)) {
+            return Collections.emptyList();
+        }
+        return contactMapper.selectList(new LambdaQueryWrapper<NotificationContact>()
+                .eq(NotificationContact::getTenantId, tenantId)
+                .eq(NotificationContact::getMobile, phone.trim()));
+    }
+
+    /** 按租户 + 手机号查唯一启用联系人；0 条或多条返回 null（避免绑错） */
+    public NotificationContact findByTenantAndPhoneUnique(Long tenantId, String phone) {
+        List<NotificationContact> list = listByTenantAndPhone(tenantId, phone).stream()
+                .filter(c -> c.getStatus() != null && c.getStatus() == 1)
+                .toList();
+        return list.size() == 1 ? list.get(0) : null;
+    }
+
+    /** 按租户 + openid 查已绑定联系人（用于检测 openid 已绑其他联系人） */
+    public NotificationContact findByTenantAndOpenid(Long tenantId, String openid, String appId) {
+        if (tenantId == null || !StringUtils.hasText(openid)) {
+            return null;
+        }
+        List<NotificationContact> list = contactMapper.selectList(
+                new LambdaQueryWrapper<NotificationContact>()
+                        .eq(NotificationContact::getTenantId, tenantId)
+                        .eq(NotificationContact::getWechatOpenid, openid)
+                        .eq(StringUtils.hasText(appId), NotificationContact::getWechatAppId, appId)
+                        .last("LIMIT 1"));
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    /** 租户全部联系人（绑定/管理页使用） */
+    public List<NotificationContact> getForTenant(Long tenantId) {
+        if (tenantId == null) {
+            return Collections.emptyList();
+        }
+        return contactMapper.selectList(new LambdaQueryWrapper<NotificationContact>()
+                .eq(NotificationContact::getTenantId, tenantId));
     }
 
     /**

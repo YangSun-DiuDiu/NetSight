@@ -233,18 +233,22 @@ public class SparePartService {
             event.setDeviceIp(part.getLocation());
             event.setDeviceType("spare_part");
             event.setLocation(part.getLocation());
-            event.setContent("备件[" + part.getPartNo() + "]当前库存 " + quantity + " " + part.getUnit()
-                    + "，低于安全库存 " + safeStock + " " + part.getUnit() + "，请及时补货");
+            event.setContent("备件[" + partName(part) + "/" + part.getPartNo() + "]当前库存 "
+                    + quantity + " " + part.getUnit() + "，低于安全库存 " + safeStock + " "
+                    + part.getUnit() + "，请及时补货");
             event.setRuleName("备件库存预警");
-            // 模板渲染变量（labels 合并进 buildVars）
+            // 模板渲染变量（labels 合并进 buildVars，下划线/驼峰双写兼容历史模板）
             try {
                 Map<String, Object> labels = new HashMap<>();
                 labels.put("partName", partName(part));
+                labels.put("part_name", partName(part));
                 labels.put("partNo", part.getPartNo());
+                labels.put("part_no", part.getPartNo());
                 labels.put("partType", part.getPartType() == null ? "" : part.getPartType());
                 labels.put("quantity", quantity);
                 labels.put("unit", part.getUnit() == null ? "" : part.getUnit());
                 labels.put("safeStock", safeStock);
+                labels.put("safe_stock", safeStock);
                 labels.put("location", part.getLocation() == null ? "" : part.getLocation());
                 event.setLabelsJson(OBJECT_MAPPER.writeValueAsString(labels));
             } catch (Exception ignored) {

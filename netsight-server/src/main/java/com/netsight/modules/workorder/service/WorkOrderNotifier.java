@@ -7,6 +7,7 @@ import com.netsight.modules.alert.entity.NotificationRule;
 import com.netsight.modules.alert.entity.NotificationTemplate;
 import com.netsight.modules.alert.mapper.NotificationTemplateMapper;
 import com.netsight.modules.alert.service.NotificationChannelService;
+import com.netsight.modules.alert.service.NotificationContactService;
 import com.netsight.modules.system.entity.SysTenant;
 import com.netsight.modules.system.mapper.SysTenantMapper;
 import com.netsight.modules.workorder.entity.Repairer;
@@ -34,6 +35,7 @@ public class WorkOrderNotifier {
     private final NotificationTemplateMapper templateMapper;
     private final NotificationChannelService channelService;
     private final SysTenantMapper tenantMapper;
+    private final NotificationContactService contactService;
 
     /**
      * 派单自动通知：复用事件中心通道中心（EventRecord + 临时规则模板 + 通道中心 dispatch）。
@@ -46,6 +48,7 @@ public class WorkOrderNotifier {
                             .eq(NotificationTemplate::getTemplateCode, "tpl_order_dispatch")
                             // 【加固】按工单所属租户过滤模板，防止不同租户模板串用（模板为租户级复制数据）
                             .eq(NotificationTemplate::getTenantId, order.getTenantId())
+                            .eq(NotificationTemplate::getEnabled, 1)
                             .last("LIMIT 1"));
             if (mainTemplate == null) {
                 log.warn("派单通知模板 tpl_order_dispatch 不存在，跳过通知");
@@ -70,23 +73,41 @@ public class WorkOrderNotifier {
 
             Map<String, Object> vars = new HashMap<>();
             vars.put("orderNo", order.getOrderNo());
+            vars.put("order_no", order.getOrderNo());
             vars.put("deviceName", order.getDeviceName() == null ? "" : order.getDeviceName());
+            vars.put("device_name", order.getDeviceName() == null ? "" : order.getDeviceName());
             vars.put("deviceIp", order.getDeviceIp() == null ? "" : order.getDeviceIp());
+            vars.put("device_ip", order.getDeviceIp() == null ? "" : order.getDeviceIp());
             vars.put("deviceType", order.getDeviceType() == null ? "" : order.getDeviceType());
+            vars.put("device_type", order.getDeviceType() == null ? "" : order.getDeviceType());
             vars.put("deviceLocation", order.getDeviceLocation() == null ? "" : order.getDeviceLocation());
-            vars.put("faultDesc", StringUtils.hasText(order.getDescription()) ? order.getDescription()
-                    : ("设备" + (order.getFaultType().equals("offline") ? "离线" : "链路异常")));
+            vars.put("device_location", order.getDeviceLocation() == null ? "" : order.getDeviceLocation());
+            String faultDesc = StringUtils.hasText(order.getDescription()) ? order.getDescription()
+                    : ("设备" + ("offline".equals(order.getFaultType()) ? "离线" : "链路异常"));
+            vars.put("faultDesc", faultDesc);
+            vars.put("fault_desc", faultDesc);
             vars.put("repairerName", repairer.getName());
+            vars.put("repairer_name", repairer.getName());
             vars.put("tenantName", resolveTenantName(order.getTenantId()));
+            vars.put("tenant_name", resolveTenantName(order.getTenantId()));
+            vars.put("content", order.getDescription() == null ? "" : order.getDescription());
 
-            // 构造联系人：维修人员只有手机号，封装为 NotificationContact。
-            // sms 通道按 mobile 发送；wechat 通道因未绑定 openid 自动跳过（记 warning）；pushplus 忽略接收人按租户 token 群发。
+            // 构造联系人：优先复用租户下与维修员手机号一致的已登记启用联系人（带 openid/appId），
+            // 查不到仍保留手机号走短信，不阻断工单、不自动创建联系人。
             List<NotificationContact> contacts = new ArrayList<>();
             if (StringUtils.hasText(repairer.getPhone())) {
-                NotificationContact c = new NotificationContact();
-                c.setName(repairer.getName());
-                c.setMobile(repairer.getPhone());
-                contacts.add(c);
+                NotificationContact matched = contactService
+                        .listByTenantAndPhone(order.getTenantId(), repairer.getPhone()).stream()
+                        .filter(c -> c.getStatus() != null && c.getStatus() == 1)
+                        .findFirst().orElse(null);
+                if (matched != null) {
+                    contacts.add(matched);
+                } else {
+                    NotificationContact c = new NotificationContact();
+                    c.setName(repairer.getName());
+                    c.setMobile(repairer.getPhone());
+                    contacts.add(c);
+                }
             }
             if (contacts.isEmpty()) {
                 log.warn("维修人员[{}]未配置手机号，派单通知跳过", repairer.getName());

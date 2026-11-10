@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import tools.jackson.databind.ObjectMapper;
 import com.netsight.modules.alert.channel.ChannelRegistry;
 import com.netsight.modules.alert.channel.NotificationChannelSender;
+import com.netsight.modules.alert.channel.RecipientResult;
 import com.netsight.modules.alert.channel.SendRequest;
 import com.netsight.modules.alert.channel.SendResult;
 import com.netsight.modules.alert.entity.EventRecord;
@@ -19,6 +20,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -31,6 +33,17 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class NotificationChannelService {
+
+    private static final Map<String, String> MANUAL_TEMPLATE_CODE = Map.ofEntries(
+            Map.entry("manual_notify", "tpl_manual"),
+            Map.entry("stock_low", "tpl_stock_low"),
+            Map.entry("order_dispatch", "tpl_order_dispatch"),
+            Map.entry("device_offline", "tpl_device_offline"),
+            Map.entry("device_line_abnormal", "tpl_device_line"),
+            Map.entry("device_recovered", "tpl_device_recovered"),
+            Map.entry("device_cpu_high", "tpl_device_cpu_high"),
+            Map.entry("device_mem_high", "tpl_device_mem_high")
+    );
 
     private final ChannelRegistry channelRegistry;
     private final NotificationTemplateMapper templateMapper;
@@ -93,7 +106,7 @@ public class NotificationChannelService {
             log.warn("模板组[{}]无启用模板，跳过发送", mainTemplate.getTemplateCode());
             return logs;
         }
-        List<String> doneChannelTypes = new ArrayList<>();
+        List<String> doneChannelKeys = new ArrayList<>();
         for (NotificationTemplate tpl : groupTemplates) {
             // 模板绑定了具体通道实例则用之；未绑（channelId 为空）则按通道类型自动选该租户默认启用实例
             Map<String, Object> ch = resolveChannelInstance(tpl, event.getTenantId());
@@ -102,17 +115,20 @@ public class NotificationChannelService {
                 continue;
             }
             String channelType = String.valueOf(ch.get("channelType"));
-            if (doneChannelTypes.contains(channelType)) {
+            String channelKey = channelKey(channelType, ch);
+            if (doneChannelKeys.contains(channelKey)) {
                 continue;
             }
-            List<String> channelReceivers = contactService.resolveReceiversByChannel(contacts, channelType);
+            List<String> channelReceivers = contactService.resolveReceiversByChannel(
+                    contacts, channelType, appIdOf(ch));
             NotificationLog logEntry = sendOneResolved(event, rule, tpl, channelType, channelReceivers, vars, extra, ch);
             logs.add(logEntry);
-            doneChannelTypes.add(channelType);
+            doneChannelKeys.add(channelKey);
 
             if (fallbackEnabled && logEntry.getSuccess() != null && logEntry.getSuccess() == 0
-                    && ("sms".equals(channelType) || channelType.endsWith("_sms"))
-                    && !doneChannelTypes.contains("wechat_work")) {
+                    && ("sms".equals(channelType) || channelType.endsWith("_sms")
+                    || channelType.endsWith("sms"))
+                    && !doneChannelKeys.contains("wechat_work#null")) {
                 log.warn("短信发送失败，自动降级企业微信重发 (eventId={})", event.getId());
                 for (NotificationTemplate wxTpl : groupTemplates) {
                     Map<String, Object> wxCh = resolveChannelInstance(wxTpl, event.getTenantId());
@@ -121,7 +137,7 @@ public class NotificationChannelService {
                     List<String> wxReceivers = contactService.resolveReceiversByChannel(contacts, "wechat_work");
                     NotificationLog fallback = sendOneResolved(event, rule, wxTpl, "wechat_work", wxReceivers, vars, extra, wxCh);
                     logs.add(fallback);
-                    doneChannelTypes.add("wechat_work");
+                    doneChannelKeys.add(channelKey("wechat_work", wxCh));
                     break;
                 }
             }
@@ -156,20 +172,22 @@ public class NotificationChannelService {
             return buildFailLog(event, rule, channelType, receivers, "通道未注册: " + channelType);
         }
         String rawContent = template == null ? null : template.getContent();
-        String content = rawContent != null
-                ? NotificationTemplateService.render(rawContent, vars)
-                : (vars != null && vars.get("content") != null ? String.valueOf(vars.get("content")) : "");
+        // 微信公众号的 content 是模板描述符 JSON，必须原样交给 sender 解析；渲染由 sender 完成
+        String sendContent = "wechat".equals(channelType) ? rawContent : renderContent(rawContent, vars);
         @SuppressWarnings("unchecked")
         Map<String, Object> chCfg = channelInstance == null ? null
                 : (Map<String, Object>) channelInstance.get("config");
+        Long channelId = channelIdOf(channelInstance);
+        Map<String, Object> sendExtra = buildExtra(extra);
         SendRequest request = SendRequest.builder()
                 .receiverList(receivers)
                 .contentVars(vars)
-                .content(content)
+                .content(sendContent)
+                .channelId(channelId)
                 .bizId(event.getBizId())
                 .tenantId(event.getTenantId())
                 .gatewayCode(parseGatewayCode(event.getLabelsJson()))
-                .extra(extra)
+                .extra(sendExtra)
                 .channelConfig(chCfg)
                 .build();
         RetrySendResult result = sendWithRetry(sender, request);
@@ -180,14 +198,20 @@ public class NotificationChannelService {
         logEntry.setRuleName(rule == null ? null : rule.getRuleName());
         logEntry.setEventType(event.getEventType());
         logEntry.setChannelType(channelType);
+        logEntry.setChannelId(channelId);
         logEntry.setReceiversJson(toJson(receivers));
-        logEntry.setContent(content);
+        logEntry.setContent(logContent(sendContent, result.sendResult));
         logEntry.setBizId(event.getBizId());
         logEntry.setSuccess(result.sendResult.isSuccess() ? 1 : 0);
         logEntry.setErrorMsg(result.sendResult.getErrorMsg());
         logEntry.setThirdPartyMsgId(result.sendResult.getThirdPartyMsgId());
+        logEntry.setTemplateId(result.sendResult.getTemplateId());
+        if (result.sendResult.getRecipientResults() != null) {
+            logEntry.setRecipientResultsJson(toJson(result.sendResult.getRecipientResults()));
+        }
         logEntry.setCostTime(result.sendResult.getCostTime());
-        logEntry.setRetryCount(result.retryCount);
+        logEntry.setRetryCount(result.sendResult.getRecipientResults() == null
+                ? result.retryCount : maxRecipientRetry(result.sendResult.getRecipientResults()));
         logMapper.insert(logEntry);
         return logEntry;
     }
@@ -202,26 +226,29 @@ public class NotificationChannelService {
         if (channelIds == null || channelIds.isEmpty()) {
             return logs;
         }
-        NotificationTemplate mainTemplate = null;
+        NotificationTemplate mainTemplate = findManualTemplate(event.getTenantId(), event.getEventType());
         // 按渠道实例 ID 解析实例配置（channelType + 解密后的 config）
         List<Map<String, Object>> channels = notifyChannelService.resolveChannels(channelIds);
-        List<String> doneChannelTypes = new ArrayList<>();
+        List<String> doneChannelKeys = new ArrayList<>();
         for (Map<String, Object> ch : channels) {
             String channelType = String.valueOf(ch.get("channelType"));
-            if (doneChannelTypes.contains(channelType)) {
+            String channelKey = channelKey(channelType, ch);
+            if (doneChannelKeys.contains(channelKey)) {
                 continue;
             }
             // 按通道解析投递地址：sms→联系人mobile，wechat→openid，pushplus→空（租户token群发）
-            List<String> channelReceivers = contactService.resolveReceiversByChannel(contacts, channelType);
+            List<String> channelReceivers = contactService.resolveReceiversByChannel(
+                    contacts, channelType, appIdOf(ch));
             NotificationLog logEntry = sendOne(event, null, mainTemplate, channelType,
                     channelReceivers, vars, extra, ch);
             logs.add(logEntry);
-            doneChannelTypes.add(channelType);
+            doneChannelKeys.add(channelKey);
 
             // 降级策略：短信发送失败自动降级为公众号，确保至少一个通道触达
             if (!logEntry.getSuccess().equals(1) && fallbackEnabled
-                    && ("sms".equals(channelType) || channelType.endsWith("_sms"))
-                    && !doneChannelTypes.contains("wechat_work")) {
+                    && ("sms".equals(channelType) || channelType.endsWith("_sms")
+                    || channelType.endsWith("sms"))
+                    && !doneChannelKeys.contains("wechat_work#null")) {
                 log.warn("短信发送失败，自动降级企业微信通道重发 (eventId={})", event.getId());
                 // 找租户启用的企业微信渠道实例重发
                 List<Map<String, Object>> wxChannels = notifyChannelService.resolveChannels(channelIds).stream()
@@ -232,7 +259,7 @@ public class NotificationChannelService {
                     NotificationLog fallback = sendOne(event, null, mainTemplate, "wechat_work",
                             wechatReceivers, vars, extra, wxCh);
                     logs.add(fallback);
-                    doneChannelTypes.add("wechat_work");
+                    doneChannelKeys.add(channelKey("wechat_work", wxCh));
                 }
             }
         }
@@ -261,27 +288,25 @@ public class NotificationChannelService {
         String rawContent = template == null
                 ? (mainTemplate == null ? null : mainTemplate.getContent())
                 : template.getContent();
-        String content;
-        if (rawContent != null) {
-            content = NotificationTemplateService.render(rawContent, vars);
-        } else if (vars != null && vars.get("content") != null) {
-            content = String.valueOf(vars.get("content"));
-        } else {
-            content = "";
-        }
+        // 微信公众号的 content 是模板描述符 JSON，必须原样交给 sender 解析
+        String sendContent = "wechat".equals(channelType)
+                ? rawContent : renderContent(rawContent, vars);
 
         // 3. 发送（失败自动重试，间隔递增）
         @SuppressWarnings("unchecked")
         Map<String, Object> chCfg = channelInstance == null ? null
                 : (Map<String, Object>) channelInstance.get("config");
+        Long channelId = channelIdOf(channelInstance);
+        Map<String, Object> sendExtra = buildExtra(extra);
         SendRequest request = SendRequest.builder()
                 .receiverList(receivers)
                 .contentVars(vars)
-                .content(content)
+                .content(sendContent)
+                .channelId(channelId)
                 .bizId(event.getBizId())
                 .tenantId(event.getTenantId())
                 .gatewayCode(parseGatewayCode(event.getLabelsJson()))
-                .extra(extra)
+                .extra(sendExtra)
                 .channelConfig(chCfg)
                 .build();
 
@@ -295,16 +320,91 @@ public class NotificationChannelService {
         logEntry.setRuleName(rule == null ? null : rule.getRuleName());
         logEntry.setEventType(event.getEventType());
         logEntry.setChannelType(channelType);
+        logEntry.setChannelId(channelId);
         logEntry.setReceiversJson(toJson(receivers));
-        logEntry.setContent(content);
+        logEntry.setContent(logContent(sendContent, result.sendResult));
         logEntry.setBizId(event.getBizId());
         logEntry.setSuccess(result.sendResult.isSuccess() ? 1 : 0);
         logEntry.setErrorMsg(result.sendResult.getErrorMsg());
         logEntry.setThirdPartyMsgId(result.sendResult.getThirdPartyMsgId());
+        logEntry.setTemplateId(result.sendResult.getTemplateId());
+        if (result.sendResult.getRecipientResults() != null) {
+            logEntry.setRecipientResultsJson(toJson(result.sendResult.getRecipientResults()));
+        }
         logEntry.setCostTime(result.sendResult.getCostTime());
-        logEntry.setRetryCount(result.retryCount);
+        logEntry.setRetryCount(result.sendResult.getRecipientResults() == null
+                ? result.retryCount : maxRecipientRetry(result.sendResult.getRecipientResults()));
         logMapper.insert(logEntry);
         return logEntry;
+    }
+
+    /**
+     * 手动发送按事件类型解析模板 code：manual_notify/stock_low/... 映射到 tpl_xxx，
+     * 其他事件直接用 eventType 作为 code；查不到返回 null 回落 vars.content。
+     */
+    private NotificationTemplate findManualTemplate(Long tenantId, String eventType) {
+        if (tenantId == null || eventType == null || eventType.isBlank()) {
+            return null;
+        }
+        String code = MANUAL_TEMPLATE_CODE.getOrDefault(eventType, eventType);
+        return templateMapper.selectOne(new LambdaQueryWrapper<NotificationTemplate>()
+                .eq(NotificationTemplate::getTemplateCode, code)
+                .eq(NotificationTemplate::getTenantId, tenantId)
+                .eq(NotificationTemplate::getEnabled, 1)
+                .last("LIMIT 1"));
+    }
+
+    private String channelKey(String channelType, Map<String, Object> ch) {
+        return channelType + "#" + channelIdOf(ch);
+    }
+
+    private String appIdOf(Map<String, Object> ch) {
+        if (ch == null || ch.get("config") == null) {
+            return null;
+        }
+        Object cfg = ch.get("config");
+        if (cfg instanceof Map<?, ?> map) {
+            Object appId = map.get("appId");
+            return appId == null ? null : String.valueOf(appId);
+        }
+        return null;
+    }
+
+    private Long channelIdOf(Map<String, Object> ch) {
+        if (ch == null || ch.get("channelId") == null) {
+            return null;
+        }
+        return ((Number) ch.get("channelId")).longValue();
+    }
+
+    private String renderContent(String rawContent, Map<String, Object> vars) {
+        if (rawContent != null) {
+            return NotificationTemplateService.render(rawContent, vars);
+        }
+        return vars != null && vars.get("content") != null
+                ? String.valueOf(vars.get("content")) : "";
+    }
+
+    private String logContent(String sendContent, SendResult result) {
+        if (result != null && result.getRenderedContent() != null
+                && !result.getRenderedContent().isBlank()) {
+            return result.getRenderedContent();
+        }
+        return sendContent == null ? "" : sendContent;
+    }
+
+    private int maxRecipientRetry(List<RecipientResult> results) {
+        int max = 0;
+        for (RecipientResult r : results) {
+            if (r.getRetryCount() > max) {
+                max = r.getRetryCount();
+            }
+        }
+        return max;
+    }
+
+    private Map<String, Object> buildExtra(Map<String, Object> extra) {
+        return extra == null ? new HashMap<>() : new HashMap<>(extra);
     }
 
     /**
@@ -332,7 +432,9 @@ public class NotificationChannelService {
         int[] intervals = parseIntervals();
         SendResult result = sender.send(request);
         int retry = 0;
-        while (!result.isSuccess() && retry < intervals.length) {
+        // 逐人发送的通道（recipientResults != null）已在 sender 内部按人重试，通道层不得整批重发
+        while (!result.isSuccess() && result.isRetryable() && result.getRecipientResults() == null
+                && retry < intervals.length) {
             retry++;
             log.warn("通道[{}]发送失败，第{}次重试: {}", sender.getChannelType(), retry, result.getErrorMsg());
             try {

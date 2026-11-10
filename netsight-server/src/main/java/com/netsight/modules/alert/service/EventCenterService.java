@@ -229,7 +229,7 @@ public class EventCenterService {
         }
         try {
             List<NotificationContact> contacts = contactService.resolveContacts(contactIds, event.getTenantId());
-            Map<String, Object> vars = new HashMap<>();
+            Map<String, Object> vars = new HashMap<>(buildVars(event));
             vars.put("content", content == null ? "" : content);
             List<NotificationLog> logs = channelService.dispatch(event, null, contacts, channels, vars, null);
             long failCount = logs.stream().filter(l -> l.getSuccess().equals(0)).count();

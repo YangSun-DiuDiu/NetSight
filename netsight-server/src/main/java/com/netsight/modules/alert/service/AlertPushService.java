@@ -37,14 +37,18 @@ public class AlertPushService {
     /**
      * alertname → event_type 映射（与 Prometheus 告警规则联动）
      */
-    private static final Map<String, String> ALERTNAME_MAP = Map.of(
-            "网络设备离线故障", "device_offline",
-            "设备离线", "device_offline",
-            "设备外线状态异常", "device_line_abnormal",
-            "外线异常", "device_line_abnormal",
-            "外线链路异常", "device_line_abnormal",
-            "故障恢复", "device_recovered",
-            "告警恢复", "device_recovered"
+    private static final Map<String, String> ALERTNAME_MAP = Map.ofEntries(
+            Map.entry("网络设备离线故障", "device_offline"),
+            Map.entry("设备离线", "device_offline"),
+            Map.entry("设备外线状态异常", "device_line_abnormal"),
+            Map.entry("外线异常", "device_line_abnormal"),
+            Map.entry("外线链路异常", "device_line_abnormal"),
+            Map.entry("故障恢复", "device_recovered"),
+            Map.entry("告警恢复", "device_recovered"),
+            Map.entry("CPU使用率过高", "device_cpu_high"),
+            Map.entry("CPU过高", "device_cpu_high"),
+            Map.entry("内存使用率过高", "device_mem_high"),
+            Map.entry("内存过高", "device_mem_high")
     );
 
     /**

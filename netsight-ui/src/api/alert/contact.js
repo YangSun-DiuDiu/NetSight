@@ -42,3 +42,29 @@ export function delContact(id) {
     method: 'delete'
   })
 }
+
+// 生成联系人微信绑定二维码
+export function getWechatBindUrl(id, channelId) {
+  return request({
+    url: `/alert/contact/${id}/wechat/bind-url`,
+    method: 'get',
+    params: { channelId }
+  })
+}
+
+// 轮询扫码绑定结果
+export function getWechatBindStatus(ticket) {
+  return request({
+    url: '/alert/contact/wechat/bind-status',
+    method: 'get',
+    params: { ticket }
+  })
+}
+
+// 解绑联系人微信
+export function unbindWechat(id) {
+  return request({
+    url: `/alert/contact/${id}/wechat/unbind`,
+    method: 'post'
+  })
+}

@@ -33,8 +33,8 @@
       <el-table-column label="手机号" prop="mobile" min-width="130" align="center" />
       <el-table-column label="微信openid" min-width="170" show-overflow-tooltip align="center">
         <template slot-scope="scope">
-          <span v-if="scope.row.wechatOpenid">{{ scope.row.wechatOpenid }}</span>
-          <el-tag v-else size="mini" type="info">未绑定（本期预留）</el-tag>
+          <span v-if="scope.row.wechatOpenid">{{ maskOpenid(scope.row.wechatOpenid) }}</span>
+          <el-tag v-else size="mini" type="info">未绑定</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="90" align="center">
@@ -43,9 +43,11 @@
         </template>
       </el-table-column>
       <el-table-column label="备注" prop="remark" min-width="160" show-overflow-tooltip  align="center"/>
-      <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="240" class-name="small-padding fixed-width">
         <template slot-scope="scope">
           <el-button v-hasPermi="['alert:contact:edit']" type="text" size="mini" icon="el-icon-edit" @click="handleUpdate(scope.row)">修改</el-button>
+          <el-button v-if="!scope.row.wechatOpenid" v-hasPermi="['alert:contact:edit']" type="text" size="mini" icon="el-icon-chat-dot-round" @click="handleBindWechat(scope.row)">绑定微信</el-button>
+          <el-button v-else v-hasPermi="['alert:contact:edit']" type="text" size="mini" icon="el-icon-close" @click="handleUnbindWechat(scope.row)">解绑</el-button>
           <el-button v-hasPermi="['alert:contact:remove']" type="text" size="mini" icon="el-icon-delete" class="el-button--text-danger" @click="handleDelete(scope.row)" style="color:#f56c6c">删除</el-button>
         </template>
       </el-table-column>
@@ -63,7 +65,7 @@
           <el-input v-model="form.mobile" placeholder="短信通道投递地址，如 13800000000" maxlength="20" />
         </el-form-item>
         <el-form-item label="微信openid" prop="wechatOpenid">
-          <el-input v-model="form.wechatOpenid" placeholder="公众号/小程序授权绑定后回填，本期可留空" />
+          <el-input v-model="form.wechatOpenid" disabled placeholder="由“绑定微信”扫码写入，不支持手工修改" />
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="form.status">
@@ -80,11 +82,21 @@
         <el-button @click="open = false">取 消</el-button>
       </div>
     </el-dialog>
+
+    <!-- 微信绑定二维码 -->
+    <el-dialog title="绑定微信" :visible.sync="bindDialog" width="360px" append-to-body :close-on-click-modal="false" @closed="stopBindPolling">
+      <div class="wechat-bind">
+        <div ref="qrcode" class="wechat-qrcode"></div>
+        <p class="wechat-bind-tip">请使用本人微信扫描二维码，关注服务号后即完成绑定。</p>
+        <p v-if="bindStatusText" class="wechat-bind-status">{{ bindStatusText }}</p>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script>
-import { listContact, addContact, updateContact, delContact } from '@/api/alert/contact'
+import { listContact, addContact, updateContact, delContact, getWechatBindUrl, getWechatBindStatus, unbindWechat } from '@/api/alert/contact'
+import QRCode from 'qrcodejs2'
 import Pagination from '@/components/Pagination'
 
 export default {
@@ -105,6 +117,12 @@ export default {
       },
       open: false,
       submitLoading: false,
+      bindDialog: false,
+      bindUrl: '',
+      bindTicket: '',
+      bindStatusText: '',
+      pollTimer: null,
+      bindStartedAt: 0,
       form: {
         id: undefined,
         name: '',
@@ -122,7 +140,15 @@ export default {
   created() {
     this.getList()
   },
+  beforeDestroy() {
+    this.stopBindPolling()
+  },
   methods: {
+    maskOpenid(openid) {
+      if (!openid) return ''
+      if (openid.length <= 10) return openid.slice(0, 3) + '****'
+      return openid.slice(0, 6) + '****' + openid.slice(-4)
+    },
     getList() {
       this.loading = true
       listContact(this.queryParams).then(response => {
@@ -179,7 +205,93 @@ export default {
         this.getList()
         this.$modal.msgSuccess('删除成功')
       }).catch(() => {})
+    },
+    handleBindWechat(row) {
+      getWechatBindUrl(row.id).then(res => {
+        const data = res.data || {}
+        if (!data.url) {
+          this.$modal.msgError('未获取到微信绑定地址，请检查公众号通道配置')
+          return
+        }
+        this.bindUrl = data.url
+        this.bindTicket = data.ticket || ''
+        this.bindStatusText = '等待扫码...'
+        this.bindDialog = true
+        this.$nextTick(() => this.renderQrcode())
+        this.startBindPolling()
+      }).catch(() => {})
+    },
+    renderQrcode() {
+      if (!this.$refs.qrcode) return
+      this.$refs.qrcode.innerHTML = ''
+      // eslint-disable-next-line no-new
+      new QRCode(this.$refs.qrcode, { text: this.bindUrl, width: 220, height: 220 })
+    },
+    startBindPolling() {
+      this.stopBindPolling()
+      this.bindStartedAt = Date.now()
+      if (!this.bindTicket) {
+        this.bindStatusText = '二维码已生成，请扫码；若已完成请刷新列表'
+        return
+      }
+      this.pollTimer = setInterval(() => {
+        if (Date.now() - this.bindStartedAt > 5 * 60 * 1000) {
+          this.stopBindPolling()
+          this.bindStatusText = '二维码已过期，请关闭后重新生成'
+          return
+        }
+        getWechatBindStatus(this.bindTicket).then(res => {
+          const data = res.data || {}
+          if (!data.status || data.status === 'PENDING') return
+          this.stopBindPolling()
+          if (data.bound) {
+            this.bindDialog = false
+            this.$modal.msgSuccess('微信绑定成功')
+            this.getList()
+          } else {
+            this.bindStatusText = data.message || '绑定失败，请关闭后重试'
+          }
+        }).catch(() => {
+          this.stopBindPolling()
+          this.bindStatusText = '查询绑定结果失败，请稍后重试'
+        })
+      }, 2000)
+    },
+    stopBindPolling() {
+      if (this.pollTimer) {
+        clearInterval(this.pollTimer)
+        this.pollTimer = null
+      }
+    },
+    handleUnbindWechat(row) {
+      this.$modal.confirm('确认解绑联系人「' + row.name + '」的微信吗？解绑后将无法收到微信告警。').then(() => {
+        return unbindWechat(row.id)
+      }).then(() => {
+        this.getList()
+        this.$modal.msgSuccess('已解绑微信')
+      }).catch(() => {})
     }
   }
 }
 </script>
+
+<style scoped>
+.wechat-bind {
+  text-align: center;
+}
+.wechat-qrcode {
+  display: inline-block;
+  padding: 8px;
+  background: #fff;
+}
+.wechat-bind-tip {
+  margin: 12px 0 4px;
+  color: #606266;
+  font-size: 13px;
+}
+.wechat-bind-status {
+  margin: 4px 0 0;
+  color: #909399;
+  font-size: 13px;
+}
+</style>

@@ -30,6 +30,7 @@
       <div class="login-btn">
         <van-button block class="lavender-btn" :loading="loading" @click="login">登 录</van-button>
       </div>
+      <div v-if="wechatTip" class="wechat-tip">{{ wechatTip }}</div>
     </div>
   </div>
 </template>
@@ -47,12 +48,26 @@ export default {
       code: '',
       counting: false,
       countdown: 60,
-      loading: false
+      loading: false,
+      wechatBindTicket: '',
+      wechatTip: ''
     }
   },
   created() {
     if (getToken()) {
       this.$router.replace('/m/orders')
+      return
+    }
+    const query = this.$route.query
+    if (query.wechatBindTicket) {
+      this.wechatBindTicket = query.wechatBindTicket
+      this.wechatTip = '已获取微信身份，登录后将绑定消息接收'
+    }
+    if (query.wechatOauthError) {
+      Toast('微信授权未完成，可正常登录后联系管理员绑定')
+    }
+    if (query.wechat === '1' && !this.wechatBindTicket) {
+      window.location.href = '/prod-api/wechat/oauth/start?redirect=/m/login'
     }
   },
   methods: {
@@ -87,13 +102,25 @@ export default {
       request.post('/auth/login', {
         phone: this.phone,
         code: this.code,
-        clientType: 'm'
+        clientType: 'm',
+        wechatBindTicket: this.wechatBindTicket || undefined
       }).then(res => {
         this.loading = false
+        const bind = res.data.wechatBind || {}
         setToken(res.data.token)
         localStorage.setItem('Admin-User', JSON.stringify(res.data.user))
+        if (bind.bound) {
+          Toast('登录成功，微信消息已绑定')
+          this.$router.replace('/m/orders')
+          return
+        }
         Toast('登录成功')
-        this.$router.replace('/m/orders')
+        const message = bind.message || '微信消息未绑定，可稍后在联系人页绑定。'
+        this.$dialog.alert({ title: '微信绑定提示', message }).then(() => {
+          this.$router.replace('/m/orders')
+        }).catch(() => {
+          this.$router.replace('/m/orders')
+        })
       }).catch(() => {
         this.loading = false
       })
@@ -140,6 +167,13 @@ export default {
 .login-btn {
   margin-top: 32px;
   padding: 0 16px;
+}
+.wechat-tip {
+  margin-top: 12px;
+  padding: 0 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-muted);
 }
 
 /* Light cell group */

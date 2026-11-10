@@ -77,9 +77,21 @@ public class NotifyChannelService {
             meta("wechat", "微信公众号（模板消息）", List.of(
                     field("appId", "AppID", "text", true),
                     field("appSecret", "AppSecret", "password", true),
-                    field("templateId", "模板 ID", "text", true),
+                    field("templateId", "默认模板 ID", "text", false),
                     field("url", "点击跳转地址", "text", false,
-                            "模板消息点击后跳转的地址，默认 http://www.netsightplus.cn/m/orders（移动端待接单列表）")
+                            "默认 http://www.netsightplus.cn/m/orders"),
+                    field("mockMode", "模拟发送", "switch", false,
+                            "开启后不调用微信接口；未配置时跟随全局 WECHAT_MOCK"),
+                    field("rateLimitPerMinute", "每人每分钟上限", "number", false,
+                            "默认 4 条/分钟/用户"),
+                    field("dedupTtlHours", "去重窗口（小时）", "number", false,
+                            "默认 24 小时"),
+                    field("timeoutMs", "接口超时（毫秒）", "number", false,
+                            "默认 5000"),
+                    field("retryIntervals", "重试间隔（毫秒）", "text", false,
+                            "默认 1000,2000；最多 3 次尝试"),
+                    field("oauthPublicBaseUrl", "OAuth 外部基址", "text", false,
+                            "如 https://api.netsightplus.cn/prod-api")
             )),
             meta("feishu", "飞书群机器人", List.of(
                     field("webhook", "Webhook 地址", "text", true),

@@ -6,12 +6,14 @@ import com.netsight.common.core.PageResult;
 import com.netsight.common.core.ResultCode;
 import com.netsight.common.exception.ServiceException;
 import com.netsight.framework.security.SecurityUtils;
+import com.netsight.modules.alert.channel.WechatTemplatePayload;
 import com.netsight.modules.alert.entity.NotificationTemplate;
 import com.netsight.modules.alert.mapper.NotificationTemplateMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Map;
@@ -28,8 +30,12 @@ import java.util.regex.Pattern;
 public class NotificationTemplateService {
 
     private static final Pattern VAR_PATTERN = Pattern.compile("\\{\\{\\s*(\\w+?)\\s*}}");
+    private static final int MAX_WECHAT_CONTENT_BYTES = 8 * 1024;
+    private static final int MAX_WECHAT_FIELDS = 30;
+    private static final Pattern WECHAT_FIELD_KEY = Pattern.compile("^[A-Za-z][A-Za-z0-9_]*$");
 
     private final NotificationTemplateMapper templateMapper;
+    private final ObjectMapper objectMapper;
 
     /**
      * 分页查询模板（租户隔离）
@@ -73,6 +79,7 @@ public class NotificationTemplateService {
         if (template.getChannelId() == null) {
             throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "模板必须绑定通道实例（channelId 不能为空）");
         }
+        validateWechatContent(template.getChannelType(), template.getContent());
         if (template.getTenantId() == null) {
             template.setTenantId(SecurityUtils.getTenantId());
         }
@@ -99,6 +106,9 @@ public class NotificationTemplateService {
         if (template.getChannelId() == null) {
             throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "模板必须绑定通道实例（channelId 不能为空）");
         }
+        String channelType = StringUtils.hasText(template.getChannelType())
+                ? template.getChannelType() : exist.getChannelType();
+        validateWechatContent(channelType, template.getContent());
         templateMapper.updateById(template);
     }
 
@@ -133,9 +143,49 @@ public class NotificationTemplateService {
     }
 
     /**
-     * 数据隔离校验：非超管不能操作其他租户模板
+     * 微信模板 content 必须是描述符 JSON：templateId/url/fields[{key,value,default}]。
+     * 空 content 对微信通道视为错误（历史 115 空 content 由数据脚本修正）。
      */
-    private void checkTenantPermission(Long targetTenantId) {
+    private void validateWechatContent(String channelType, String content) {
+        if (!"wechat".equals(channelType)) {
+            return;
+        }
+        if (!StringUtils.hasText(content)) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "微信模板内容不能为空");
+        }
+        if (content.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_WECHAT_CONTENT_BYTES) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "微信模板内容不能超过 8KB");
+        }
+        try {
+            WechatTemplatePayload.Descriptor descriptor =
+                    objectMapper.readValue(content, WechatTemplatePayload.Descriptor.class);
+            if (descriptor.getFields() == null || descriptor.getFields().isEmpty()) {
+                throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "微信模板字段不能为空");
+            }
+            if (descriptor.getFields().size() > MAX_WECHAT_FIELDS) {
+                throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "微信模板字段过多");
+            }
+            for (WechatTemplatePayload.Field field : descriptor.getFields()) {
+                if (field == null || !StringUtils.hasText(field.getKey())
+                        || !WECHAT_FIELD_KEY.matcher(field.getKey()).matches()) {
+                    throw new ServiceException(ResultCode.PARAM_ERROR.getCode(),
+                            "微信模板字段名不合法: " + (field == null ? null : field.getKey()));
+                }
+                if (!StringUtils.hasText(field.getValue())) {
+                    throw new ServiceException(ResultCode.PARAM_ERROR.getCode(),
+                            "微信模板字段变量不能为空: " + field.getKey());
+                }
+            }
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "微信模板内容必须是合法 JSON");
+        }
+    }
+
+    /**
+     * 数据隔离校验：非超管不能操作其他租户模板
+     */    private void checkTenantPermission(Long targetTenantId) {
         if (!SecurityUtils.isSuperAdmin() && !targetTenantId.equals(SecurityUtils.getTenantId())) {
             throw new ServiceException(ResultCode.FORBIDDEN);
         }

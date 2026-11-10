@@ -1,66 +1,61 @@
 package com.netsight.modules.alert.channel;
 
-import cn.hutool.http.HttpUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 
 /**
- * 微信公众号（服务号）模板消息通道适配器（channelType = wechat）
+ * 微信公众号（服务号）模板消息通道适配器（channelType = wechat）。
  *
- * <p>定位：我方主动调用微信模板消息接口推送设备离线告警（不是接收公众号上行消息）。
- *
- * <p>设计要点：
- * <ol>
- *   <li><b>配置全部来自渠道实例</b>（notify_channel.config_json，已由通道中心解密后注入）：
- *       appId / appSecret / templateId / url / mockMode，不在代码里硬编码密钥。</li>
- *   <li><b>access_token 独立缓存</b>：使用 cgi-bin/stable_token（force_refresh=false）获取，
- *       与既有 JS-SDK 签名服务（127.0.0.1:9091）的普通 token 属于两套独立缓存，互不影响。</li>
- *   <li><b>模板字段固定</b>：thing2 告警对象 / phrase9 事件状态 / character_string11 设备编号 /
- *       thing17 故障位置 / phrase20 告警等级（key 必须逐字一致，不能简写成 thing/phrase）。</li>
- *   <li><b>跳转</b>：点击模板卡片跳移动端 H5 待接单页（默认 /m/orders，可在渠道实例 url 中覆盖）。</li>
- *   <li>异常统一包装成 SendResult，不向外抛运行时异常；同一 bizId 的幂等由通道中心 Redis 去重兜底。</li>
- * </ol>
+ * <p>支持模板描述符（WechatTemplatePayload）、逐人发送结果、单人重试、Redis 幂等去重、
+ * 固定窗口频控与 mock。content 为空时回落历史 5 字段，保证 115 现有离线模板不回归。
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class WechatMpChannelSender implements NotificationChannelSender {
 
-    /** 通道类型标识：微信服务号模板消息（与 wechat_work / wechat_app 区分） */
     public static final String CHANNEL_TYPE = "wechat";
 
-    private static final String STABLE_TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/stable_token";
-    private static final String TEMPLATE_SEND_URL = "https://api.weixin.qq.com/cgi-bin/message/template/send";
-
-    /** 默认跳转：移动端 H5 工单列表（默认停在「待接单」Tab） */
+    private static final String TEMPLATE_SEND_URL =
+            "https://api.weixin.qq.com/cgi-bin/message/template/send";
     private static final String DEFAULT_JUMP_URL = "http://www.netsightplus.cn/m/orders";
+    private static final int MAX_ATTEMPTS = 3;
+    private static final int DEFAULT_RATE_LIMIT = 4;
+    private static final int DEFAULT_DEDUP_HOURS = 24;
 
-    /** token 提前失效的保守余量（秒），避免临界点被微信判失效 */
-    private static final long TOKEN_SAFE_SECONDS = 300L;
+    private final WechatTokenProvider tokenProvider;
+    private final WechatTemplatePayload payload;
+    private final WechatHttpClient httpClient;
+    private final StringRedisTemplate redisTemplate;
 
-    /** token 缓存：appId -> 缓存项（进程内静态，按渠道实例隔离） */
-    private static final Map<String, TokenCache> TOKEN_CACHE = new ConcurrentHashMap<>();
-
-    /** 开发模拟开关（默认 false：生产安全默认，未显式开启即真实发送） */
     @Value("${netsight.alert.channel.wechat.mock-mode:false}")
     private boolean mockMode;
 
-    /** HTTP 超时（ms） */
     @Value("${netsight.alert.channel.wechat.timeout-ms:5000}")
     private int timeoutMs;
 
-    /** 默认跳转地址（可在渠道实例 config.url 中覆盖） */
     @Value("${netsight.alert.channel.wechat.jump-url:" + DEFAULT_JUMP_URL + "}")
     private String defaultJumpUrl;
+
+    @Value("${netsight.alert.retry-intervals:1000,2000}")
+    private String defaultRetryIntervals;
 
     @Override
     public String getChannelType() {
@@ -76,92 +71,155 @@ public class WechatMpChannelSender implements NotificationChannelSender {
     public SendResult send(SendRequest request) {
         long start = System.currentTimeMillis();
         Map<String, Object> cfg = request.getChannelConfig() == null
-                ? new HashMap<>() : request.getChannelConfig();
+                ? Map.of() : request.getChannelConfig();
         try {
             String appId = text(cfg, "appId");
             String appSecret = text(cfg, "appSecret");
-            String templateId = text(cfg, "templateId");
-            if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)
-                    || !StringUtils.hasText(templateId)) {
-                return fail("微信公众号通道实例缺少 appId / appSecret / templateId 配置", start);
+            String fallbackTemplateId = text(cfg, "templateId");
+            if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) {
+                return fail("微信公众号通道实例缺少 appId / appSecret 配置", start);
             }
 
-            List<String> receivers = request.getReceiverList() == null
-                    ? new ArrayList<>() : request.getReceiverList();
+            Set<String> receivers = new LinkedHashSet<>();
+            if (request.getReceiverList() != null) {
+                for (String r : request.getReceiverList()) {
+                    if (StringUtils.hasText(r)) {
+                        receivers.add(r.trim());
+                    }
+                }
+            }
             if (receivers.isEmpty()) {
-                // 43004 的本地前置：联系人未绑定 openid 时不会走到微信接口
                 return fail("无有效微信接收人（联系人的 wechat_openid 为空）", start);
             }
 
             boolean mock = parseBool(cfg.get("mockMode"), mockMode);
+            boolean manualSend = !StringUtils.hasText(request.getBizId());
+            WechatTemplatePayload.Rendered rendered = payload.render(request, fallbackTemplateId);
+            if (!StringUtils.hasText(rendered.templateId())) {
+                return fail("微信公众号模板 ID 为空", start);
+            }
+
             if (mock) {
-                log.info("【微信公众号 MOCK】appId={} 接收人数={} 模板={} 跳转={}",
-                        appId, receivers.size(), templateId, resolveJumpUrl(request, cfg));
+                List<RecipientResult> mockResults = new ArrayList<>();
+                for (String openid : receivers) {
+                    mockResults.add(RecipientResult.builder()
+                            .receiver(mask(openid)).success(true).errcode(0).build());
+                }
+                log.info("【微信公众号 MOCK】appId={} 接收人数={} 模板={}",
+                        appId, receivers.size(), rendered.templateId());
                 return SendResult.builder()
                         .success(true)
-                        .thirdPartyMsgId("MOCK-WX-" + System.currentTimeMillis())
+                        .retryable(false)
+                        .templateId(rendered.templateId())
+                        .renderedContent(rendered.summary())
+                        .recipientResults(mockResults)
+                        .thirdPartyMsgId("MOCK")
                         .costTime(System.currentTimeMillis() - start)
                         .build();
             }
 
-            String jumpUrl = resolveJumpUrl(request, cfg);
-            Map<String, Object> data = buildData(request);
-            String token = getAccessToken(appId, appSecret, false).token;
-
-            int successCount = 0;
-            List<String> errors = new ArrayList<>();
+            String jumpUrl = resolveJumpUrl(request, cfg, rendered.url());
+            String token = null;
+            List<RecipientResult> results = new ArrayList<>();
+            List<String> failures = new ArrayList<>();
             String lastMsgId = null;
+            int successCount = 0;
+            int duplicateCount = 0;
+            int rateLimited = 0;
+            int appMismatch = 0;
+
+            int perMinute = intValue(cfg.get("rateLimitPerMinute"), DEFAULT_RATE_LIMIT);
+            int dedupHours = intValue(cfg.get("dedupTtlHours"), DEFAULT_DEDUP_HOURS);
+            long[] intervals = parseIntervals(cfg.get("retryIntervals"));
+
             for (String openid : receivers) {
-                if (!StringUtils.hasText(openid)) {
+                String receiverAppId = receiverAppId(request, openid);
+                if (StringUtils.hasText(receiverAppId) && !receiverAppId.equals(appId)) {
+                    appMismatch++;
+                    results.add(RecipientResult.builder().receiver(mask(openid))
+                            .success(false).skipped(true).skipReason("app_id_mismatch").build());
                     continue;
                 }
-                JSONObject payload = new JSONObject();
-                payload.set("touser", openid);
-                payload.set("template_id", templateId);
-                if (StringUtils.hasText(jumpUrl)) {
-                    payload.set("url", jumpUrl);
-                }
-                payload.set("data", data);
 
-                String resp = HttpUtil.post(TEMPLATE_SEND_URL + "?access_token=" + token,
-                        JSONUtil.toJsonStr(payload), timeoutMs);
-                JSONObject json = parse(resp);
-                int errcode = json == null ? -1 : json.getInt("errcode", -1);
-
-                // token 失效：清缓存强制重取后重试一次（40001/40014/42001 属同类）
-                if (errcode == 40001 || errcode == 40014 || errcode == 42001) {
-                    log.warn("【微信公众号】access_token 失效(errcode={})，强制刷新后重试 openid={}",
-                            errcode, mask(openid));
-                    token = getAccessToken(appId, appSecret, true).token;
-                    resp = HttpUtil.post(TEMPLATE_SEND_URL + "?access_token=" + token,
-                            JSONUtil.toJsonStr(payload), timeoutMs);
-                    json = parse(resp);
-                    errcode = json == null ? -1 : json.getInt("errcode", -1);
+                String dedupeKey = dedupeKey(request, appId, rendered.templateId(), openid);
+                boolean locked = false;
+                if (!manualSend) {
+                    locked = acquireLock(dedupeKey);
+                    if (!locked) {
+                        duplicateCount++;
+                        results.add(RecipientResult.builder().receiver(mask(openid))
+                                .success(false).skipped(true).skipReason("duplicate").build());
+                        continue;
+                    }
                 }
 
-                if (errcode == 0) {
+                if (!allowRate(appId, openid, perMinute)) {
+                    rateLimited++;
+                    releaseLock(dedupeKey, locked);
+                    results.add(RecipientResult.builder().receiver(mask(openid))
+                            .success(false).skipped(true).skipReason("rate_limit").build());
+                    continue;
+                }
+
+                if (token == null) {
+                    token = tokenProvider.getToken(appId, appSecret, false);
+                }
+
+                Attempt attempt = sendOne(appId, appSecret, openid, rendered, jumpUrl,
+                        token, intervals);
+                if (attempt.success) {
+                    token = attempt.token;
                     successCount++;
-                    lastMsgId = json == null ? null : json.getStr("msgid");
+                    lastMsgId = attempt.msgId;
                 } else {
-                    String errmsg = json == null ? "返回空响应" : json.getStr("errmsg", "");
-                    errors.add(mask(openid) + ":" + errcode + "(" + errorHint(errcode) + ")");
-                    log.warn("【微信公众号】发送失败 openid={} errcode={} errmsg={}",
-                            mask(openid), errcode, errmsg);
+                    if (StringUtils.hasText(attempt.token)) {
+                        token = attempt.token;
+                    }
+                    failures.add(mask(openid) + ":" + attempt.errcode + "("
+                            + errorHint(attempt.errcode) + ")");
+                }
+                results.add(RecipientResult.builder()
+                        .receiver(mask(openid))
+                        .success(attempt.success)
+                        .errcode(attempt.errcode)
+                        .errmsg(attempt.errmsg)
+                        .retryCount(attempt.retryCount)
+                        .skipped(false)
+                        .build());
+                if (attempt.success) {
+                    markSent(dedupeKey, dedupHours);
+                } else {
+                    releaseLock(dedupeKey, locked);
                 }
             }
 
-            if (successCount == 0) {
-                return SendResult.builder()
-                        .success(false)
-                        .errorMsg("微信模板消息全部发送失败: " + String.join("; ", errors))
-                        .costTime(System.currentTimeMillis() - start)
-                        .build();
+            int nonDuplicate = successCount + failures.size() + rateLimited + appMismatch;
+            boolean allSuccess = failures.isEmpty() && rateLimited == 0 && appMismatch == 0
+                    && successCount == nonDuplicate;
+            String errorMsg = null;
+            if (successCount == 0 && duplicateCount == results.size()) {
+                allSuccess = true;
+                errorMsg = "全部接收人已发送过，跳过";
+            } else if (rateLimited > 0 && successCount == 0 && failures.isEmpty()
+                    && appMismatch == 0) {
+                allSuccess = false;
+                errorMsg = "触发微信频控，未送达";
+            } else if (!allSuccess) {
+                errorMsg = "微信模板消息部分/全部失败: 成功=" + successCount
+                        + "，失败=" + failures.size() + "，频控=" + rateLimited
+                        + "，appId不匹配=" + appMismatch
+                        + (failures.isEmpty() ? "" : "；" + String.join("; ", failures));
             }
-            if (!errors.isEmpty()) {
-                log.warn("【微信公众号】部分接收人发送失败: {}", String.join("; ", errors));
+            if (!failures.isEmpty()) {
+                log.warn("【微信公众号】部分接收人发送失败: {}", String.join("; ", failures));
             }
             return SendResult.builder()
-                    .success(true)
+                    .success(allSuccess)
+                    .retryable(false)
+                    .templateId(rendered.templateId())
+                    .renderedContent(rendered.summary())
+                    .recipientResults(results)
+                    .errorMsg(errorMsg)
                     .thirdPartyMsgId(lastMsgId)
                     .costTime(System.currentTimeMillis() - start)
                     .build();
@@ -172,133 +230,210 @@ public class WechatMpChannelSender implements NotificationChannelSender {
     }
 
     @Override
-    public boolean healthCheck(java.util.Map<String, Object> config) {
-        // 仅做配置完整性校验，不主动调用微信接口（避免定时巡检消耗 token 接口频次）
+    public boolean healthCheck(Map<String, Object> config) {
         if (config == null) {
             return false;
         }
+        String templateId = text(config, "templateId");
         return StringUtils.hasText(text(config, "appId"))
                 && StringUtils.hasText(text(config, "appSecret"))
-                && StringUtils.hasText(text(config, "templateId"));
+                && (StringUtils.hasText(templateId)
+                    || StringUtils.hasText(text(config, "content")));
     }
 
     // ==================== 内部实现 ====================
 
-    /**
-     * 组装模板数据（5 个字段，key 必须与服务号模板逐字一致）
-     *
-     * <ul>
-     *   <li>thing2 告警对象 ← device_name</li>
-     *   <li>phrase9 事件状态 ← event_type（离线/链路异常/已恢复）</li>
-     *   <li>character_string11 设备编号 ← device_code（labels 有则用），回落 device_ip</li>
-     *   <li>thing17 故障位置 ← location / device_location</li>
-     *   <li>phrase20 告警等级 ← severity（严重/重要/一般/已恢复）</li>
-     * </ul>
-     * 微信对 thing ≤20 字符、phrase ≤5 汉字、character_string ≤32 字符有硬限制，超长会报 47003，此处防御性截断。
-     */
-    private Map<String, Object> buildData(SendRequest request) {
-        Map<String, Object> vars = request.getContentVars() == null
-                ? new HashMap<>() : request.getContentVars();
+    private Attempt sendOne(String appId, String appSecret, String openid,
+                            WechatTemplatePayload.Rendered rendered, String jumpUrl,
+                            String token, long[] intervals) {
+        String body = buildPayload(openid, rendered, jumpUrl).toString();
+        int retry = 0;
+        String currentToken = token;
+        int errcode = -1;
+        String errmsg = "空响应";
+        String msgId = null;
 
-        String deviceName = firstText(vars, "device_name", "deviceName");
-        String deviceCode = firstText(vars, "device_code", "deviceCode");
-        String deviceIp = firstText(vars, "device_ip", "deviceIp");
-        String location = firstText(vars, "location", "device_location", "deviceLocation");
-        String eventType = firstText(vars, "event_type", "eventType");
-        String severity = firstText(vars, "severity");
-
-        String deviceNo = StringUtils.hasText(deviceCode) ? deviceCode : deviceIp;
-
-        Map<String, Object> data = new HashMap<>(8);
-        data.put("thing2", value(cut(StringUtils.hasText(deviceName) ? deviceName : "未知设备", 20)));
-        data.put("phrase9", value(cut(eventStateText(eventType), 5)));
-        data.put("character_string11", value(cut(StringUtils.hasText(deviceNo) ? deviceNo : "-", 32)));
-        data.put("thing17", value(cut(StringUtils.hasText(location) ? location : "未登记位置", 20)));
-        data.put("phrase20", value(cut(severityText(severity), 5)));
-        return data;
-    }
-
-    /** 事件状态文案（phrase 限 5 个汉字） */
-    private String eventStateText(String eventType) {
-        if (!StringUtils.hasText(eventType)) {
-            return "告警";
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                String resp = httpClient.postJson(
+                        TEMPLATE_SEND_URL + "?access_token=" + currentToken, body, timeoutMs);
+                JSONObject json = parse(resp);
+                errcode = json == null ? -1 : json.getInt("errcode", -1);
+                errmsg = json == null ? "返回空响应" : json.getStr("errmsg", "");
+                if (errcode == 0) {
+                    msgId = json.getStr("msgid");
+                    return new Attempt(true, errcode, errmsg, retry, msgId, currentToken);
+                }
+                if (errcode == 40001 || errcode == 40014 || errcode == 42001) {
+                    currentToken = tokenProvider.getToken(appId, appSecret, true);
+                }
+                if (!retryable(errcode)) {
+                    return new Attempt(false, errcode, errmsg, retry, null, currentToken);
+                }
+            } catch (Exception e) {
+                errcode = -1;
+                errmsg = "网络异常: " + e.getMessage();
+            }
+            if (attempt < MAX_ATTEMPTS) {
+                sleep(intervals, retry);
+                retry++;
+            }
         }
-        return switch (eventType) {
-            case "device_offline" -> "离线";
-            case "device_line_abnormal" -> "链路异常";
-            case "device_recovered" -> "已恢复";
-            case "device_cpu_high" -> "CPU过高";
-            case "device_mem_high" -> "内存过高";
-            default -> "告警";
-        };
+        return new Attempt(false, errcode, errmsg, retry, null, currentToken);
     }
 
-    /** 告警等级文案（phrase 限 5 个汉字） */
-    private String severityText(String severity) {
-        if (!StringUtils.hasText(severity)) {
-            return "一般";
+    private static JSONObject buildPayload(String openid, WechatTemplatePayload.Rendered rendered,
+                                           String jumpUrl) {
+        JSONObject payload = new JSONObject();
+        payload.set("touser", openid);
+        payload.set("template_id", rendered.templateId());
+        if (StringUtils.hasText(jumpUrl)) {
+            payload.set("url", jumpUrl);
         }
-        return switch (severity.toLowerCase()) {
-            case "critical", "fatal", "emergency" -> "严重";
-            case "warning", "warn", "major" -> "重要";
-            case "resolved", "ok", "recovered" -> "已恢复";
-            case "info", "notice", "minor" -> "一般";
-            default -> "告警";
-        };
+        payload.set("data", rendered.data());
+        return payload;
     }
 
-    /** 跳转地址：extra.wechatUrl 优先 → 渠道实例 url → 全局默认 */
-    private String resolveJumpUrl(SendRequest request, Map<String, Object> cfg) {
+    private boolean retryable(int errcode) {
+        return errcode == -1 || errcode == 40001 || errcode == 40014 || errcode == 42001;
+    }
+
+    private void sleep(long[] intervals, int retry) {
+        long ms = retry < intervals.length ? intervals[retry] : intervals[intervals.length - 1];
+        if (ms <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private long[] parseIntervals(Object cfgValue) {
+        String s = cfgValue == null ? defaultRetryIntervals : String.valueOf(cfgValue);
+        if (!StringUtils.hasText(s)) {
+            s = "1000,2000";
+        }
+        String[] parts = s.split(",");
+        long[] out = new long[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            try {
+                out[i] = Long.parseLong(parts[i].trim());
+            } catch (Exception e) {
+                out[i] = 1000L;
+            }
+        }
+        return out.length == 0 ? new long[]{1000L, 2000L} : out;
+    }
+
+    private String resolveJumpUrl(SendRequest request, Map<String, Object> cfg,
+                                  String descriptorUrl) {
+        if (validUrl(descriptorUrl)) {
+            return descriptorUrl;
+        }
         Object extraUrl = request.getExtra() == null ? null : request.getExtra().get("wechatUrl");
-        if (extraUrl != null && StringUtils.hasText(String.valueOf(extraUrl))) {
+        if (extraUrl != null && validUrl(String.valueOf(extraUrl))) {
             return String.valueOf(extraUrl);
         }
         String cfgUrl = text(cfg, "url");
-        if (StringUtils.hasText(cfgUrl)) {
+        if (validUrl(cfgUrl)) {
             return cfgUrl;
         }
-        return StringUtils.hasText(defaultJumpUrl) ? defaultJumpUrl : DEFAULT_JUMP_URL;
+        return StringUtils.hasText(defaultJumpUrl) && validUrl(defaultJumpUrl)
+                ? defaultJumpUrl : DEFAULT_JUMP_URL;
     }
 
-    /**
-     * 获取 access_token（进程内缓存，提前 5 分钟失效）
-     *
-     * @param forceRefresh true=忽略缓存强制重取（token 失效错误码触发）
-     */
-    private TokenCache getAccessToken(String appId, String appSecret, boolean forceRefresh) {
-        TokenCache cached = TOKEN_CACHE.get(appId);
-        long now = System.currentTimeMillis() / 1000;
-        if (!forceRefresh && cached != null && cached.expireAt > now) {
-            return cached;
+    private static boolean validUrl(String url) {
+        if (!StringUtils.hasText(url)) {
+            return false;
         }
-        synchronized (TOKEN_CACHE) {
-            cached = TOKEN_CACHE.get(appId);
-            if (!forceRefresh && cached != null && cached.expireAt > now) {
-                return cached;
-            }
-            JSONObject body = new JSONObject();
-            body.set("grant_type", "client_credential");
-            body.set("appid", appId);
-            body.set("secret", appSecret);
-            body.set("force_refresh", forceRefresh);
-            String resp = HttpUtil.post(STABLE_TOKEN_URL, JSONUtil.toJsonStr(body), timeoutMs);
-            JSONObject json = parse(resp);
-            String token = json == null ? null : json.getStr("access_token");
-            if (!StringUtils.hasText(token)) {
-                int errcode = json == null ? -1 : json.getInt("errcode", -1);
-                String errmsg = json == null ? "空响应" : json.getStr("errmsg", "");
-                throw new IllegalStateException("获取 access_token 失败: " + errcode + " " + errmsg
-                        + hintSuffix(errcode));
-            }
-            long expiresIn = json.getLong("expires_in", 7200L);
-            TokenCache fresh = new TokenCache(token, now + Math.max(60L, expiresIn - TOKEN_SAFE_SECONDS));
-            TOKEN_CACHE.put(appId, fresh);
-            log.info("【微信公众号】access_token 已刷新 appId={} 有效期={}s", appId, expiresIn);
-            return fresh;
+        String s = url.trim();
+        return s.startsWith("http://") || s.startsWith("https://");
+    }
+
+    private String receiverAppId(SendRequest request, String openid) {
+        Map<String, Object> extra = request.getExtra();
+        if (extra == null) {
+            return null;
+        }
+        Object v = extra.get("receiverAppIds");
+        if (v instanceof Map<?, ?> map) {
+            Object appId = map.get(openid);
+            return appId == null ? null : String.valueOf(appId);
+        }
+        return null;
+    }
+
+    private String dedupeKey(SendRequest request, String appId, String templateId, String openid) {
+        Object channelId = request.getChannelId() == null ? appId : request.getChannelId();
+        return "netsight:notify:dedupe:" + (request.getTenantId() == null ? 0 : request.getTenantId())
+                + ":" + channelId + ":" + request.getBizId() + ":" + templateId
+                + ":" + hash(openid);
+    }
+
+    private boolean acquireLock(String key) {
+        try {
+            Boolean ok = redisTemplate.opsForValue()
+                    .setIfAbsent(key, "LOCK", Duration.ofSeconds(60));
+            return Boolean.TRUE.equals(ok);
+        } catch (Exception e) {
+            log.warn("【微信公众号】Redis 去重不可用，按未重复处理: {}", e.getMessage());
+            return true;
         }
     }
 
-    /** 错误码中文提示（便于运维直接定位） */
+    private void markSent(String key, int dedupHours) {
+        try {
+            redisTemplate.opsForValue().set(key, "OK", Duration.ofHours(Math.max(1, dedupHours)));
+        } catch (Exception e) {
+            log.warn("【微信公众号】写去重标记失败: {}", e.getMessage());
+        }
+    }
+
+    private void releaseLock(String key, boolean locked) {
+        if (!locked) {
+            return;
+        }
+        try {
+            redisTemplate.delete(key);
+        } catch (Exception e) {
+            log.warn("【微信公众号】释放去重锁失败: {}", e.getMessage());
+        }
+    }
+
+    private boolean allowRate(String appId, String openid, int perMinute) {
+        if (perMinute <= 0) {
+            return true;
+        }
+        String minute = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmm"));
+        String key = "netsight:wechat:rate:" + appId + ":" + openid + ":" + minute;
+        try {
+            Long count = redisTemplate.opsForValue().increment(key);
+            if (count != null && count == 1L) {
+                redisTemplate.expire(key, Duration.ofSeconds(70));
+            }
+            return count == null || count <= perMinute;
+        } catch (Exception e) {
+            log.warn("【微信公众号】Redis 频控不可用，按未超限处理: {}", e.getMessage());
+            return true;
+        }
+    }
+
+    private static String hash(String openid) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(openid.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 8; i++) {
+                sb.append(String.format("%02x", digest[i]));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return Integer.toHexString(openid.hashCode());
+        }
+    }
+
     private String errorHint(int errcode) {
         return switch (errcode) {
             case 40001, 40014, 42001 -> "token失效";
@@ -312,13 +447,6 @@ public class WechatMpChannelSender implements NotificationChannelSender {
         };
     }
 
-    private String hintSuffix(int errcode) {
-        if (errcode == 40164) {
-            return "（当前服务器 IP 不在公众号 IP 白名单，请在 mp.weixin.qq.com 基本配置中添加）";
-        }
-        return "";
-    }
-
     private JSONObject parse(String resp) {
         if (!StringUtils.hasText(resp)) {
             return null;
@@ -326,7 +454,8 @@ public class WechatMpChannelSender implements NotificationChannelSender {
         try {
             return JSONUtil.parseObj(resp);
         } catch (Exception e) {
-            log.warn("【微信公众号】响应解析失败: {}", resp.length() > 200 ? resp.substring(0, 200) : resp);
+            log.warn("【微信公众号】响应解析失败: {}",
+                    resp.length() > 200 ? resp.substring(0, 200) : resp);
             return null;
         }
     }
@@ -334,15 +463,10 @@ public class WechatMpChannelSender implements NotificationChannelSender {
     private SendResult fail(String msg, long start) {
         return SendResult.builder()
                 .success(false)
+                .retryable(false)
                 .errorMsg(msg)
                 .costTime(System.currentTimeMillis() - start)
                 .build();
-    }
-
-    private static Map<String, Object> value(String v) {
-        Map<String, Object> item = new HashMap<>(2);
-        item.put("value", v == null ? "" : v);
-        return item;
     }
 
     private static String text(Map<String, Object> map, String key) {
@@ -350,15 +474,15 @@ public class WechatMpChannelSender implements NotificationChannelSender {
         return v == null ? null : String.valueOf(v);
     }
 
-    /** 依次取第一个非空变量（兼容下划线/驼峰两种标签命名） */
-    private static String firstText(Map<String, Object> vars, String... keys) {
-        for (String k : keys) {
-            Object v = vars.get(k);
-            if (v != null && StringUtils.hasText(String.valueOf(v))) {
-                return String.valueOf(v).trim();
-            }
+    private static int intValue(Object v, int fallback) {
+        if (v == null) {
+            return fallback;
         }
-        return "";
+        try {
+            return Integer.parseInt(String.valueOf(v).trim());
+        } catch (Exception e) {
+            return fallback;
+        }
     }
 
     private static boolean parseBool(Object v, boolean fallback) {
@@ -372,21 +496,6 @@ public class WechatMpChannelSender implements NotificationChannelSender {
         return "true".equalsIgnoreCase(s) || "1".equals(s);
     }
 
-    /** 按字符（code point）截断，避免 emoji/生僻字破坏模板字段 */
-    private static String cut(String s, int max) {
-        if (s == null || s.isEmpty()) {
-            return "";
-        }
-        String t = s.trim();
-        int cpCount = t.codePointCount(0, t.length());
-        if (cpCount <= max) {
-            return t;
-        }
-        int end = t.offsetByCodePoints(0, max);
-        return t.substring(0, end);
-    }
-
-    /** openid 脱敏：前 6 后 4，日志与错误信息中不留完整值 */
     private static String mask(String openid) {
         if (!StringUtils.hasText(openid) || openid.length() <= 10) {
             return "***";
@@ -394,7 +503,7 @@ public class WechatMpChannelSender implements NotificationChannelSender {
         return openid.substring(0, 6) + "****" + openid.substring(openid.length() - 4);
     }
 
-    /** token 缓存项 */
-    private record TokenCache(String token, long expireAt) {
+    private record Attempt(boolean success, int errcode, String errmsg,
+                           int retryCount, String msgId, String token) {
     }
 }

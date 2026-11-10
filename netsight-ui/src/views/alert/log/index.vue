@@ -24,6 +24,27 @@
 
     <!-- 日志列表 -->
     <el-table border v-loading="loading" :data="logList">
+      <el-table-column type="expand" width="40">
+        <template slot-scope="scope">
+          <div class="recipient-detail">
+            <el-table v-if="parseRecipients(scope.row.recipientResultsJson).length" :data="parseRecipients(scope.row.recipientResultsJson)" size="mini" border>
+              <el-table-column prop="receiver" label="接收人" min-width="140" />
+              <el-table-column label="结果" width="80" align="center">
+                <template slot-scope="s">
+                  <el-tag size="mini" :type="s.row.success ? 'success' : (s.row.skipped ? 'info' : 'danger')">
+                    {{ s.row.success ? '成功' : (s.row.skipped ? '跳过' : '失败') }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="errcode" label="错误码" width="90" align="center" />
+              <el-table-column prop="errmsg" label="错误信息" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="retryCount" label="重试次数" width="90" align="center" />
+              <el-table-column prop="skipReason" label="跳过原因" width="120" align="center" />
+            </el-table>
+            <span v-else class="recipient-empty">无逐人发送明细</span>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="ID" prop="id" width="70" align="center" />
       <el-table-column label="事件ID" prop="eventId" width="70" align="center">
         <template slot-scope="scope">{{ scope.row.eventId || '-' }}</template>
@@ -37,11 +58,16 @@
           <el-tag size="mini" :type="channelTagType(scope.row.channelType)">{{ channelTypeName(scope.row.channelType) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="微信模板ID" prop="templateId" width="200" show-overflow-tooltip align="center">
+        <template slot-scope="scope">{{ scope.row.templateId || '-' }}</template>
+      </el-table-column>
       <el-table-column label="接收人" min-width="150" show-overflow-tooltip align="center"><template slot-scope="scope">{{ receiversText(scope.row.receiversJson) }}</template></el-table-column>
       <el-table-column label="发送内容" prop="content" min-width="180" show-overflow-tooltip  align="center"/>
-      <el-table-column label="结果" width="80" align="center">
+      <el-table-column label="结果" width="90" align="center">
         <template slot-scope="scope">
-          <el-tag size="mini" :type="scope.row.success === 1 ? 'success' : 'danger'">{{ scope.row.success === 1 ? '成功' : '失败' }}</el-tag>
+          <el-tag size="mini" :type="scope.row.success === 1 ? 'success' : (isPartial(scope.row) ? 'warning' : 'danger')">
+            {{ scope.row.success === 1 ? '成功' : (isPartial(scope.row) ? '部分成功' : '失败') }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="第三方ID" prop="thirdPartyMsgId" width="140" show-overflow-tooltip  align="center"/>
@@ -96,6 +122,20 @@ export default {
     this.getList()
   },
   methods: {
+    parseRecipients(json) {
+      if (!json) return []
+      try {
+        const arr = JSON.parse(json)
+        return Array.isArray(arr) ? arr : []
+      } catch (e) {
+        return []
+      }
+    },
+    isPartial(row) {
+      const arr = this.parseRecipients(row.recipientResultsJson)
+      if (!arr.length) return false
+      return arr.some(x => x.success) && arr.some(x => !x.success)
+    },
     receiversText(json) {
       if (!json) return '-'
       try {
@@ -133,3 +173,13 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.recipient-detail {
+  padding: 8px 24px;
+}
+.recipient-empty {
+  color: #909399;
+  font-size: 12px;
+}
+</style>

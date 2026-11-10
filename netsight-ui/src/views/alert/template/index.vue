@@ -76,10 +76,59 @@
             必须选择已配置好参数的通道实例（仅列出本租户已启用实例），不再支持按通道类型使用默认模板
           </div>
         </el-form-item>
-        <el-form-item label="模板内容" prop="content">
+        <el-form-item label="模板内容" prop="content" v-if="templateForm.channelType !== 'wechat'">
           <el-input v-model="templateForm.content" type="textarea" :rows="5"
             :placeholder="'支持占位符：{{device_name}} {{device_ip}} {{device_type}} {{location}} {{severity}} {{time}} {{content}}'" />
         </el-form-item>
+
+        <!-- 微信模板描述符 -->
+        <template v-if="templateForm.channelType === 'wechat'">
+          <el-form-item label="微信模板 ID">
+            <el-input v-model="wechatTemplateId" placeholder="公众号后台模板 ID；留空则使用渠道默认模板 ID" />
+          </el-form-item>
+          <el-form-item label="跳转 URL">
+            <el-input v-model="wechatUrl" placeholder="如 http://www.netsightplus.cn/m/orders；留空使用渠道默认" />
+          </el-form-item>
+          <el-form-item label="字段映射">
+            <div style="width:100%">
+              <el-table :data="wechatFields" size="mini" border>
+                <el-table-column label="字段名" width="150">
+                  <template slot-scope="scope">
+                    <el-input v-model="scope.row.key" placeholder="如 thing2" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="变量" min-width="170">
+                  <template slot-scope="scope">
+                    <el-input v-model="scope.row.value" placeholder="如 {{device_name}}" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="默认值" width="140">
+                  <template slot-scope="scope">
+                    <el-input v-model="scope.row.defaultValue" placeholder="变量为空时显示" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="60" align="center">
+                  <template slot-scope="scope">
+                    <el-button type="text" size="mini" style="color:#f56c6c" @click="removeWechatField(scope.$index)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div style="margin-top:8px">
+                <el-button size="mini" icon="el-icon-plus" @click="addWechatField">添加字段</el-button>
+                <el-button size="mini" icon="el-icon-refresh" @click="resetWechatFields">恢复默认 5 字段</el-button>
+                <el-button size="mini" icon="el-icon-view" @click="showWechatJson = !showWechatJson">{{ showWechatJson ? '隐藏' : '查看' }}原始 JSON</el-button>
+              </div>
+              <el-input v-if="showWechatJson" type="textarea" :rows="6" readonly :value="wechatJsonPreview" style="margin-top:8px" />
+              <div v-pre style="font-size:12px;color:#909399;line-height:1.5;margin-top:6px;">
+                字段名须匹配微信模板字段（thing/phrase/character_string/number/amount/date/time 等），变量可用
+                {{device_name}}、{{device_no}}、{{event_state}}、{{event_title}}、{{severity_text}}、{{location}}、{{content}}、{{time}}
+              </div>
+            </div>
+          </el-form-item>
+          <el-form-item v-if="wechatTemplateId" label="模板 ID 提示">
+            <span style="font-size:12px;color:#909399">描述符中的模板 ID 优先于渠道“默认模板 ID”</span>
+          </el-form-item>
+        </template>
         <el-form-item label="是否启用" prop="enabled">
           <el-radio-group v-model="templateForm.enabled">
             <el-radio :label="1">启用</el-radio>
@@ -132,6 +181,10 @@ export default {
       ],
       open: false,
       submitLoading: false,
+      wechatFields: [],
+      wechatTemplateId: '',
+      wechatUrl: '',
+      showWechatJson: false,
       templateForm: {
         id: undefined,
         templateCode: '',
@@ -152,6 +205,9 @@ export default {
   computed: {
     enabledChannelInstances() {
       return this.channelInstanceList.filter(c => c.enabled === 1 || c.enabled === '1')
+    },
+    wechatJsonPreview() {
+      return JSON.stringify(this.buildWechatContent(), null, 2)
     }
   },
   created() {
@@ -185,10 +241,77 @@ export default {
       const ch = this.channelInstanceList.find(c => c.id === id)
       if (ch) {
         this.templateForm.channelType = ch.channelType
+        if (ch.channelType === 'wechat') {
+          const cfg = this.parseChannelConfig(ch)
+          this.wechatTemplateId = cfg.templateId || ''
+          this.wechatUrl = cfg.url || ''
+          if (!this.wechatFields.length) this.resetWechatFields()
+        } else {
+          this.wechatTemplateId = ''
+          this.wechatUrl = ''
+          this.wechatFields = []
+        }
       }
+    },
+    parseChannelConfig(ch) {
+      try {
+        return ch && ch.configJson ? JSON.parse(ch.configJson) : {}
+      } catch (e) {
+        return {}
+      }
+    },
+    defaultWechatFields() {
+      return [
+        { key: 'thing2', value: '{{device_name}}', defaultValue: '未知设备' },
+        { key: 'phrase9', value: '{{event_state}}', defaultValue: '告警' },
+        { key: 'character_string11', value: '{{device_no}}', defaultValue: '-' },
+        { key: 'thing17', value: '{{location}}', defaultValue: '未登记位置' },
+        { key: 'phrase20', value: '{{severity_text}}', defaultValue: '一般' }
+      ]
+    },
+    resetWechatFields() {
+      this.wechatFields = this.defaultWechatFields()
+    },
+    addWechatField() {
+      this.wechatFields.push({ key: '', value: '', defaultValue: '' })
+    },
+    removeWechatField(index) {
+      this.wechatFields.splice(index, 1)
+    },
+    buildWechatContent() {
+      return {
+        templateId: this.wechatTemplateId || '',
+        url: this.wechatUrl || '',
+        fields: this.wechatFields.map(f => ({
+          key: (f.key || '').trim(),
+          value: (f.value || '').trim(),
+          default: f.defaultValue || ''
+        }))
+      }
+    },
+    validateWechatFields() {
+      if (!this.wechatFields.length) {
+        this.$modal.msgError('请至少添加一个微信模板字段')
+        return false
+      }
+      for (const f of this.wechatFields) {
+        if (!f.key || !/^[A-Za-z][A-Za-z0-9_]*$/.test(f.key.trim())) {
+          this.$modal.msgError('微信模板字段名不合法：' + (f.key || '空'))
+          return false
+        }
+        if (!f.value || !f.value.trim()) {
+          this.$modal.msgError('字段 ' + f.key + ' 的变量不能为空')
+          return false
+        }
+      }
+      return true
     },
     handleAdd() {
       this.templateForm = { id: undefined, templateCode: '', templateName: '', channelType: 'wechat', channelId: undefined, content: '', enabled: 1 }
+      this.wechatTemplateId = ''
+      this.wechatUrl = ''
+      this.showWechatJson = false
+      this.resetWechatFields()
       this.open = true
       this.$nextTick(() => this.$refs.templateForm && this.$refs.templateForm.clearValidate())
     },
@@ -202,10 +325,33 @@ export default {
         content: row.content,
         enabled: row.enabled
       }
+      this.wechatTemplateId = ''
+      this.wechatUrl = ''
+      this.wechatFields = []
+      this.showWechatJson = false
+      if (row.channelType === 'wechat') {
+        try {
+          const obj = JSON.parse(row.content || '{}')
+          this.wechatTemplateId = obj.templateId || ''
+          this.wechatUrl = obj.url || ''
+          this.wechatFields = (obj.fields || []).map(f => ({
+            key: f.key,
+            value: f.value,
+            defaultValue: f.default || ''
+          }))
+          if (!this.wechatFields.length) this.resetWechatFields()
+        } catch (e) {
+          this.resetWechatFields()
+        }
+      }
       this.open = true
       this.$nextTick(() => this.$refs.templateForm && this.$refs.templateForm.clearValidate())
     },
     submitForm() {
+      if (this.templateForm.channelType === 'wechat') {
+        if (!this.validateWechatFields()) return
+        this.templateForm.content = JSON.stringify(this.buildWechatContent())
+      }
       this.$refs.templateForm.validate(valid => {
         if (!valid) return
         this.submitLoading = true

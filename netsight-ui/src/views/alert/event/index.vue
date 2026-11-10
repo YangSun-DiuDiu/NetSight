@@ -154,8 +154,12 @@ export default {
       },
       eventTypeOptions: [
         { value: 'device_offline', label: '设备离线' },
-        { value: 'device_line_abnormal', label: '外线异常' },
+        { value: 'device_line_abnormal', label: '链路异常' },
         { value: 'device_recovered', label: '故障恢复' },
+        { value: 'device_cpu_high', label: 'CPU过高' },
+        { value: 'device_mem_high', label: '内存过高' },
+        { value: 'order_dispatch', label: '工单派发' },
+        { value: 'stock_low', label: '库存预警' },
         { value: 'manual_notify', label: '手动通知' }
       ],
       manualOpen: false,
@@ -247,7 +251,16 @@ export default {
       this.detailOpen = true
     },
     eventTypeText(type) {
-      const map = { device_offline: '设备离线', device_line_abnormal: '外线异常', device_recovered: '故障恢复', manual_notify: '手动通知' }
+      const map = {
+        device_offline: '设备离线',
+        device_line_abnormal: '链路异常',
+        device_recovered: '故障恢复',
+        device_cpu_high: 'CPU过高',
+        device_mem_high: '内存过高',
+        order_dispatch: '工单派发',
+        stock_low: '库存预警',
+        manual_notify: '手动通知'
+      }
       return map[type] || type
     },
     eventTypeTag(type) {

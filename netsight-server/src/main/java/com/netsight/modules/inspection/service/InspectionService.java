@@ -18,6 +18,8 @@ import com.netsight.modules.system.entity.Device;
 import com.netsight.modules.system.entity.SysUser;
 import com.netsight.modules.system.mapper.DeviceMapper;
 import com.netsight.modules.system.mapper.SysUserMapper;
+import com.netsight.modules.workflow.entity.ApprovalBill;
+import com.netsight.modules.workflow.service.WorkflowService;
 import com.netsight.modules.workorder.entity.WorkOrder;
 import com.netsight.modules.workorder.mapper.WorkOrderMapper;
 import com.netsight.modules.workorder.service.WorkOrderService;
@@ -57,6 +59,12 @@ public class InspectionService {
     private final SysUserMapper userMapper;
     private final WorkOrderService workOrderService;
     private final WorkOrderMapper workOrderMapper;
+    private final WorkflowService workflowService;
+
+    /** 点检任务确认审批业务类型 */
+    public static final String BIZ_INSPECTION_CONFIRM = "inspection_task_confirm";
+    /** 点检任务确认流程编码前缀（按租户隔离：inspection_task_confirm_t{tenantId}） */
+    public static final String FLOW_INSPECTION_CONFIRM_PREFIX = "inspection_task_confirm_t";
 
     // ==================== 点检项库 ====================
 
@@ -220,6 +228,7 @@ public class InspectionService {
                 task.setPlanDate(targetDate);
                 task.setStatus(0);
                 task.setAbnormalCount(0);
+                task.setAttemptNo(1);
                 taskMapper.insert(task);
                 created++;
             } catch (Exception e) {
@@ -393,6 +402,7 @@ public class InspectionService {
             throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "点检项不能为空");
         }
         String operator = currentUsername();
+        String operatorRealName = currentRealName(operator);
         Long operatorId = SecurityUtils.getUserId();
         int abnormal = 0;
         Long orderId = null;
@@ -429,14 +439,36 @@ public class InspectionService {
         update.setStatus(2);
         update.setAbnormalCount(abnormal);
         update.setFinishTime(LocalDateTime.now());
+        int attemptNo = task.getAttemptNo() == null ? 1 : task.getAttemptNo();
+        update.setAttemptNo(attemptNo);
         if (body.get("remark") != null) {
             update.setRemark((String) body.get("remark"));
+        }
+
+        // 点检完成即自动发起“点检任务确认”审批：流程编码按租户隔离，
+        // 未配置流程的租户保持原有“完成即结束”逻辑，不阻断点检提交。
+        String flowCode = FLOW_INSPECTION_CONFIRM_PREFIX + task.getTenantId();
+        ApprovalBill bill = null;
+        if (workflowService.hasPublishedFlow(flowCode, task.getTenantId())) {
+            String title = "点检任务确认 - " + task.getTaskNo() + "（第" + attemptNo + "轮）";
+            bill = workflowService.startForTenant(task.getTenantId(), operatorId, operatorRealName,
+                    flowCode, BIZ_INSPECTION_CONFIRM, task.getTaskNo(), title);
+        } else {
+            log.warn("点检任务确认流程未配置，任务按无审批完成 tenantId={} taskNo={} flowCode={}",
+                    task.getTenantId(), task.getTaskNo(), flowCode);
+        }
+        if (bill != null) {
+            update.setApprovalStatus(WorkflowService.STATUS_PROCESSING);
+            update.setApprovalBillId(bill.getId());
         }
         taskMapper.updateById(update);
 
         Map<String, Object> result = new HashMap<>();
         result.put("abnormalCount", abnormal);
         result.put("orderId", orderId);
+        result.put("approvalStarted", bill != null);
+        result.put("approvalBillId", bill == null ? null : bill.getId());
+        result.put("attemptNo", attemptNo);
         // 同步返回工单业务编号，前端提示用，避免只展示内部主键
         if (orderId != null) {
             WorkOrder order = workOrderMapper.selectById(orderId);
@@ -621,6 +653,16 @@ public class InspectionService {
             return SecurityUtils.getLoginUser().getUsername();
         } catch (Exception e) {
             return "系统";
+        }
+    }
+
+    /** 审批单展示用真实姓名，取不到时回退登录名 */
+    private String currentRealName(String fallback) {
+        try {
+            String realName = SecurityUtils.getLoginUser().getRealName();
+            return realName == null || realName.isEmpty() ? fallback : realName;
+        } catch (Exception e) {
+            return fallback;
         }
     }
 

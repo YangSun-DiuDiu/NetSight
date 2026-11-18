@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 审批工作流服务
@@ -92,7 +93,7 @@ public class WorkflowService {
     }
 
     /**
-     * 按流程编码查询已发布定义（发起前校验）
+     * 按流程编码查询已发布定义（仅按当前登录租户过滤）。
      */
     public Definition getPublishedByFlowCode(String flowCode) {
         Definition definition = defService.getPublishByFlowCode(flowCode);
@@ -103,16 +104,58 @@ public class WorkflowService {
     }
 
     /**
+     * 按流程编码 + 指定租户查询已发布定义。
+     *
+     * 引擎 getPublishByFlowCode 依赖 TenantHandler 取当前登录租户，不能用来判断
+     * “其它租户是否配置了流程”。这里先用原生 JDBC 做租户精确计数，再取定义并二次校验，
+     * 防止超管代操作或租户切换时误用其它租户的流程。
+     */
+    public Definition getPublishedByFlowCode(String flowCode, Long tenantId) {
+        if (tenantId != null) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM flow_definition " +
+                    "WHERE flow_code = ? AND tenant_id = ? AND is_publish = 1 AND activity_status = 1 AND del_flag = '0'",
+                    Integer.class, flowCode, String.valueOf(tenantId));
+            if (count == null || count == 0) {
+                throw new ServiceException("流程定义未找到或未发布：" + flowCode + "（租户" + tenantId + "）");
+            }
+        }
+        Definition definition = getPublishedByFlowCode(flowCode);
+        if (tenantId != null && definition.getTenantId() != null
+                && !String.valueOf(tenantId).equals(String.valueOf(definition.getTenantId()))) {
+            throw new ServiceException("流程定义租户不匹配：" + flowCode
+                    + "（期望租户" + tenantId + "，实际租户" + definition.getTenantId() + "）");
+        }
+        return definition;
+    }
+
+    /**
      * 当前租户是否已发布指定流程（用于业务侧“可选审批”分支判断，未配置时保持原逻辑）
      */
     public boolean hasPublishedFlow(String flowCode) {
+        return hasPublishedFlow(flowCode, null);
+    }
+
+    /**
+     * 指定租户是否已发布指定流程。
+     */
+    public boolean hasPublishedFlow(String flowCode, Long tenantId) {
         if (!StringUtils.hasText(flowCode)) {
             return false;
         }
         try {
+            if (tenantId != null) {
+                Integer count = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM flow_definition " +
+                        "WHERE flow_code = ? AND tenant_id = ? AND is_publish = 1 AND activity_status = 1 AND del_flag = '0'",
+                        Integer.class, flowCode, String.valueOf(tenantId));
+                if (count == null || count == 0) {
+                    return false;
+                }
+            }
             return defService.getPublishByFlowCode(flowCode) != null;
         } catch (Exception e) {
-            log.warn("流程定义查询失败 flowCode={}: {}", flowCode, e.getMessage());
+            log.warn("流程定义查询失败 flowCode={} tenantId={}: {}", flowCode, tenantId, e.getMessage());
             return false;
         }
     }
@@ -133,11 +176,31 @@ public class WorkflowService {
         if (userId == null) {
             throw new ServiceException(ResultCode.UNAUTHORIZED);
         }
+        return startForTenant(SecurityUtils.getTenantId(), userId,
+                SecurityUtils.getLoginUser() == null ? null : SecurityUtils.getLoginUser().getRealName(),
+                flowCode, bizType, bizId, title);
+    }
+
+    /**
+     * 指定租户发起流程并登记统一审批单。
+     *
+     * 适用于业务提交时自动发起审批：tenantId 以业务单据为准，避免定时任务、
+     * 超管代操作等场景下取错当前登录租户。引擎本身仍按当前登录租户加载流程定义，
+     * 因此调用方必须保证当前登录租户与 tenantId 一致（本系统按租户独立部署流程）。
+     */
+    public ApprovalBill startForTenant(Long tenantId, Long userId, String userName,
+                                       String flowCode, String bizType, String bizId, String title) {
+        if (userId == null) {
+            throw new ServiceException(ResultCode.UNAUTHORIZED);
+        }
         if (!StringUtils.hasText(flowCode) || !StringUtils.hasText(bizId)) {
             throw new ServiceException("flowCode 与 bizId 不能为空");
         }
-        // 发起前校验流程已发布，同时取流程名用于审批单冗余展示
-        Definition definition = getPublishedByFlowCode(flowCode);
+        if (tenantId == null) {
+            tenantId = SecurityUtils.getTenantId();
+        }
+        // 发起前校验：流程必须在目标租户已发布，同时取流程名用于审批单冗余展示
+        Definition definition = getPublishedByFlowCode(flowCode, tenantId);
 
         // 1. 引擎发起：变量携带业务上下文，供后续节点/监听器使用
         Map<String, Object> variable = new HashMap<>();
@@ -155,11 +218,11 @@ public class WorkflowService {
         }
         // 引擎 1.8.9 运行时表写入时不填 tenant_id，而引擎查询会按 TenantHandler 追加租户过滤，
         // 因此每次流转后都要把实例、任务、审批人、历史四张表补齐（只填 NULL，幂等）。
-        syncRuntimeTenant(instance.getId(), SecurityUtils.getTenantId());
+        syncRuntimeTenant(instance.getId(), tenantId);
 
         // 2. 登记统一审批单
         ApprovalBill bill = new ApprovalBill();
-        bill.setTenantId(SecurityUtils.getTenantId());
+        bill.setTenantId(tenantId);
         bill.setBizType(bizType);
         bill.setBizId(bizId);
         bill.setFlowCode(flowCode);
@@ -167,13 +230,13 @@ public class WorkflowService {
         bill.setProcessInstanceId(instance.getId());
         bill.setApprovalStatus(STATUS_PROCESSING);
         bill.setApplyUserId(userId);
-        bill.setApplyUserName(SecurityUtils.getLoginUser().getRealName());
+        bill.setApplyUserName(userName);
         bill.setCurrentNode(instance.getNodeName());
         bill.setTitle(StringUtils.hasText(title) ? title : (bizType + "审批 " + bizId));
         approvalBillMapper.insert(bill);
 
-        log.info("流程发起成功 flowCode={} bizType={} bizId={} instanceId={} billId={}",
-                flowCode, bizType, bizId, instance.getId(), bill.getId());
+        log.info("流程发起成功 flowCode={} bizType={} bizId={} tenantId={} instanceId={} billId={}",
+                flowCode, bizType, bizId, tenantId, instance.getId(), bill.getId());
         return bill;
     }
 
@@ -265,11 +328,21 @@ public class WorkflowService {
 
     /**
      * 发布审批结果事件（供业务模块监听做审批存档）
+     *
+     * 只在流程到达最终态（approved / rejected）时发布；多节点流程的中间节点通过
+     * 仍为 processing，不能提前通知业务侧归档，否则 3 节点审批会在初审就把业务单置为已通过。
      */
     private void publishApprovalEvent(ApprovalBill bill, boolean pass, String comment) {
+        String status = bill.getApprovalStatus();
+        if (!STATUS_APPROVED.equals(status) && !STATUS_REJECTED.equals(status)) {
+            log.info("[审批事件] 中间节点不发布结果事件 billId={} status={} currentNode={}",
+                    bill.getId(), status, bill.getCurrentNode());
+            return;
+        }
         try {
             eventPublisher.publishEvent(new WorkflowApprovalEvent(
-                    bill.getBizType(), bill.getBizId(), pass, comment, bill.getApprovalStatus()));
+                    bill.getBizType(), bill.getBizId(), pass, comment, status,
+                    bill.getId(), bill.getTenantId()));
         } catch (Exception e) {
             // 事件发布失败不影响审批主流程
             log.error("审批事件发布失败 billId={}: {}", bill.getId(), e.getMessage());
@@ -474,6 +547,7 @@ public class WorkflowService {
             row.put("actionTag", action.getTag());
         }
         detail.put("history", history);
+        detail.put("bizDetail", loadBizDetail(bill));
         return detail;
     }
 
@@ -484,7 +558,45 @@ public class WorkflowService {
         if (bill == null) {
             throw new ServiceException("审批单不存在：" + billId);
         }
+        // 租户校验：非超管只能查看/审批本租户单据，防止审批单ID越权
+        if (!SecurityUtils.isSuperAdmin()
+                && !Objects.equals(bill.getTenantId(), SecurityUtils.getTenantId())) {
+            throw new ServiceException("无权访问该审批单：" + billId);
+        }
         return bill;
+    }
+
+    /**
+     * 审批单对应的业务明细（点检任务确认时返回任务快照 + 点检记录）。
+     * 用原生 JDBC 查询，避免 WorkflowService 反向依赖 InspectionService 形成循环依赖。
+     */
+    private Map<String, Object> loadBizDetail(ApprovalBill bill) {
+        if (!"inspection_task_confirm".equals(bill.getBizType())) {
+            return null;
+        }
+        List<Map<String, Object>> tasks = jdbcTemplate.queryForList(
+                "SELECT id, task_no AS taskNo, plan_name AS planName, target_name AS targetName, " +
+                "       target_location AS targetLocation, assignee_name AS assigneeName, " +
+                "       plan_date AS planDate, status, approval_status AS approvalStatus, " +
+                "       attempt_no AS attemptNo, abnormal_count AS abnormalCount, " +
+                "       finish_time AS finishTime, remark " +
+                "FROM inspection_task WHERE task_no = ? AND tenant_id = ? AND del_flag = '0' LIMIT 1",
+                bill.getBizId(), bill.getTenantId());
+        if (tasks.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> task = tasks.get(0);
+        Object taskId = task.get("id");
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                "SELECT r.item_name AS itemName, r.result, r.text_result AS textResult, r.remark, " +
+                "       r.operator_name AS operatorName, w.order_no AS orderNo " +
+                "FROM inspection_record r LEFT JOIN work_order w ON w.id = r.order_id " +
+                "WHERE r.task_id = ? AND r.del_flag = '0' ORDER BY r.id ASC",
+                taskId);
+        Map<String, Object> detail = new HashMap<>();
+        detail.put("task", task);
+        detail.put("records", records);
+        return detail;
     }
 
     /**

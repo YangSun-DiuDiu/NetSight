@@ -69,4 +69,13 @@ public class InspectionTask extends BaseEntity {
 
     /** 任务备注 */
     private String remark;
+
+    /** 审批状态：null 未配置审批 / processing 审批中 / approved 已通过 / rejected 已驳回 */
+    private String approvalStatus;
+
+    /** 关联审批单ID（approval_bill.id） */
+    private Long approvalBillId;
+
+    /** 当前执行轮次（首次为1，驳回后+1，历史记录保留） */
+    private Integer attemptNo;
 }

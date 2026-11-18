@@ -104,6 +104,34 @@
         <el-descriptions-item label="备注">{{ approveDetail.bill.remark || '—' }}</el-descriptions-item>
       </el-descriptions>
 
+      <!-- 点检任务确认业务明细 -->
+      <div v-if="approveDetail.bizDetail && approveDetail.bizDetail.task" style="margin-top:16px">
+        <div style="font-weight:600;margin-bottom:8px">点检任务明细</div>
+        <el-descriptions :column="2" size="small" border>
+          <el-descriptions-item label="任务编号">{{ approveDetail.bizDetail.task.taskNo }}</el-descriptions-item>
+          <el-descriptions-item label="计划">{{ approveDetail.bizDetail.task.planName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="目标设备">{{ approveDetail.bizDetail.task.targetName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="位置">{{ approveDetail.bizDetail.task.targetLocation || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="执行人">{{ approveDetail.bizDetail.task.assigneeName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="执行轮次">{{ approveDetail.bizDetail.task.attemptNo || 1 }}</el-descriptions-item>
+          <el-descriptions-item label="异常项">{{ approveDetail.bizDetail.task.abnormalCount || 0 }}</el-descriptions-item>
+          <el-descriptions-item label="完成时间">{{ formatTime(approveDetail.bizDetail.task.finishTime) }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="approveDetail.bizDetail.records || []" border size="mini" style="margin-top:10px">
+          <el-table-column label="点检项" prop="itemName" min-width="110" />
+          <el-table-column label="结果" width="70" align="center">
+            <template slot-scope="scope">
+              <el-tag :type="scope.row.result === 1 ? 'danger' : 'success'" size="mini">
+                {{ scope.row.result === 1 ? '异常' : '正常' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="文本结果" prop="textResult" min-width="90" />
+          <el-table-column label="备注" prop="remark" min-width="120" show-overflow-tooltip />
+          <el-table-column label="关联工单" prop="orderNo" width="150" />
+        </el-table>
+      </div>
+
       <!-- 审批轨迹 -->
       <div v-if="approveDetail.history && approveDetail.history.length" style="margin-top:16px">
         <div style="font-weight:600;margin-bottom:8px">审批轨迹</div>

@@ -124,6 +124,7 @@ const BIZ_TYPES = {
   scrap: '报废退役',
   fault_kb: '故障库发布',
   inspection_exception: '点检异常',
+  inspection_task_confirm: '点检任务确认',
   notice_publish: '公告发布'
 }
 const STATUS_MAP = {

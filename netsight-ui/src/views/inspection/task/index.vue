@@ -103,10 +103,21 @@
         <el-table-column label="位置" prop="targetLocation" width="150" show-overflow-tooltip  align="center"/>
         <el-table-column label="执行人" prop="assigneeName" width="150" align="center" />
         <el-table-column label="计划日期" prop="planDate" width="150" align="center" />
-        <el-table-column label="状态" width="150" align="center">
+        <el-table-column label="状态" width="120" align="center">
           <template slot-scope="scope">
             <el-tag size="mini" :type="statusType(scope.row.status)">{{ statusText(scope.row.status) }}</el-tag>
           </template>
+        </el-table-column>
+        <el-table-column label="审批状态" width="120" align="center">
+          <template slot-scope="scope">
+            <el-tag v-if="scope.row.approvalStatus" size="mini" :type="approvalType(scope.row.approvalStatus)">
+              {{ approvalText(scope.row.approvalStatus) }}
+            </el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="轮次" width="80" align="center">
+          <template slot-scope="scope">{{ scope.row.attemptNo || 1 }}</template>
         </el-table-column>
         <el-table-column label="异常项" width="150" align="center">
           <template slot-scope="scope">
@@ -183,6 +194,14 @@
         <el-descriptions-item label="状态">
           <el-tag size="mini" :type="statusType(currentTask.status)">{{ statusText(currentTask.status) }}</el-tag>
         </el-descriptions-item>
+        <el-descriptions-item label="审批状态">
+          <el-tag v-if="currentTask.approvalStatus" size="mini" :type="approvalType(currentTask.approvalStatus)">
+            {{ approvalText(currentTask.approvalStatus) }}
+          </el-tag>
+          <span v-else>-</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="执行轮次">{{ currentTask.attemptNo || 1 }}</el-descriptions-item>
+        <el-descriptions-item label="审批单ID">{{ currentTask.approvalBillId || '-' }}</el-descriptions-item>
         <el-descriptions-item label="完成时间">{{ currentTask.finishTime || '-' }}</el-descriptions-item>
       </el-descriptions>
       <el-table v-if="detailRecords.length > 0" :data="detailRecords" border size="mini" style="margin-top: 12px">
@@ -304,6 +323,9 @@ export default {
         if (abnormal > 0) {
           msg += '，发现 ' + abnormal + ' 项异常' + (res.orderNo ? '，已生成报修工单 ' + res.orderNo : '')
         }
+        if (res.approvalStarted) {
+          msg += '，已发起“点检任务确认”审批，等待租户管理员确认'
+        }
         this.$message.success(msg)
         this.getList(); this.getStats()
       }).catch(() => { this.submitting = false })
@@ -322,6 +344,12 @@ export default {
     },
     statusType(s) {
       return ['warning', 'primary', 'success', 'danger'][s] || 'info'
+    },
+    approvalText(s) {
+      return { processing: '审批中', approved: '已通过', rejected: '已驳回' }[s] || '-'
+    },
+    approvalType(s) {
+      return { processing: 'warning', approved: 'success', rejected: 'danger' }[s] || 'info'
     },
     hasPerm(key) {
       const perms = this.$store.getters.permissions || []

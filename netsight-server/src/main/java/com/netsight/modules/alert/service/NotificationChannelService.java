@@ -108,7 +108,7 @@ public class NotificationChannelService {
         }
         List<String> doneChannelKeys = new ArrayList<>();
         for (NotificationTemplate tpl : groupTemplates) {
-            // 模板绑定了具体通道实例则用之；未绑（channelId 为空）则按通道类型自动选该租户默认启用实例
+            // 模板绑定了具体通道实例则用之；未绑定（channelId 为空）直接跳过并 warning
             Map<String, Object> ch = resolveChannelInstance(tpl, event.getTenantId());
             if (ch == null) {
                 log.warn("模板[{}]通道类型[{}]无可用实例，跳过", tpl.getId(), tpl.getChannelType());
@@ -154,7 +154,7 @@ public class NotificationChannelService {
             log.warn("模板[{}]未绑定通道实例（channelId 为空），跳过发送 (tenantId={})", tpl.getId(), tenantId);
             return null;
         }
-        List<Map<String, Object>> resolved = notifyChannelService.resolveChannels(List.of(tpl.getChannelId()));
+        List<Map<String, Object>> resolved = notifyChannelService.resolveChannels(List.of(tpl.getChannelId()), tenantId);
         return resolved.isEmpty() ? null : resolved.get(0);
     }
 
@@ -228,7 +228,7 @@ public class NotificationChannelService {
         }
         NotificationTemplate mainTemplate = findManualTemplate(event.getTenantId(), event.getEventType());
         // 按渠道实例 ID 解析实例配置（channelType + 解密后的 config）
-        List<Map<String, Object>> channels = notifyChannelService.resolveChannels(channelIds);
+        List<Map<String, Object>> channels = notifyChannelService.resolveChannels(channelIds, event.getTenantId());
         List<String> doneChannelKeys = new ArrayList<>();
         for (Map<String, Object> ch : channels) {
             String channelType = String.valueOf(ch.get("channelType"));
@@ -251,7 +251,7 @@ public class NotificationChannelService {
                     && !doneChannelKeys.contains("wechat_work#null")) {
                 log.warn("短信发送失败，自动降级企业微信通道重发 (eventId={})", event.getId());
                 // 找租户启用的企业微信渠道实例重发
-                List<Map<String, Object>> wxChannels = notifyChannelService.resolveChannels(channelIds).stream()
+                List<Map<String, Object>> wxChannels = notifyChannelService.resolveChannels(channelIds, event.getTenantId()).stream()
                         .filter(c -> "wechat_work".equals(c.get("channelType"))).toList();
                 if (!wxChannels.isEmpty()) {
                     Map<String, Object> wxCh = wxChannels.get(0);

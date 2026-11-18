@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.netsight.common.core.PageResult;
 import com.netsight.common.exception.ServiceException;
 import com.netsight.framework.security.SecurityUtils;
+import com.netsight.modules.alert.dto.NotifyContactSyncResult;
+import com.netsight.modules.alert.service.NotificationContactService;
 import com.netsight.modules.system.dto.SysUserOption;
 import com.netsight.modules.system.entity.SysUser;
 import com.netsight.modules.system.mapper.SysUserMapper;
@@ -47,6 +49,7 @@ public class RepairerService {
     private final WorkOrderMapper workOrderMapper;
     private final SysUserMapper sysUserMapper;
     private final SysUserService sysUserService;
+    private final NotificationContactService notificationContactService;
 
     public PageResult<Repairer> pageRepairer(long pageNum, long pageSize, String keyword,
                                              String name, Integer status) {
@@ -302,7 +305,9 @@ public class RepairerService {
         }
         repairerMapper.insert(repairer);
         sysUserService.ensureRole(user.getId(), "repairer");
-        return new RepairerSaveResult(repairer.getId(), user.getUsername(), false);
+        RepairerSaveResult result = new RepairerSaveResult(repairer.getId(), user.getUsername(), false);
+        applyNotifyContact(request, repairer, result, tenantId);
+        return result;
     }
 
     private RepairerSaveResult createExternal(Repairer request, Long tenantId) {
@@ -333,7 +338,21 @@ public class RepairerService {
             repairer.setStatus(1);
         }
         repairerMapper.insert(repairer);
-        return new RepairerSaveResult(repairer.getId(), user.getUsername(), true);
+        RepairerSaveResult result = new RepairerSaveResult(repairer.getId(), user.getUsername(), true);
+        applyNotifyContact(request, repairer, result, tenantId);
+        return result;
+    }
+
+    private void applyNotifyContact(Repairer request, Repairer repairer,
+                                    RepairerSaveResult result, Long tenantId) {
+        if (!Boolean.TRUE.equals(request.getNotifyEnabled())) {
+            result.setNotifyContact(NotifyContactSyncResult.skipped());
+            return;
+        }
+        String operator = SecurityUtils.isAuthenticated()
+                ? SecurityUtils.getLoginUser().getUsername() : null;
+        result.setNotifyContact(notificationContactService.ensureContactForRepairer(
+                tenantId, repairer.getName(), repairer.getPhone(), operator));
     }
 
     private void copyEditableFields(Repairer source, Repairer target) {

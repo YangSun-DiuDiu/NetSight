@@ -3,7 +3,7 @@
 **日期**：2026-11-10  
 **分支**：`feature/wechat-mp-full-support`  
 **基线提交**：`bfdcf47`（含 AI 诊断 P0 与 H5 问诊输入限制）  
-**状态**：设计定稿，待实现计划  
+**状态**：设计定稿（多租户共享 appId + 租户私有通道），改造清单见 `docs/superpowers/plans/2026-11-10-wechat-shared-appid-change-list.md`
 **范围**：NetSight 测试环境 `115.159.194.149`；生产 `1.94.26.126` 本轮不触碰
 
 ---
@@ -449,10 +449,137 @@ GET https://api.weixin.qq.com/sns/oauth2/access_token
 
 ### 6.10 openid 与 appId
 
-- openid 按 appId 隔离；本期只有一个服务号，但绑定仍写 `wechat_app_id`。
+- openid 按 appId 隔离；多个租户可以共享同一个服务号 AppID，但每个租户各自建通道副本，绑定仍写 `wechat_app_id`。
 - `NotificationContact` 增加 `wechat_app_id`、`wechat_bound_at`。
 - `resolveReceiversByChannel(contacts, "wechat", appId)` 过滤：`wechatAppId` 为空（历史数据）或等于当前 `appId` 才返回。
 - 发送时 appId 不匹配的联系人跳过，日志 `skipped/app_id_mismatch`。
+
+### 6.11 多租户共享服务号与租户私有通道
+
+#### 6.11.1 前提
+
+多个租户可以绑定**同一个微信服务号 AppID**，但 `notify_channel` 仍是租户私有配置：
+
+```text
+同一个 appId      → 可以出现在多个租户的通道记录里
+同一条 channel   → 只能属于一个租户，不能跨租户共用
+```
+
+因此：
+
+- 需要微信推送的租户，在自己租户下新建一条 `channel_type=wechat` 的 `notify_channel`，`appId/appSecret` 填同一个服务号；
+- 不需要微信推送的租户，不建通道、不建微信模板即可；
+- 需要另一个服务号的租户，再建自己的通道，填另一个 `appId/appSecret`；
+- 不允许租户 1 的模板直接引用租户 7 的通道 7；共用同一个 channelId 才需要 `scope`，本方案不做。
+
+`tenant_id` 仍表示通道的归属租户，也是发送时的隔离边界。
+
+#### 6.11.2 数据模型
+
+不新增 `scope` 字段，`notify_channel` 保持现有结构：
+
+```sql
+-- 现有索引已足够
+KEY idx_tenant_type (tenant_id, channel_type)
+```
+
+约束：
+
+- 同一 `appId` 允许出现在多条通道记录中，不新增 appId 唯一约束；
+- 每个租户的微信通道建议只保留一条启用实例；需要多个服务号时可多条，由模板显式绑定；
+- `appSecret` 在每个租户通道中各存一份，微信后台轮换密钥时需要逐租户更新；
+- `notify_channel.id=7` 继续归属租户 7，不迁移、不标记全局；
+- 租户 1 需要共享服务号时，新增一条 `tenant_id=1` 的微信通道，不复用 7。
+
+#### 6.11.3 通道解析规则
+
+| 场景 | 传入租户 | 允许的通道 |
+|---|---|---|
+| OAuth `start/callback`（免登录） | 请求 `channelId` 或默认 OAuth 通道 | 只用于取 `appId/appSecret`；必须 `channel_type=wechat`、`enabled=1`、含 appId/appSecret |
+| 登录后绑定 | 登录用户 `tenantId` | 不解析通道租户；用 ticket 中的 `appId` 写联系人 |
+| 管理端扫码绑定 | 联系人 `tenantId` | 必须是该联系人所属租户的启用微信通道 |
+| 事件自动发送（异步、无登录态） | `event.tenantId` | 模板绑定的通道必须属于 `event.tenantId` |
+| 手动发送（已登录） | 当前登录租户 | 所选通道必须属于当前登录租户 |
+| 渠道列表/详情 | 当前登录租户 | 仅本租户通道（沿用租户拦截器） |
+
+实现要点：
+
+- `NotifyChannelService.resolveChannels` 增加 `tenantId` 参数，读取后显式校验 `channel.tenantId == tenantId`；异步发送也必须传 `event.tenantId`，不能因为无登录态就跳过；
+- 已登录的手动发送和自动发送都传事件/当前租户，避免模板错绑其他租户通道时静默发送；
+- 不新增 `selectByIdIgnoreTenant`、`selectGlobalByType`、`selectVisiblePage`；
+- 渠道列表不返回其他租户通道，模板页/事件页下拉自然只看到本租户通道。
+
+#### 6.11.4 默认 OAuth 通道
+
+删除 `WechatOAuthService.start` 的 `channelId == null ? 7L : channelId` 和 `WechatOAuthController.bindUrl` 的 `defaultValue="7"`。
+
+新增配置：
+
+```yaml
+netsight:
+  alert:
+    channel:
+      wechat:
+        oauth-channel-id: ${WECHAT_OAUTH_CHANNEL_ID:}
+```
+
+解析顺序：
+
+1. 请求显式传入 `channelId`：校验存在、`channel_type=wechat`、`enabled=1`、含 `appId/appSecret`；
+2. 未传且配置了 `oauth-channel-id`：按上述条件校验该 ID；
+3. 未传且未配置：查询全部 `channel_type=wechat AND enabled=1` 的通道；
+   - 0 条：`start` 抛 `ServiceException`，文案“未配置微信 OAuth 通道，请管理员先配置”；`callback` 返回 `CHANNEL_CONFIG`；
+   - 多条但 `appId` 全部相同：取 `id` 最小的一条作为默认通道，服务号相同，结果等价；
+   - 存在多个不同 `appId`：`start` 抛 `ServiceException`，文案“存在多个微信服务号，请显式指定 OAuth 通道 ID”；`callback` 返回 `CHANNEL_CONFIG`。
+
+禁止静默回落到固定主键 7。
+
+多服务号入口：
+
+- 所有租户共用一个服务号时，公共入口 `m/login?wechat=1` 使用默认 OAuth 通道即可；
+- 某租户使用另一个服务号时，该租户必须使用带 `channelId` 的专属入口，例如 `m/login?wechat=1&channelId=20`；
+- `login.vue` 需要读取并透传 `channelId` 到 `/prod-api/wechat/oauth/start`。
+
+#### 6.11.5 模板与联系人边界
+
+- `notification_template` 仍按租户隔离；模板的 `channel_id` 必须属于模板所属租户，保存时校验，跨租户拒绝；
+- 模板唯一性仍为 `(tenantId, templateCode, channelId)`；
+- 微信模板 ID 属于服务号模板库；同一服务号下不同租户可以使用同一模板 ID，但字段映射和启用状态各自维护；不同服务号需要各自创建对应的模板 ID；
+- `notify_contact` 仍按租户隔离；同一自然人加入多个租户时，允许在多个租户下各有一条联系人记录，共享 appId 时 openid 相同；
+- `findByTenantAndOpenid(tenantId, openid, appId)` 保持租户内唯一，不做全局唯一；
+- 同一 openid 在租户 1 和租户 7 各绑一条联系人时，两个租户各自发送、各自接收，不串扰。
+
+#### 6.11.6 登录租户识别
+
+服务号入口只负责取 openid，不负责决定租户。租户仍由手机号登录确定：
+
+- 同一手机号只对应一个租户的 `sys_user`/维修人员档案：正常登录；
+- 同一手机号对应多个租户：保持现有“手机号关联多个账号”报错，不擅自选择租户；
+- 入口的 `channelId` 只决定用哪个服务号取 openid，不改变登录租户；
+- 若后续要求跨租户选择，需要在登录页增加租户选择或租户码，属于独立需求，本期不做。
+
+#### 6.11.7 state 语义修正
+
+`state` 中的 `tenantId` 只表示“本次绑定要写入哪个租户”，不用通道的 `tenant_id` 填充：
+
+- 登录模式：`tenantId=null`，绑定阶段使用登录用户的租户；
+- 管理端扫码绑定：`tenantId=联系人.tenantId`；
+- `channelId` 只用于回调时取对应服务号的 `appId/appSecret`，不参与绑定租户判定；
+- 回调阶段不因通道 `tenant_id=7` 改变绑定租户。
+
+#### 6.11.8 验收口径
+
+必须新增以下用例：
+
+1. 租户 1 在渠道页新建一条微信通道，`appId/appSecret` 与通道 7 相同；租户 1 列表只看到自己的通道，看不到通道 7；
+2. 租户 1 建模板时只能选自己的微信通道；直接调 API 传通道 7 被拒绝；
+3. 租户 1 手动发送选择自己的通道，日志 `tenant_id=1`、`channel_id=新通道 id`，租户 7 联系人未收到；
+4. 租户 1 事件自动发送使用自己的通道，接收人只来自租户 1；
+5. 同一 openid 在租户 1、租户 7 各绑定一条联系人，分别发送互不串扰；
+6. 未登录 OAuth 使用默认共享服务号通道；租户 1 登录后绑定写 `tenant_id=1`、`wechat_app_id=共享 appId`；
+7. 租户 1 使用另一个服务号时，专属入口 `channelId=新通道 id` 能取到正确 appId；不带 `channelId` 的公共入口仍走默认共享服务号，不能用于该租户的绑定；
+8. `WECHAT_OAUTH_CHANNEL_ID` 未配置、存在多个不同 appId 的启用微信通道时，OAuth 返回 `CHANNEL_CONFIG`；同一 appId 多条通道不报错；
+9. 手机号在多个租户存在时，登录明确报错，不静默选一个租户。
 
 ---
 
@@ -547,6 +674,14 @@ GET https://api.weixin.qq.com/sns/oauth2/access_token
 
 `SECRET_FIELDS` 继续包含 `appSecret`；`maskConfig` 保持 `****`。
 
+渠道管理页保持“本租户私有通道”语义，不新增 `scope`：
+
+- 每个租户只看到、只能管理自己的 `notify_channel`；
+- 同一 `appId` 可以出现在多个租户的通道里，但 channelId 不共享；
+- 渠道下拉 `options` 只返回本租户启用通道，模板页和手动发送页不能选到其他租户通道；
+- 租户 1 需要共享服务号时，在渠道页新增一条 `tenant_id=1` 的微信通道，不复用通道 7；
+- `appSecret` 对非 `super_admin` 始终掩码，不能因为可见就回显明文。
+
 ### 8.2 模板页
 
 `alert/template/index.vue`：
@@ -562,6 +697,7 @@ GET https://api.weixin.qq.com/sns/oauth2/access_token
 - 提交前把字段表序列化为 JSON 写入 `content`；`templateId` 可从渠道详情自动带出。
 - `content` 仍必填；wechat 走 JSON 校验。
 - `handleUpdate` 回填时解析 JSON 到字段表；解析失败回退 textarea 并提示。
+- 绑定通道下拉只包含本租户的微信通道；模板仍按当前租户保存，不能跨租户绑定其他租户的通道。
 
 ### 8.3 联系人页
 
@@ -570,6 +706,7 @@ GET https://api.weixin.qq.com/sns/oauth2/access_token
 - openid 脱敏；未绑定 tag。
 - “绑定微信”“解绑”。
 - 绑定二维码弹窗；轮询结果。
+- 绑定二维码由后端按联系人租户解析启用微信通道；该租户有多个不同服务号时提示先指定/只保留一个；同一 appId 多条通道取最小 id。
 - 绑定失败提示后端 `message`。
 
 ### 8.4 日志页
@@ -646,6 +783,25 @@ ALTER TABLE notify_contact ADD COLUMN wechat_bound_at DATETIME NULL;
 - 不自动新增/启用规则，避免告警风暴；规则由管理员在页面按事件开启。
 - 现有离线规则 `id=7/8` 不动。
 
+### 9.5 通道数据准备（无 schema 变更）
+
+本方案不新增 `notify_channel.scope`，也不迁移通道 7。现有表结构已支持同一 `appId` 在多个租户下各存一条通道：
+
+```sql
+-- 现有索引即可满足按租户查询
+KEY idx_tenant_type (tenant_id, channel_type)
+```
+
+数据准备：
+
+- 租户 7 继续使用现有通道 7；
+- 租户 1 需要共享服务号时，通过渠道管理页新增一条 `tenant_id=1`、`channel_type=wechat` 的通道，`appId/appSecret` 填同一个服务号；
+- 租户 1 的模板绑定这条新通道的 `id`，不绑定通道 7；
+- 需要另一个服务号的租户，各自新增自己的通道，填各自的 `appId/appSecret`；
+- 不需要微信推送的租户不建通道，也不建微信模板。
+
+不建议直接复制通道 7 的数据库行：`appSecret` 是加密存储，复制前应确认加密密钥一致；通过页面新建更安全。
+
 ---
 
 ## 10. 测试与验收
@@ -670,6 +826,22 @@ ALTER TABLE notify_contact ADD COLUMN wechat_bound_at DATETIME NULL;
   - 多联系人返回 `CONTACT_AMBIGUOUS`；
   - 唯一启用联系人绑定成功；
   - openid 冲突拒绝。
+- `NotifyChannelService`：
+  - `resolveChannels(List.of(7L), 1L)` 因通道 7 属于租户 7 而拒绝；
+  - `resolveChannels(List.of(新通道 id), 1L)` 正常返回租户 1 的通道；
+  - 异步发送未传 `tenantId` 或传错租户时拒绝，不静默取其他租户通道。
+- `NotificationTemplateService`：
+  - 租户 1 保存模板时传通道 7，返回跨租户错误；
+  - 租户 1 保存模板时传自己的通道 id，成功。
+- `WechatOAuthService`：
+  - 显式 `channelId` 优先；
+  - 未传时使用 `oauth-channel-id`；
+  - 未配置时，多个启用微信通道但 appId 相同，取最小 id；
+  - 未配置且存在多个不同 appId，返回 `CHANNEL_CONFIG`；
+  - 0 条启用微信通道，返回 `CHANNEL_CONFIG`。
+- `WechatOAuthController.bindUrl`：
+  - 租户 1 联系人未传 `channelId` 时，自动解析租户 1 的启用微信通道；
+  - 租户 1 联系人传通道 7，拒绝。
 
 ### 10.2 115 端到端验收
 
@@ -688,6 +860,12 @@ ALTER TABLE notify_contact ADD COLUMN wechat_bound_at DATETIME NULL;
 13. 旧模板空 content / 文本 content 仍走默认 5 字段，离线不回归。
 14. `mockMode` 实例 false 真发；实例 true 日志明确 MOCK。
 15. 生产未触碰，115 有 jar/dist/DB 备份。
+16. 租户 1 渠道页新建一条微信通道（`appId/appSecret` 与通道 7 相同），列表只显示租户 1 的通道，不显示通道 7。
+17. 租户 1 建模板只能选自己的微信通道；直接调 API 传通道 7 返回跨租户错误。
+18. 租户 1 手动发送选择自己的通道，日志 `tenant_id=1`、`channel_id=新通道 id`，微信收到，租户 7 联系人未收到。
+19. 租户 1 事件自动发送使用自己的通道，接收人只来自租户 1；租户 7 联系人未收到。
+20. 同一 openid 在租户 1、租户 7 各绑一条联系人，分别发送互不串扰；租户 1 换另一个服务号时，带 `channelId` 的专属入口取到正确 appId。
+21. `WECHAT_OAUTH_CHANNEL_ID` 未配置、存在多个不同 appId 的启用微信通道时，OAuth 返回 `CHANNEL_CONFIG`；同一 appId 多条通道不报错。
 
 ### 10.3 构建与部署命令
 
@@ -719,11 +897,17 @@ ALTER TABLE notify_contact ADD COLUMN wechat_bound_at DATETIME NULL;
 | 绑定覆盖错人 | 不自动建联系人；openid/手机号冲突拒绝；只绑 `status=1` 唯一联系人 |
 | 整批重试重复推送 | `recipientResults` 非空禁止整批重试 |
 | 现有离线回归 | 空/非 JSON content 走默认 5 字段；现有规则/模板 43 不动 |
+| 同一 appId 多租户配置漂移 | 记录“共享 appId 被哪些租户通道引用”；密钥轮换时逐租户更新；健康检查暴露失败实例 |
+| 跨租户绑定模板通道 | `NotificationTemplateService` 保存/修改时校验 `channelId` 属于模板所属租户 |
+| OAuth 默认通道被写死 | 删除 `7L`；配置 `WECHAT_OAUTH_CHANNEL_ID` 或按启用微信通道解析；多个不同 appId 显式报错 |
+| 同一 appId 频控/额度共享 | 监控 `45009`；多个租户量大时评估拆分为独立服务号 |
+| 不同 appId 入口走错 | 公共入口只用于默认共享服务号；其他服务号租户使用带 `channelId` 的专属入口；发送时 `receiverAppId != appId` 标 `app_id_mismatch` 兜底 |
+| 同一手机号跨租户歧义 | 保持明确报错，不静默选租户；跨租户选择另立需求 |
 | 生产误发 | 本轮不碰生产；115 `mockMode` 可开关；部署前备份 |
 
 回滚：
 
-- 代码回滚到 `bfdcf47`；
+- 代码回滚到 `0656207`；
 - 115 恢复 jar/dist 备份；
 - SQL 新列保留不影响旧代码；模板 43 `content` 回滚为空串；
 - 新模板行可停用，不影响旧链路。
@@ -735,6 +919,7 @@ ALTER TABLE notify_contact ADD COLUMN wechat_bound_at DATETIME NULL;
 ### Phase 0：数据与基础模型
 
 - `notification_log` / `notify_contact` DDL；
+- `notify_channel` 不做 schema 变更，不引入 `scope`；
 - `SendRequest`/`SendResult`/`RecipientResult` 扩展；
 - `NotificationLog`/`NotificationContact` 实体字段；
 - 模板 43 JSON 种子 SQL。
@@ -746,14 +931,17 @@ ALTER TABLE notify_contact ADD COLUMN wechat_bound_at DATETIME NULL;
 - `WechatApiClient`；
 - `WechatMpChannelSender` 重写；
 - 去重/频控；
-- `NotificationChannelService` 逐人日志、禁止整批重试、`doneChannelKeys`。
+- `NotificationChannelService` 逐人日志、禁止整批重试、`doneChannelKeys`；
+- `NotifyChannelService.resolveChannels` 增加 `tenantId` 校验，租户不匹配的通道拒绝。
 
 ### Phase 2：绑定与首次登录
 
 - `WechatOAuthController` / `WechatOAuthService` / `WechatBindingService`；
+- 删除 OAuth 默认 7，改为 `oauth-channel-id` / 按启用微信通道解析；
+- `WechatOAuthController.bindUrl` 按联系人租户解析通道；
+- `m/login.vue` 读取并透传 `channelId`；
 - `SecurityConfig` 白名单；
 - `AuthService.loginByPhone` 可选 ticket；
-- `m/login.vue` OAuth 入口；
 - `NotificationContact` 绑定列；
 - 联系人页二维码绑定/解绑。
 
@@ -763,19 +951,22 @@ ALTER TABLE notify_contact ADD COLUMN wechat_bound_at DATETIME NULL;
 - `EventCenterService.dispatchManual` 变量 + 手动模板；
 - `AlertPushService` CPU/内存/外线映射；
 - `SparePartService` 备件变量别名；
-- `NotificationContactService` appId 过滤与计数。
+- `NotificationContactService` appId 过滤与计数；
+- 手动/自动发送链路统一传入事件租户。
 
 ### Phase 4：前端配置与审计
 
 - 渠道 meta 新字段；
+- 渠道页保持本租户私有，不增加 scope 列；
 - 模板页字段映射；
+- 模板页通道下拉只包含本租户通道；
 - 日志页逐人明细；
 - 事件/规则 8 类下拉。
 
 ### Phase 5：115 部署与验收
 
 - 编译、部署、SQL、Nginx（如需 api OAuth）；
-- 15 项验收；
+- 21 项验收（含共享 appId、跨租户通道拒绝案例）；
 - 备份与回滚演练。
 
 ---
@@ -789,3 +980,6 @@ ALTER TABLE notify_contact ADD COLUMN wechat_bound_at DATETIME NULL;
 5. **模板 ID 不代建**：微信侧模板由运营创建，代码只配置 ID；115 先用现有 43 验证机制。
 6. **生产不碰**：本轮只在 115 测试环境落地。
 7. **独立分支**：`feature/wechat-mp-full-support`，基线 `bfdcf47`，不混入 `feature/repairer-user-account-binding`。
+8. **共享 AppID、不共享 channelId**：多个租户可以各建一条微信通道填同一个服务号 `appId`；`notify_channel` 仍按租户私有，不引入 `scope`。
+9. **默认通道不写死**：OAuth 默认通道由 `WECHAT_OAUTH_CHANNEL_ID` 或启用微信通道解析；多个不同 appId 时必须显式指定入口。
+10. **租户隔离位置**：联系人、模板、规则、日志、通道都按租户隔离；共享的是 appId，不是 channelId。

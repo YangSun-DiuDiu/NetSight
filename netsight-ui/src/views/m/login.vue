@@ -67,7 +67,8 @@ export default {
       Toast('微信授权未完成，可正常登录后联系管理员绑定')
     }
     if (query.wechat === '1' && !this.wechatBindTicket) {
-      window.location.href = '/prod-api/wechat/oauth/start?redirect=/m/login'
+      const channelId = query.channelId ? `&channelId=${encodeURIComponent(query.channelId)}` : ''
+      window.location.href = `/prod-api/wechat/oauth/start?redirect=/m/login${channelId}`
     }
   },
   methods: {

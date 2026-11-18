@@ -116,6 +116,17 @@
           保存后自动创建登录账号，H5 用手机号 + 短信验证码登录
         </div>
 
+        <el-form-item v-if="!form.id" label="接收通知">
+          <el-radio-group v-model="form.notifyEnabled">
+            <el-radio :label="true">是</el-radio>
+            <el-radio :label="false">否</el-radio>
+          </el-radio-group>
+          <div class="form-tip">
+            选择“是”后，保存时会在【告警中心 → 通知联系人】新增或启用同手机号联系人；
+            不会自动加入现有告警规则，该人员仍需从服务号进入并完成微信绑定后才能收到公众号消息。
+          </div>
+        </el-form-item>
+
         <el-form-item label="负责区域">
           <el-input v-model="form.region" placeholder="如：1号楼/2号楼、3号楼" />
         </el-form-item>
@@ -206,7 +217,7 @@ export default {
     },
     handleAdd() {
       this.reset()
-      this.form = { repairerType: 1, status: 1, deviceTypes: [], userId: null }
+      this.form = { repairerType: 1, status: 1, deviceTypes: [], userId: null, notifyEnabled: false }
       this.open = true
     },
     handleUpdate(row) {
@@ -246,6 +257,10 @@ export default {
           return
         }
       }
+      if (!this.form.id && this.form.notifyEnabled && !this.form.phone) {
+        this.$modal.msgWarning('选择接收通知时手机号不能为空')
+        return
+      }
       this.$refs['form'].validate(valid => {
         if (!valid) return
         const payload = {
@@ -258,7 +273,8 @@ export default {
           deviceTypes: JSON.stringify(this.form.deviceTypes || []),
           skills: this.form.skills,
           status: this.form.status,
-          remark: this.form.remark
+          remark: this.form.remark,
+          notifyEnabled: !this.form.id && this.form.notifyEnabled === true
         }
         if (this.form.id) {
           updateRepairer(payload).then(() => {
@@ -269,10 +285,28 @@ export default {
           return
         }
         addRepairer(payload).then(result => {
+          let message = '维修人员已添加'
           if (result && result.accountCreated) {
-            this.$modal.msgSuccess('维修人员已添加，登录账号：' + result.loginUsername)
+            message += '，登录账号：' + result.loginUsername
+          }
+          const notify = result && result.notifyContact
+          if (notify) {
+            if (notify.action === 'CREATED') {
+              message += '，通知联系人已新增'
+            } else if (notify.action === 'ENABLED') {
+              message += '，通知联系人已启用'
+            } else if (notify.action === 'EXISTING') {
+              message += '，通知联系人已存在'
+            } else if (notify.action === 'AMBIGUOUS') {
+              message += '，但该手机号存在多条通知联系人，未自动同步，请到告警中心处理'
+            } else if (notify.action === 'NO_PHONE') {
+              message += '，但手机号为空，未同步通知联系人'
+            }
+          }
+          if (notify && (notify.action === 'AMBIGUOUS' || notify.action === 'NO_PHONE')) {
+            this.$modal.msgWarning(message)
           } else {
-            this.$modal.msgSuccess('维修人员已添加')
+            this.$modal.msgSuccess(message)
           }
           this.open = false
           this.getList()

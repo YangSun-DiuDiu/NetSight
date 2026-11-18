@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.netsight.common.exception.ServiceException;
+import com.netsight.modules.alert.dto.NotifyContactSyncResult;
+import com.netsight.modules.alert.service.NotificationContactService;
 import com.netsight.framework.security.LoginUser;
 import com.netsight.modules.system.entity.SysUser;
 import com.netsight.modules.system.mapper.SysUserMapper;
@@ -44,6 +46,7 @@ class RepairerServiceTest {
     @Mock private WorkOrderMapper workOrderMapper;
     @Mock private SysUserMapper sysUserMapper;
     @Mock private SysUserService sysUserService;
+    @Mock private NotificationContactService notificationContactService;
 
     private RepairerService service;
 
@@ -54,9 +57,11 @@ class RepairerServiceTest {
         // "can not find lambda cache for this entity"
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new MybatisConfiguration(), ""), Repairer.class);
-        service = new RepairerService(repairerMapper, workOrderMapper, sysUserMapper, sysUserService);
+        service = new RepairerService(repairerMapper, workOrderMapper, sysUserMapper, sysUserService,
+                notificationContactService);
         LoginUser loginUser = new LoginUser();
         loginUser.setUserId(21L);
+        loginUser.setUsername("admin");
         loginUser.setTenantId(14L);
         loginUser.setIsSuperAdmin(false);
         SecurityContextHolder.getContext().setAuthentication(
@@ -264,5 +269,99 @@ class RepairerServiceTest {
         assertEquals(99L, synced.getId());
         assertEquals("19900000099", synced.getPhone());
         assertEquals("张三", synced.getRealName());
+    }
+
+    @Test
+    void addExternalRepairerWithNotifyCreatesNotificationContact() {
+        SysUser created = sysUser(99L, "张三", "19900000009", 1);
+        created.setUsername("ext_14_ab12cd34");
+        when(sysUserService.countUsersByPhoneInTenant(14L, "19900000009", null)).thenReturn(0L);
+        when(repairerMapper.selectCount(any())).thenReturn(0L);
+        when(sysUserService.createRepairerAccount(14L, "张三", "19900000009")).thenReturn(created);
+        when(repairerMapper.insert(any(Repairer.class))).thenAnswer(invocation -> {
+            Repairer inserted = invocation.getArgument(0);
+            inserted.setId(102L);
+            return 1;
+        });
+        when(notificationContactService.ensureContactForRepairer(14L, "张三", "19900000009", "admin"))
+                .thenReturn(NotifyContactSyncResult.created(5L));
+
+        Repairer request = repairerRequest(2, null, "张三", "19900000009");
+        request.setNotifyEnabled(true);
+        RepairerSaveResult result = service.addRepairer(request);
+
+        assertEquals(102L, result.getId());
+        assertEquals(NotifyContactSyncResult.Action.CREATED, result.getNotifyContact().getAction());
+        assertEquals(5L, result.getNotifyContact().getContactId());
+        verify(notificationContactService)
+                .ensureContactForRepairer(14L, "张三", "19900000009", "admin");
+    }
+
+    @Test
+    void addInternalRepairerWithNotifyCreatesNotificationContact() {
+        SysUser user = sysUser(22L, "维修员甲", "19900000002", 1);
+        when(sysUserMapper.selectByIdIgnoreTenant(22L)).thenReturn(user);
+        when(repairerMapper.selectCount(any())).thenReturn(0L);
+        when(repairerMapper.insert(any(Repairer.class))).thenAnswer(invocation -> {
+            Repairer inserted = invocation.getArgument(0);
+            inserted.setId(101L);
+            return 1;
+        });
+        when(notificationContactService.ensureContactForRepairer(14L, "维修员甲", "19900000002", "admin"))
+                .thenReturn(NotifyContactSyncResult.enabled(4L));
+
+        Repairer request = repairerRequest(1, 22L, null, null);
+        request.setNotifyEnabled(true);
+        RepairerSaveResult result = service.addRepairer(request);
+
+        assertEquals(NotifyContactSyncResult.Action.ENABLED, result.getNotifyContact().getAction());
+        verify(notificationContactService)
+                .ensureContactForRepairer(14L, "维修员甲", "19900000002", "admin");
+    }
+
+    @Test
+    void addRepairerWithoutNotifySkipsNotificationContact() {
+        SysUser created = sysUser(99L, "张三", "19900000009", 1);
+        created.setUsername("ext_14_ab12cd34");
+        when(sysUserService.countUsersByPhoneInTenant(14L, "19900000009", null)).thenReturn(0L);
+        when(repairerMapper.selectCount(any())).thenReturn(0L);
+        when(sysUserService.createRepairerAccount(14L, "张三", "19900000009")).thenReturn(created);
+        when(repairerMapper.insert(any(Repairer.class))).thenAnswer(invocation -> {
+            Repairer inserted = invocation.getArgument(0);
+            inserted.setId(102L);
+            return 1;
+        });
+
+        RepairerSaveResult result = service.addRepairer(
+                repairerRequest(2, null, "张三", "19900000009"));
+
+        assertEquals(NotifyContactSyncResult.Action.SKIPPED, result.getNotifyContact().getAction());
+        verify(notificationContactService, never())
+                .ensureContactForRepairer(any(), any(), any(), any());
+    }
+
+    @Test
+    void addExternalRepairerWithAmbiguousContactStillCreatesRepairer() {
+        SysUser created = sysUser(99L, "张三", "19900000009", 1);
+        created.setUsername("ext_14_ab12cd34");
+        when(sysUserService.countUsersByPhoneInTenant(14L, "19900000009", null)).thenReturn(0L);
+        when(repairerMapper.selectCount(any())).thenReturn(0L);
+        when(sysUserService.createRepairerAccount(14L, "张三", "19900000009")).thenReturn(created);
+        when(repairerMapper.insert(any(Repairer.class))).thenAnswer(invocation -> {
+            Repairer inserted = invocation.getArgument(0);
+            inserted.setId(102L);
+            return 1;
+        });
+        when(notificationContactService.ensureContactForRepairer(14L, "张三", "19900000009", "admin"))
+                .thenReturn(NotifyContactSyncResult.ambiguous("该手机号存在多条通知联系人，未自动同步"));
+
+        Repairer request = repairerRequest(2, null, "张三", "19900000009");
+        request.setNotifyEnabled(true);
+        RepairerSaveResult result = service.addRepairer(request);
+
+        assertEquals(102L, result.getId());
+        assertEquals(NotifyContactSyncResult.Action.AMBIGUOUS, result.getNotifyContact().getAction());
+        assertEquals("该手机号存在多条通知联系人，未自动同步",
+                result.getNotifyContact().getMessage());
     }
 }

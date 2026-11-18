@@ -4,7 +4,7 @@
 =============================================================
 1. 上传 /opt/wechat-test/{index.html, sign_server.py}
 2. 写 /opt/wechat-test/wechat.env（凭据走环境变量 WX_APPID/WX_SECRET 传入，不落盘到本机）
-3. 新增 Nginx server 块：api.netsightplus.cn（80 校验文件 + 443 SSL + /wx-sign/ 代理 9091）
+3. 新增 Nginx server 块：api.netsightplus.cn（80 校验文件 + 443 SSL + /prod-api 代理后端 + /wx-sign/ 代理 9091 + 页面 302 到 HTTP www）
 4. 启动签名服务（nohup + pid 文件）
 5. nginx -t && reload，公网验证
 
@@ -80,6 +80,29 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # H5/管理端页面统一走 HTTP www，避免停留在 https://api 静态测试页
+    location ^~ /m/ {
+        return 302 http://www.netsightplus.cn$request_uri;
+    }
+
+    location ^~ /alert/ {
+        return 302 http://www.netsightplus.cn$request_uri;
+    }
+
+    # 后端 API（含微信 OAuth start/callback），必须转发到 8080
+    location ^~ /prod-api/ {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+
+        # 后端返回相对 Location 时，切回 HTTP H5 站点
+        proxy_redirect ~^/m/(.*)$ http://www.netsightplus.cn/m/$1;
+        proxy_redirect ~^/alert/(.*)$ http://www.netsightplus.cn/alert/$1;
     }
 
     location = /index.html { add_header Cache-Control "no-cache, must-revalidate"; }

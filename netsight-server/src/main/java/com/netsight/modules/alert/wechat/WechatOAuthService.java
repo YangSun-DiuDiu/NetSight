@@ -18,7 +18,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -57,8 +56,8 @@ public class WechatOAuthService {
      * mode=bind：管理员二维码，回调直接绑定 contactId 并写 bind 状态供 PC 轮询。
      */
     public StartResult start(String redirect, String mode, Long contactId, Long channelId, Long tenantId) {
-        Long chId = channelId == null ? 7L : channelId;
-        Map<String, Object> ch = resolveWechatChannel(chId);
+        Map<String, Object> ch = notifyChannelService.requireOAuthChannel(channelId, tenantId);
+        Long chId = longOf(ch.get("channelId"));
         Map<String, Object> cfg = configOf(ch);
         String appId = str(cfg.get("appId"));
         if (!StringUtils.hasText(appId)) {
@@ -70,7 +69,7 @@ public class WechatOAuthService {
         stateData.put("redirect", safeRedirect);
         stateData.put("mode", StringUtils.hasText(mode) ? mode : "login");
         stateData.put("contactId", contactId);
-        stateData.put("tenantId", tenantId != null ? tenantId : ch.get("tenantId"));
+        stateData.put("tenantId", tenantId);
         stateData.put("channelId", chId);
         if ("bind".equals(mode)) {
             stateData.put("pollTicket", random32());
@@ -101,8 +100,15 @@ public class WechatOAuthService {
         if (!StringUtils.hasText(code)) {
             return errorRedirect(mode, "NO_CODE", "微信授权未返回 code，请重新进入。");
         }
-        Long channelId = longOf(stateData.get("channelId"));
-        Map<String, Object> cfg = configOf(resolveWechatChannel(channelId));
+        Map<String, Object> ch;
+        try {
+            ch = notifyChannelService.requireOAuthChannel(
+                    longOf(stateData.get("channelId")), longOf(stateData.get("tenantId")));
+        } catch (ServiceException e) {
+            return errorRedirect(mode, "CHANNEL_CONFIG", e.getMessage());
+        }
+        Long channelId = longOf(ch.get("channelId"));
+        Map<String, Object> cfg = configOf(ch);
         String appId = str(cfg.get("appId"));
         String appSecret = str(cfg.get("appSecret"));
         if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) {
@@ -164,14 +170,6 @@ public class WechatOAuthService {
         data.put("bound", r.isBound());
         data.put("message", r.getMessage() == null ? "" : r.getMessage());
         save(STATUS_KEY + pollTicket, data, Duration.ofMinutes(5));
-    }
-
-    private Map<String, Object> resolveWechatChannel(Long channelId) {
-        List<Map<String, Object>> list = notifyChannelService.resolveChannels(List.of(channelId));
-        if (list.isEmpty() || !"wechat".equals(str(list.get(0).get("channelType")))) {
-            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "微信公众号通道不可用");
-        }
-        return list.get(0);
     }
 
     @SuppressWarnings("unchecked")

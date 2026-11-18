@@ -57,4 +57,8 @@ public class Repairer extends BaseEntity {
     /** 列表回填：账号状态 1正常 0禁用（非表字段） */
     @TableField(exist = false)
     private Integer userStatus;
+
+    /** 新增维修人员时是否同步启用通知联系人（非表字段，仅创建请求使用） */
+    @TableField(exist = false)
+    private Boolean notifyEnabled;
 }

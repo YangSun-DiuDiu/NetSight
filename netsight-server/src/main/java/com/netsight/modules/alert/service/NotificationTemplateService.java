@@ -36,6 +36,7 @@ public class NotificationTemplateService {
 
     private final NotificationTemplateMapper templateMapper;
     private final ObjectMapper objectMapper;
+    private final NotifyChannelService notifyChannelService;
 
     /**
      * 分页查询模板（租户隔离）
@@ -83,6 +84,7 @@ public class NotificationTemplateService {
         if (template.getTenantId() == null) {
             template.setTenantId(SecurityUtils.getTenantId());
         }
+        notifyChannelService.assertChannelUsable(template.getChannelId(), template.getTenantId());
         Long count = templateMapper.selectCount(new LambdaQueryWrapper<NotificationTemplate>()
                 .eq(NotificationTemplate::getTemplateCode, template.getTemplateCode())
                 .eq(NotificationTemplate::getTenantId, template.getTenantId())
@@ -106,6 +108,9 @@ public class NotificationTemplateService {
         if (template.getChannelId() == null) {
             throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "模板必须绑定通道实例（channelId 不能为空）");
         }
+        // 模板归属租户锁定为原记录租户，防止通过更新把模板挂到其他租户
+        template.setTenantId(exist.getTenantId());
+        notifyChannelService.assertChannelUsable(template.getChannelId(), exist.getTenantId());
         String channelType = StringUtils.hasText(template.getChannelType())
                 ? template.getChannelType() : exist.getChannelType();
         validateWechatContent(channelType, template.getContent());

@@ -4,6 +4,7 @@ import com.netsight.common.core.R;
 import com.netsight.framework.aspectj.Log;
 import com.netsight.modules.alert.entity.NotificationContact;
 import com.netsight.modules.alert.service.NotificationContactService;
+import com.netsight.modules.alert.service.NotifyChannelService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -23,6 +24,7 @@ public class WechatOAuthController {
 
     private final WechatOAuthService oauthService;
     private final NotificationContactService contactService;
+    private final NotifyChannelService notifyChannelService;
 
     /** 登录前静默授权入口：仅允许 login 模式，bind 模式必须走管理端 bind-url。 */
     @GetMapping("/wechat/oauth/start")
@@ -42,10 +44,12 @@ public class WechatOAuthController {
     @PreAuthorize("hasRole('super_admin') or hasAuthority('alert:contact:edit')")
     @GetMapping("/alert/contact/{id}/wechat/bind-url")
     public R<Map<String, String>> bindUrl(@PathVariable Long id,
-                                          @RequestParam(defaultValue = "7") Long channelId) {
+                                          @RequestParam(required = false) Long channelId) {
         NotificationContact contact = contactService.getByIdChecked(id);
+        Long chId = channelId != null ? channelId
+                : notifyChannelService.requireTenantWechatChannelId(contact.getTenantId());
         WechatOAuthService.StartResult result = oauthService.start(
-                "/alert/contact", "bind", id, channelId, contact.getTenantId());
+                "/alert/contact", "bind", id, chId, contact.getTenantId());
         return R.ok(Map.of("url", result.getUrl(), "ticket", result.getTicket() == null ? "" : result.getTicket()));
     }
 

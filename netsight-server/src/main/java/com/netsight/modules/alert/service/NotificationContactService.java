@@ -6,6 +6,7 @@ import com.netsight.common.core.PageResult;
 import com.netsight.common.core.ResultCode;
 import com.netsight.common.exception.ServiceException;
 import com.netsight.framework.security.SecurityUtils;
+import com.netsight.modules.alert.dto.NotifyContactSyncResult;
 import com.netsight.modules.alert.entity.NotificationContact;
 import com.netsight.modules.alert.mapper.NotificationContactMapper;
 import lombok.RequiredArgsConstructor;
@@ -210,6 +211,54 @@ public class NotificationContactService {
                 .filter(c -> c.getStatus() != null && c.getStatus() == 1)
                 .toList();
         return list.size() == 1 ? list.get(0) : null;
+    }
+
+    /**
+     * 维修人员创建时确保同租户同手机号存在一条启用联系人。
+     * 只新增/启用联系人，不自动加入告警规则，也不覆盖已有姓名和 openid。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public NotifyContactSyncResult ensureContactForRepairer(Long tenantId, String name,
+                                                            String mobile, String operator) {
+        if (tenantId == null || !StringUtils.hasText(mobile)) {
+            return NotifyContactSyncResult.noPhone();
+        }
+        String phone = mobile.trim();
+        List<NotificationContact> contacts = listByTenantAndPhone(tenantId, phone);
+        List<NotificationContact> enabled = contacts.stream()
+                .filter(c -> c.getStatus() != null && c.getStatus() == 1)
+                .toList();
+
+        if (enabled.size() > 1) {
+            return NotifyContactSyncResult.ambiguous("该手机号存在多条启用的通知联系人，未自动同步");
+        }
+        if (enabled.size() == 1) {
+            return NotifyContactSyncResult.existing(enabled.get(0).getId());
+        }
+        if (contacts.size() > 1) {
+            return NotifyContactSyncResult.ambiguous("该手机号存在多条通知联系人，未自动同步");
+        }
+        if (contacts.size() == 1) {
+            NotificationContact existing = contacts.get(0);
+            NotificationContact update = new NotificationContact();
+            update.setId(existing.getId());
+            update.setStatus(1);
+            if (!StringUtils.hasText(existing.getName()) && StringUtils.hasText(name)) {
+                update.setName(name.trim());
+            }
+            contactMapper.updateById(update);
+            return NotifyContactSyncResult.enabled(existing.getId());
+        }
+
+        NotificationContact contact = new NotificationContact();
+        contact.setTenantId(tenantId);
+        contact.setName(StringUtils.hasText(name) ? name.trim() : phone);
+        contact.setMobile(phone);
+        contact.setStatus(1);
+        contact.setCreateBy(operator);
+        contact.setRemark("维修人员创建时同步");
+        contactMapper.insert(contact);
+        return NotifyContactSyncResult.created(contact.getId());
     }
 
     /** 计划约定的方法名：返回全部同手机号联系人（含停用），由绑定服务判定 0/1/多条 */

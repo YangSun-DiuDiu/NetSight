@@ -15,6 +15,7 @@ import com.netsight.modules.alert.mapper.NotifyChannelMapper;
 import com.netsight.common.util.TokenCrypto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +36,10 @@ public class NotifyChannelService {
     private final ObjectMapper objectMapper;
     private final TokenCrypto tokenCrypto;
     private final ChannelRegistry channelRegistry;
+
+    /** 公共登录入口默认使用的微信服务号通道 ID；为空则按启用通道自动解析。 */
+    @Value("${netsight.alert.channel.wechat.oauth-channel-id:}")
+    private String configuredOAuthChannelId;
 
     /** 需要 AES 加密的配置字段（写入/读取时自动加解密） */
     private static final Set<String> SECRET_FIELDS = Set.of(
@@ -180,14 +185,22 @@ public class NotifyChannelService {
 
     /**
      * 按实例 ID 列表解析渠道配置（发送时调用）。
-     * 返回有序：每条 = {channelType, channelName, config(Map 已解密), channelId}
+     * 必须同时传入消息所属租户：跨租户或实例不存在直接拒绝，禁用实例跳过。
+     * 返回有序：每条 = {channelType, channelName, config(Map 已解密), channelId, tenantId}
      */
-    public List<Map<String, Object>> resolveChannels(List<Long> channelIds) {
+    public List<Map<String, Object>> resolveChannels(List<Long> channelIds, Long tenantId) {
         List<Map<String, Object>> result = new ArrayList<>();
         if (channelIds == null || channelIds.isEmpty()) return result;
         for (Long id : channelIds) {
+            if (id == null) continue;
             NotifyChannel c = channelMapper.selectById(id);
-            if (c == null || (c.getEnabled() != null && c.getEnabled() == 0)) continue;
+            if (c == null) {
+                throw new ServiceException("通道不存在或不属于当前租户，拒绝使用");
+            }
+            if (tenantId == null || !tenantId.equals(c.getTenantId())) {
+                throw new ServiceException("通道不属于当前租户，拒绝使用");
+            }
+            if (c.getEnabled() != null && c.getEnabled() == 0) continue;
             Map<String, Object> cfg = parseConfig(c.getConfigJson());
             decryptConfig(cfg);
             Map<String, Object> item = new HashMap<>();
@@ -199,6 +212,129 @@ public class NotifyChannelService {
             result.add(item);
         }
         return result;
+    }
+
+    /**
+     * 模板保存时校验绑定的通道实例：必须存在、启用且属于模板所属租户。
+     */
+    public void assertChannelUsable(Long channelId, Long tenantId) {
+        if (channelId == null) {
+            throw new ServiceException("绑定的通道不存在、未启用或不属于当前租户");
+        }
+        NotifyChannel c = channelMapper.selectById(channelId);
+        if (c == null || c.getEnabled() == null || c.getEnabled() == 0
+                || tenantId == null || !tenantId.equals(c.getTenantId())) {
+            throw new ServiceException("绑定的通道不存在、未启用或不属于当前租户");
+        }
+    }
+
+    /**
+     * 解析 OAuth 使用的微信通道：
+     * 显式 channelId 优先；否则使用配置的默认通道；否则按启用微信通道自动解析。
+     * 同一 appId 多条通道取最小 ID，多个不同 appId 时必须显式指定。
+     */
+    public Map<String, Object> requireOAuthChannel(Long channelId, Long tenantId) {
+        if (channelId != null) {
+            NotifyChannel c = channelMapper.selectById(channelId);
+            if (c == null) {
+                throw new ServiceException("配置的微信 OAuth 通道 ID 非法");
+            }
+            return toOAuthChannel(c, tenantId);
+        }
+        if (configuredOAuthChannelId != null && !configuredOAuthChannelId.isBlank()) {
+            Long configured;
+            try {
+                configured = Long.valueOf(configuredOAuthChannelId.trim());
+            } catch (NumberFormatException e) {
+                throw new ServiceException("配置的微信 OAuth 通道 ID 非法");
+            }
+            NotifyChannel c = channelMapper.selectById(configured);
+            if (c == null) {
+                throw new ServiceException("配置的微信 OAuth 通道 ID 非法");
+            }
+            return toOAuthChannel(c, tenantId);
+        }
+        List<NotifyChannel> channels = channelMapper.selectList(new LambdaQueryWrapper<NotifyChannel>()
+                .eq(NotifyChannel::getChannelType, "wechat")
+                .eq(NotifyChannel::getEnabled, 1)
+                .eq(tenantId != null, NotifyChannel::getTenantId, tenantId)
+                .orderByAsc(NotifyChannel::getId));
+        if (channels.isEmpty()) {
+            throw new ServiceException("未配置微信 OAuth 通道");
+        }
+        if (distinctAppIds(channels).size() > 1) {
+            throw new ServiceException("存在多个微信服务号，请显式指定 OAuth 通道 ID");
+        }
+        return toOAuthChannel(channels.get(0), tenantId);
+    }
+
+    /**
+     * 按联系人所属租户解析启用的微信通道 ID（绑定二维码入口使用）。
+     * 同一 appId 多条取最小 ID；多个不同 appId 时要求调用方显式指定 channelId。
+     */
+    public Long requireTenantWechatChannelId(Long tenantId) {
+        if (tenantId == null) {
+            throw new ServiceException("联系人缺少租户");
+        }
+        List<NotifyChannel> channels = channelMapper.selectList(new LambdaQueryWrapper<NotifyChannel>()
+                .eq(NotifyChannel::getTenantId, tenantId)
+                .eq(NotifyChannel::getChannelType, "wechat")
+                .eq(NotifyChannel::getEnabled, 1)
+                .orderByAsc(NotifyChannel::getId));
+        if (channels.isEmpty()) {
+            throw new ServiceException("该租户未配置启用的微信通道");
+        }
+        if (distinctAppIds(channels).size() > 1) {
+            throw new ServiceException("该租户存在多个微信服务号，请指定 channelId");
+        }
+        return channels.get(0).getId();
+    }
+
+    private Set<String> distinctAppIds(List<NotifyChannel> channels) {
+        Set<String> appIds = new HashSet<>();
+        for (NotifyChannel c : channels) {
+            String appId = appIdOf(c);
+            if (appId != null && !appId.isBlank()) {
+                appIds.add(appId);
+            }
+        }
+        return appIds;
+    }
+
+    private String appIdOf(NotifyChannel c) {
+        Map<String, Object> cfg = parseConfig(c.getConfigJson());
+        decryptConfig(cfg);
+        Object appId = cfg.get("appId");
+        return appId == null ? null : String.valueOf(appId);
+    }
+
+    private Map<String, Object> toOAuthChannel(NotifyChannel c, Long tenantId) {
+        if (!"wechat".equals(c.getChannelType())) {
+            throw new ServiceException("微信公众号通道不可用");
+        }
+        if (c.getEnabled() == null || c.getEnabled() == 0) {
+            throw new ServiceException("微信公众号通道未启用");
+        }
+        if (tenantId != null && !tenantId.equals(c.getTenantId())) {
+            throw new ServiceException("微信公众号通道不属于当前租户");
+        }
+        Map<String, Object> cfg = parseConfig(c.getConfigJson());
+        decryptConfig(cfg);
+        String appId = cfg.get("appId") == null ? "" : String.valueOf(cfg.get("appId"));
+        String appSecret = cfg.get("appSecret") == null ? "" : String.valueOf(cfg.get("appSecret"));
+        if (appId.isBlank()) {
+            throw new ServiceException("微信公众号通道未配置 appId");
+        }
+        if (appSecret.isBlank()) {
+            throw new ServiceException("微信公众号通道凭据不完整");
+        }
+        Map<String, Object> item = new HashMap<>();
+        item.put("channelId", c.getId());
+        item.put("tenantId", c.getTenantId());
+        item.put("channelType", c.getChannelType());
+        item.put("channelName", c.getChannelName());
+        item.put("config", cfg);
+        return item;
     }
 
     /**

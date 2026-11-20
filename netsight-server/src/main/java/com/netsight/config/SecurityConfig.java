@@ -1,6 +1,7 @@
 package com.netsight.config;
 
 import com.netsight.framework.security.JwtAuthenticationFilter;
+import com.netsight.modules.workflow.security.WarmFlowAccessManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -36,6 +37,7 @@ import lombok.extern.slf4j.Slf4j;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final WarmFlowAccessManager warmFlowAccessManager;
 
     /** 免认证放行路径 */
     private static final String[] WHITE_LIST = {
@@ -57,9 +59,8 @@ public class SecurityConfig {
             "/uploads/**",
             // 文件上传接口（需登录鉴权，但放行 OPTIONS）
             "/file/upload",
-            // 流程设计器 UI 与 Warm-Flow 引擎 API（登录态经 URL 参数 token 传递，放行让设计器可加载）
-            "/warm-flow-ui/**",
-            "/warm-flow/**"
+            // 流程设计器静态 UI（引擎 API 仅超级管理员可访问，见下方 access 规则）
+            "/warm-flow-ui/**"
     };
 
     @Bean
@@ -76,8 +77,11 @@ public class SecurityConfig {
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 // 放行与鉴权规则
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(WHITE_LIST).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(WHITE_LIST).permitAll()
+                        // Warm-Flow 引擎接口只允许超级管理员访问：租户角色即使手工拼 URL
+                        // 也无法保存、发布、删除流程定义。
+                        .requestMatchers("/warm-flow/**").access(warmFlowAccessManager)
                         .anyRequest().authenticated())
                 // 异常处理
                 .exceptionHandling(ex -> ex

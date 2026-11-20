@@ -50,7 +50,7 @@
 
     <!-- 工具栏 -->
     <el-card class="box-card filter-card">
-      <el-button type="primary" icon="el-icon-plus" @click="createFlow">新建流程</el-button>
+      <el-button v-if="isSuperAdmin" type="primary" icon="el-icon-plus" @click="createFlow">新建流程</el-button>
       <el-button v-if="isSuperAdmin" type="warning" icon="el-icon-copy-document" @click="copyVisible = true">
         复制模板到租户
       </el-button>
@@ -81,7 +81,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="创建时间" width="170" align="center" />
-        <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
+        <el-table-column v-if="isSuperAdmin" label="操作" align="center" width="150" class-name="small-padding fixed-width">
           <template slot-scope="{ row }">
             <el-button type="text" size="mini" icon="el-icon-edit-outline" @click="editFlow(row)">设计</el-button>
           </template>

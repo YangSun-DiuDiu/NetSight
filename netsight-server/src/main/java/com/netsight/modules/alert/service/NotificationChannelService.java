@@ -21,12 +21,14 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 通知通道中心（发送执行层）
- * 职责：模板选择与内容渲染 → 按通道列表调用适配器发送 → 失败重试 → 降级 → 发送日志落库
+ * 职责：模板选择与内容渲染 → 按通道列表调用适配器发送 → 失败重试 → 发送日志落库
  * 不关心事件来源，只负责按给定内容/接收人通过指定通道发送
  */
 @Slf4j
@@ -55,10 +57,6 @@ public class NotificationChannelService {
     /** 失败重试间隔（ms），逗号分隔，如 1000,2000,3000 */
     @Value("${netsight.alert.retry-intervals:1000,2000,3000}")
     private String retryIntervals;
-
-    /** 通道发送是否启用降级（sms 失败自动降级 wechat） */
-    @Value("${netsight.alert.fallback-enabled:true}")
-    private boolean fallbackEnabled;
 
     /**
      * 按规则分发事件通知：对 channels 中每个通道执行渲染+发送+日志
@@ -106,7 +104,7 @@ public class NotificationChannelService {
             log.warn("模板组[{}]无启用模板，跳过发送", mainTemplate.getTemplateCode());
             return logs;
         }
-        List<String> doneChannelKeys = new ArrayList<>();
+        Set<String> doneChannelKeys = new HashSet<>();
         for (NotificationTemplate tpl : groupTemplates) {
             // 模板绑定了具体通道实例则用之；未绑定（channelId 为空）直接跳过并 warning
             Map<String, Object> ch = resolveChannelInstance(tpl, event.getTenantId());
@@ -124,30 +122,13 @@ public class NotificationChannelService {
             NotificationLog logEntry = sendOneResolved(event, rule, tpl, channelType, channelReceivers, vars, extra, ch);
             logs.add(logEntry);
             doneChannelKeys.add(channelKey);
-
-            if (fallbackEnabled && logEntry.getSuccess() != null && logEntry.getSuccess() == 0
-                    && ("sms".equals(channelType) || channelType.endsWith("_sms")
-                    || channelType.endsWith("sms"))
-                    && !doneChannelKeys.contains("wechat_work#null")) {
-                log.warn("短信发送失败，自动降级企业微信重发 (eventId={})", event.getId());
-                for (NotificationTemplate wxTpl : groupTemplates) {
-                    Map<String, Object> wxCh = resolveChannelInstance(wxTpl, event.getTenantId());
-                    if (wxCh == null) continue;
-                    if (!"wechat_work".equals(String.valueOf(wxCh.get("channelType")))) continue;
-                    List<String> wxReceivers = contactService.resolveReceiversByChannel(contacts, "wechat_work");
-                    NotificationLog fallback = sendOneResolved(event, rule, wxTpl, "wechat_work", wxReceivers, vars, extra, wxCh);
-                    logs.add(fallback);
-                    doneChannelKeys.add(channelKey("wechat_work", wxCh));
-                    break;
-                }
-            }
         }
         return logs;
     }
 
     /**
-     * 解析模板绑定的通道实例（方案B：所有消息通道必须显式绑定 channelId，无类型兜底）。
-     * channelId 为空直接返回 null，由调用方跳过发送并记录 warning；无可用实例返回 null。
+     * 解析模板绑定的通道实例。所有消息通道必须显式绑定 channelId，无类型兜底。
+     * channelId 为空或实例被禁用时返回 null，由调用方跳过发送并记录 warning。
      */
     private Map<String, Object> resolveChannelInstance(NotificationTemplate tpl, Long tenantId) {
         if (tpl.getChannelId() == null) {
@@ -217,7 +198,7 @@ public class NotificationChannelService {
     }
 
     /**
-     * 手动发送：按传入通道实例 ID 遍历发送（无模板组概念，findTemplate 两级兜底）
+     * 手动发送：按传入通道实例 ID 遍历发送
      */
     private List<NotificationLog> dispatchByChannelIds(EventRecord event,
                                                       List<NotificationContact> contacts, List<Long> channelIds,
@@ -229,7 +210,7 @@ public class NotificationChannelService {
         NotificationTemplate mainTemplate = findManualTemplate(event.getTenantId(), event.getEventType());
         // 按渠道实例 ID 解析实例配置（channelType + 解密后的 config）
         List<Map<String, Object>> channels = notifyChannelService.resolveChannels(channelIds, event.getTenantId());
-        List<String> doneChannelKeys = new ArrayList<>();
+        Set<String> doneChannelKeys = new HashSet<>();
         for (Map<String, Object> ch : channels) {
             String channelType = String.valueOf(ch.get("channelType"));
             String channelKey = channelKey(channelType, ch);
@@ -243,25 +224,6 @@ public class NotificationChannelService {
                     channelReceivers, vars, extra, ch);
             logs.add(logEntry);
             doneChannelKeys.add(channelKey);
-
-            // 降级策略：短信发送失败自动降级为公众号，确保至少一个通道触达
-            if (!logEntry.getSuccess().equals(1) && fallbackEnabled
-                    && ("sms".equals(channelType) || channelType.endsWith("_sms")
-                    || channelType.endsWith("sms"))
-                    && !doneChannelKeys.contains("wechat_work#null")) {
-                log.warn("短信发送失败，自动降级企业微信通道重发 (eventId={})", event.getId());
-                // 找租户启用的企业微信渠道实例重发
-                List<Map<String, Object>> wxChannels = notifyChannelService.resolveChannels(channelIds, event.getTenantId()).stream()
-                        .filter(c -> "wechat_work".equals(c.get("channelType"))).toList();
-                if (!wxChannels.isEmpty()) {
-                    Map<String, Object> wxCh = wxChannels.get(0);
-                    List<String> wechatReceivers = contactService.resolveReceiversByChannel(contacts, "wechat_work");
-                    NotificationLog fallback = sendOne(event, null, mainTemplate, "wechat_work",
-                            wechatReceivers, vars, extra, wxCh);
-                    logs.add(fallback);
-                    doneChannelKeys.add(channelKey("wechat_work", wxCh));
-                }
-            }
         }
         return logs;
     }
@@ -280,7 +242,7 @@ public class NotificationChannelService {
             return buildFailLog(event, rule, channelType, receivers, "通道未注册: " + channelType);
         }
 
-        // 1. 选择该通道实例的模板（方案B：仅按具体通道实例 channelId 找专属模板，无类型兜底）
+        // 1. 选择该通道实例的模板（仅按具体通道实例 channelId 找专属模板，无类型兜底）
         Long channelInstanceId = channelInstance == null ? null
                 : (channelInstance.get("channelId") == null ? null : ((Number) channelInstance.get("channelId")).longValue());
         NotificationTemplate template = findTemplate(mainTemplate, channelType, channelInstanceId, event.getTenantId());
@@ -470,7 +432,7 @@ public class NotificationChannelService {
     }
 
     /**
-     * 找模板（方案B：仅按具体通道实例 channelId 找专属模板，无类型兜底）
+     * 找模板（仅按具体通道实例 channelId 找专属模板，无类型兜底）
      * 手动发送场景 mainTemplate 为 null 时直接返回 null（内容取 vars.content）。
      * （异步线程无登录态、租户过滤不生效，必须显式按事件租户过滤，防止跨租户串用模板）
      */

@@ -41,21 +41,6 @@ class WechatMpChannelSenderTest {
     }
 
     @Test
-    void mockModeReturnsOneResultPerReceiver() {
-        SendRequest req = SendRequest.builder()
-                .receiverList(List.of("openid-1", "openid-2"))
-                .channelConfig(Map.of("appId", "app", "appSecret", "sec",
-                        "templateId", "tpl", "mockMode", true))
-                .contentVars(Map.of("device_name", "dev"))
-                .build();
-        SendResult result = sender().send(req);
-        assertTrue(result.isSuccess());
-        assertEquals(2, result.getRecipientResults().size());
-        assertEquals("MOCK", result.getThirdPartyMsgId());
-        verify(httpClient, never()).postJson(anyString(), anyString(), any(Integer.class));
-    }
-
-    @Test
     void duplicateRecipientIsSkipped() {
         when(redis.opsForValue()).thenReturn(valueOps);
         when(valueOps.setIfAbsent(anyString(), eq("LOCK"), any(Duration.class))).thenReturn(false);

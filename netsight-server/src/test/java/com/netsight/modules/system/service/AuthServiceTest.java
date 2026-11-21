@@ -4,8 +4,6 @@ import com.netsight.common.core.ResultCode;
 import com.netsight.common.exception.ServiceException;
 import com.netsight.framework.security.JwtUtils;
 import com.netsight.framework.security.LoginUser;
-import com.netsight.modules.alert.channel.ChannelRegistry;
-import com.netsight.modules.alert.service.NotifyChannelService;
 import com.netsight.modules.alert.wechat.WechatBindingService;
 import com.netsight.modules.system.entity.SysUser;
 import com.netsight.modules.system.mapper.SysRolePermissionMapper;
@@ -28,6 +26,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,8 +39,7 @@ class AuthServiceTest {
     @Mock private JwtUtils jwtUtils;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
-    @Mock private NotifyChannelService notifyChannelService;
-    @Mock private ChannelRegistry channelRegistry;
+    @Mock private SmsCodeSender smsCodeSender;
     @Mock private RepairerAccountResolver repairerAccountResolver;
     @Mock private WechatBindingService wechatBindingService;
 
@@ -49,10 +48,10 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         service = new AuthService(sysUserMapper, sysUserRoleMapper, sysRolePermissionMapper,
-                jwtUtils, redisTemplate, notifyChannelService, channelRegistry,
-                repairerAccountResolver, wechatBindingService);
+                jwtUtils, redisTemplate, smsCodeSender, repairerAccountResolver,
+                wechatBindingService);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(anyString())).thenReturn("123456");
+        lenient().when(valueOperations.get(anyString())).thenReturn("123456");
     }
 
     private SysUser user(Long id, Long tenantId, String phone, Integer status) {
@@ -75,6 +74,20 @@ class AuthServiceTest {
         repairer.setPhone(phone);
         repairer.setStatus(status);
         return repairer;
+    }
+
+    @Test
+    void sendSmsCodeDelegatesGenerationAndDelivery() {
+        when(redisTemplate.hasKey(anyString())).thenReturn(false);
+        when(smsCodeSender.generateCode()).thenReturn("654321");
+        when(smsCodeSender.rateLimitSeconds()).thenReturn(60);
+
+        service.sendSmsCode("13800000000");
+
+        verify(valueOperations).set("netsight:sms:code:13800000000", "654321",
+                java.time.Duration.ofMinutes(5));
+        verify(smsCodeSender).send("13800000000", "654321",
+                "netsight:sms:code:13800000000");
     }
 
     @Test

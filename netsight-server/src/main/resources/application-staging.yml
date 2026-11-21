@@ -1,0 +1,8 @@
+# 预发布/联调环境（staging）配置
+# 用途：115.159.194.149 等测试服务器——登录验证码保持固定模拟值，微信/PushPlus 仍走真实发送通道。
+# 与 dev 的区别：数据库/Redis/JWT/Webhook 等敏感配置全部由 nams.env 环境变量注入，不写死本文件。
+# 与 prod 的区别：不加载 RealSmsCodeSender；ProductionMockGuard 不生效。
+netsight:
+  sms:
+    # 仅 MockSmsCodeSender 读取；生产 profile 不加载模拟实现，此配置不生效
+    mock-code: "123456"

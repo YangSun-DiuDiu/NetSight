@@ -11,11 +11,6 @@ import com.netsight.modules.system.mapper.SysUserMapper;
 import com.netsight.modules.system.mapper.SysUserRoleMapper;
 import com.netsight.modules.workorder.entity.Repairer;
 import com.netsight.modules.workorder.service.RepairerAccountResolver;
-import com.netsight.modules.alert.channel.ChannelRegistry;
-import com.netsight.modules.alert.channel.NotificationChannelSender;
-import com.netsight.modules.alert.channel.SendRequest;
-import com.netsight.modules.alert.channel.SendResult;
-import com.netsight.modules.alert.service.NotifyChannelService;
 import com.netsight.modules.alert.wechat.WechatBindResult;
 import com.netsight.modules.alert.wechat.WechatBindingService;
 import io.jsonwebtoken.Claims;
@@ -33,11 +28,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 认证服务
- * PC 端：手机号 + 短信验证码登录（开发阶段使用模拟验证码）
+ * PC 端：手机号 + 短信验证码登录
  * 登录成功签发 JWT Token
  */
 @Slf4j
@@ -50,8 +44,7 @@ public class AuthService {
     private final SysRolePermissionMapper sysRolePermissionMapper;
     private final JwtUtils jwtUtils;
     private final StringRedisTemplate redisTemplate;
-    private final NotifyChannelService notifyChannelService;
-    private final ChannelRegistry channelRegistry;
+    private final SmsCodeSender smsCodeSender;
     private final RepairerAccountResolver repairerAccountResolver;
     private final WechatBindingService wechatBindingService;
 
@@ -61,84 +54,34 @@ public class AuthService {
     /** 验证码发送限流 Key 前缀 */
     private static final String SMS_LIMIT_KEY = "netsight:sms:limit:";
 
-    @Value("${netsight.sms.mock-mode:true}")
-    private boolean mockMode;
-
-    @Value("${netsight.sms.mock-code:123456}")
-    private String mockCode;
-
     @Value("${netsight.sms.expire-minutes:5}")
-    private long expireMinutes;
-
-    /** 生产模式登录短信通道实例名（渠道管理里的实例名称） */
-    @Value("${netsight.sms.login-channel-name:平台登录认证}")
-    private String loginChannelName;
-
-    /** 该通道实例所属租户（登录前无租户上下文，固定超管租户） */
-    @Value("${netsight.sms.login-tenant-id:1}")
-    private Long loginTenantId;
+    private long expireMinutes = 5;
 
     /**
-     * 发送短信验证码
-     * 开发阶段：模拟验证码打印到日志，不实际发送
-     * 生产阶段：对接短信服务商 API
+     * 发送短信验证码。
+     * 验证码生成与真实/模拟发送由 {@link SmsCodeSender} 的实现决定：
+     * 生产 profile 使用真实发送，dev/test profile 使用固定验证码。
      */
     public void sendSmsCode(String phone) {
         // 1. 校验手机号格式
         if (phone == null || !phone.matches("^1[3-9]\\d{9}$")) {
             throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "手机号格式不正确");
         }
-        // 2. 校验发送频率：同一手机号 1 分钟内只能发送一次
+        // 2. 校验发送频率
         String limitKey = SMS_LIMIT_KEY + phone;
         if (Boolean.TRUE.equals(redisTemplate.hasKey(limitKey))) {
             throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "发送过于频繁，请1分钟后再试");
         }
-        // 3. 生成验证码（开发模式固定 123456）
-        String code = mockMode ? mockCode : String.format("%06d", ThreadLocalRandom.current().nextInt(1000000));
+        // 3. 生成验证码
+        String code = smsCodeSender.generateCode();
         // 4. 存入 Redis，5 分钟过期
         String redisKey = SMS_CODE_KEY + phone;
         redisTemplate.opsForValue().set(redisKey, code, Duration.ofMinutes(expireMinutes));
-        // 5. 限流标记：开发模式 10 秒便于联调，生产模式 1 分钟
-        long limitSeconds = mockMode ? 10L : 60L;
-        redisTemplate.opsForValue().set(limitKey, "1", Duration.ofSeconds(limitSeconds));
-        // 6. 开发模式：打印验证码到日志；生产模式：走通知中心阿里云短信实例真实发送
-        if (mockMode) {
-            log.info("【模拟验证码】手机号: {}, 验证码: {}", phone, code);
-        } else {
-            sendLoginSms(phone, code, redisKey);
-        }
-    }
-
-    /**
-     * 生产环境真实发送登录验证码短信。
-     * 复用通知中心：按实例名 + 超管租户查出阿里云短信实例，把验证码作为 {code} 变量传给阿里云模板渲染发送。
-     * 发送失败则清除 Redis 中的验证码并抛业务异常，避免用户收不到码却留下可用验证码。
-     */
-    private void sendLoginSms(String phone, String code, String redisKey) {
-        Map<String, Object> ch = notifyChannelService.resolveSystemChannel(loginChannelName, loginTenantId);
-        if (ch == null) {
-            redisTemplate.delete(redisKey);
-            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(),
-                    "登录短信通道未配置（实例：" + loginChannelName + "），请联系管理员");
-        }
-        NotificationChannelSender sender = channelRegistry.get((String) ch.get("channelType"));
-        if (sender == null) {
-            redisTemplate.delete(redisKey);
-            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "短信通道实现未加载");
-        }
-        SendRequest request = SendRequest.builder()
-                .receiverList(List.of(phone))
-                .contentVars(Map.of("code", code))
-                .channelConfig((Map<String, Object>) ch.get("config"))
-                .build();
-        SendResult result = sender.send(request);
-        if (result == null || !result.isSuccess()) {
-            redisTemplate.delete(redisKey);
-            String msg = result == null ? "未知错误" : result.getErrorMsg();
-            log.error("登录短信发送失败 phone={} err={}", phone, msg);
-            throw new ServiceException(ResultCode.PARAM_ERROR.getCode(), "短信发送失败：" + msg);
-        }
-        log.info("登录短信已发送 phone={} bizId={}", phone, result.getThirdPartyMsgId());
+        // 5. 限流标记
+        redisTemplate.opsForValue().set(limitKey, "1",
+                Duration.ofSeconds(smsCodeSender.rateLimitSeconds()));
+        // 6. 真实发送或开发/测试日志输出
+        smsCodeSender.send(phone, code, redisKey);
     }
 
     /**

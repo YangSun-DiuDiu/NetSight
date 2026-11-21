@@ -11,13 +11,13 @@ import com.netsight.modules.system.mapper.SysTenantMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * PushPlus 通道适配器（channelType = pushplus）
@@ -28,27 +28,21 @@ import java.util.UUID;
  *    与 Webhook Token 同一信任模型；未配置 Token 的租户发送直接返回失败，不误发他人 Token。
  * 2. 发送协议：POST https://www.pushplus.plus/send，JSON {token, title, content, template, topic}；
  *    返回体 code==200 视为成功；异常统一包装为 SendResult，不向外抛。
- * 3. 开发阶段 mock-mode=true：仅打印日志模拟发送（无真实 Token 也能联调）；
- *    生产 mock-mode=false + 租户配置真实 Token 即生效。
+ * 3. 生产发送器不包含 mock 分支；dev/test 环境由 MockPushplusChannelSender 接管，
+ *    两个实现按 profile 互斥加载，避免生产运行路径触达模拟发送。
  *
  * 新增通道规范对照：接口方法齐全 / channelType 唯一 / 密钥不硬编码（DB+配置读取）/
  * 异常包装 / 幂等由上层 bizId 去重兜底。
  */
 @Slf4j
 @Component
+@Profile("!dev & !test")
 @RequiredArgsConstructor
 public class PushplusChannelSender implements NotificationChannelSender {
 
     /** PushPlus 发送 API 地址（生产可经环境变量 PUSHPLUS_API_URL 覆盖） */
     @Value("${netsight.alert.channel.pushplus.api-url:https://www.pushplus.plus/send}")
     private String apiUrl;
-
-    /**
-     * 开发模拟开关（默认 false：生产安全默认，未显式开启即真实发送；
-     * 开发联调需在 application.yml 显式 mock-mode: true，防止误配置导致生产静默不发送）
-     */
-    @Value("${netsight.alert.channel.pushplus.mock-mode:false}")
-    private boolean mockMode;
 
     /** HTTP 超时（ms） */
     @Value("${netsight.alert.channel.pushplus.timeout-ms:5000}")
@@ -61,14 +55,6 @@ public class PushplusChannelSender implements NotificationChannelSender {
     private final SysTenantMapper sysTenantMapper;
     private final EdgeGatewayMapper edgeGatewayMapper;
     private final TokenCrypto tokenCrypto;
-
-    @jakarta.annotation.PostConstruct
-    public void init() {
-        if (mockMode) {
-            log.warn("【PushPlus】mock-mode=true 已开启：所有推送仅打印日志、不真实发送。"
-                    + "生产环境请确认 application.yml / 环境变量已显式设置 netsight.alert.channel.pushplus.mock-mode=false");
-        }
-    }
 
     @Override
     public String getChannelType() {
@@ -103,19 +89,7 @@ public class PushplusChannelSender implements NotificationChannelSender {
                         .build();
             }
 
-            // 2. 开发模拟：仅打印日志
-            if (mockMode) {
-                log.info("【PushPlus MOCK】租户={} 接收人={} 标题={} 内容={}",
-                        request.getTenantId(), request.getReceiverList(),
-                        buildTitle(request), request.getContent());
-                return SendResult.builder()
-                        .success(true)
-                        .thirdPartyMsgId("MOCK-PP-" + UUID.randomUUID().toString().substring(0, 8))
-                        .costTime(System.currentTimeMillis() - start)
-                        .build();
-            }
-
-            // 3. 生产：调用 PushPlus 官方 API
+            // 2. 调用 PushPlus 官方 API
             Map<String, Object> payload = new HashMap<>();
             payload.put("token", token);
             payload.put("title", buildTitle(request));
@@ -166,7 +140,7 @@ public class PushplusChannelSender implements NotificationChannelSender {
 
     @Override
     public boolean healthCheck(java.util.Map<String, Object> config) {
-        // mock 模式恒可用；生产可扩展为探测 PushPlus 网关连通性
+        // 生产可扩展为探测 PushPlus 网关连通性
         return true;
     }
 

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
@@ -153,5 +154,42 @@ class NotifyChannelServiceTest {
                 () -> service.requireTenantWechatChannelId(1L));
 
         assertEquals("该租户存在多个微信服务号，请指定 channelId", exception.getMessage());
+    }
+
+    @Test
+    void prodRejectsChannelConfigWithMockModeTrue() {
+        ReflectionTestUtils.setField(service, "activeProfile", "prod");
+        NotifyChannel c = channel(20L, 1L, "wx-shared", 1);
+        c.setConfigJson("{\"appId\":\"wx-shared\",\"appSecret\":\"secret\",\"mockMode\":true}");
+        when(channelMapper.selectById(20L)).thenReturn(c);
+
+        ServiceException exception = assertThrows(ServiceException.class,
+                () -> service.resolveChannels(List.of(20L), 1L));
+
+        assertEquals("生产环境禁止使用已开启模拟发送的渠道：服务号-20", exception.getMessage());
+    }
+
+    @Test
+    void prodRejectsSavingChannelWithMockModeTrue() {
+        ReflectionTestUtils.setField(service, "activeProfile", "prod");
+        NotifyChannel c = channel(null, 1L, "wx-shared", 1);
+        c.setConfigJson("{\"appId\":\"wx-shared\",\"appSecret\":\"secret\",\"mockMode\":true}");
+
+        ServiceException exception = assertThrows(ServiceException.class, () -> service.add(c));
+
+        assertEquals("生产环境禁止开启模拟发送（mockMode=true）", exception.getMessage());
+    }
+
+    @Test
+    void prodChannelMetaHidesMockModeField() {
+        ReflectionTestUtils.setField(service, "activeProfile", "prod");
+
+        Map<String, Object> wechatMeta = service.listChannelMeta().stream()
+                .filter(m -> "wechat".equals(m.get("type")))
+                .findFirst().orElseThrow();
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> fields = (List<Map<String, String>>) wechatMeta.get("fields");
+
+        assertEquals(0, fields.stream().filter(f -> "mockMode".equals(f.get("key"))).count());
     }
 }

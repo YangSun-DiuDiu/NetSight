@@ -5,6 +5,7 @@ import cn.hutool.json.JSONUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -24,10 +25,14 @@ import java.util.Set;
  * 微信公众号（服务号）模板消息通道适配器（channelType = wechat）。
  *
  * <p>支持模板描述符（WechatTemplatePayload）、逐人发送结果、单人重试、Redis 幂等去重、
- * 固定窗口频控与 mock。content 为空时回落历史 5 字段，保证 115 现有离线模板不回归。
+ * 固定窗口频控。content 为空时回落历史 5 字段，保证 115 现有离线模板不回归。
+ *
+ * <p>生产专用：仅在非 dev/test profile 加载；dev/test 由 MockWechatMpChannelSender 接管，
+ * 两个实现不会同时注册到 ChannelRegistry。
  */
 @Slf4j
 @Component
+@Profile("!dev & !test")
 @RequiredArgsConstructor
 public class WechatMpChannelSender implements NotificationChannelSender {
 
@@ -44,9 +49,6 @@ public class WechatMpChannelSender implements NotificationChannelSender {
     private final WechatTemplatePayload payload;
     private final WechatHttpClient httpClient;
     private final StringRedisTemplate redisTemplate;
-
-    @Value("${netsight.alert.channel.wechat.mock-mode:false}")
-    private boolean mockMode;
 
     @Value("${netsight.alert.channel.wechat.timeout-ms:5000}")
     private int timeoutMs;
@@ -92,30 +94,10 @@ public class WechatMpChannelSender implements NotificationChannelSender {
                 return fail("无有效微信接收人（联系人的 wechat_openid 为空）", start);
             }
 
-            boolean mock = parseBool(cfg.get("mockMode"), mockMode);
             boolean manualSend = !StringUtils.hasText(request.getBizId());
             WechatTemplatePayload.Rendered rendered = payload.render(request, fallbackTemplateId);
             if (!StringUtils.hasText(rendered.templateId())) {
                 return fail("微信公众号模板 ID 为空", start);
-            }
-
-            if (mock) {
-                List<RecipientResult> mockResults = new ArrayList<>();
-                for (String openid : receivers) {
-                    mockResults.add(RecipientResult.builder()
-                            .receiver(mask(openid)).success(true).errcode(0).build());
-                }
-                log.info("【微信公众号 MOCK】appId={} 接收人数={} 模板={}",
-                        appId, receivers.size(), rendered.templateId());
-                return SendResult.builder()
-                        .success(true)
-                        .retryable(false)
-                        .templateId(rendered.templateId())
-                        .renderedContent(rendered.summary())
-                        .recipientResults(mockResults)
-                        .thirdPartyMsgId("MOCK")
-                        .costTime(System.currentTimeMillis() - start)
-                        .build();
             }
 
             String jumpUrl = resolveJumpUrl(request, cfg, rendered.url());
@@ -483,17 +465,6 @@ public class WechatMpChannelSender implements NotificationChannelSender {
         } catch (Exception e) {
             return fallback;
         }
-    }
-
-    private static boolean parseBool(Object v, boolean fallback) {
-        if (v == null) {
-            return fallback;
-        }
-        String s = String.valueOf(v).trim();
-        if (!StringUtils.hasText(s)) {
-            return fallback;
-        }
-        return "true".equalsIgnoreCase(s) || "1".equals(s);
     }
 
     private static String mask(String openid) {

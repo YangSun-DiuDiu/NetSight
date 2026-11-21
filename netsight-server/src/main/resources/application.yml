@@ -78,11 +78,8 @@ aes:
 
 # NetSight 业务配置
 netsight:
-  # 短信验证码开发模式：true=使用固定模拟验证码 123456，生产置 false
+  # 短信验证码：生产强制真实发送，dev/test 由 MockSmsCodeSender 接管（固定验证码见 application-dev.yml）
   sms:
-    # 开发默认 mock；生产部署设环境变量 AUTH_SMS_MOCK=false 走真实阿里云短信
-    mock-mode: ${AUTH_SMS_MOCK:true}
-    mock-code: "123456"
     expire-minutes: 5
     # 生产真实发送：渠道管理里配置的阿里云短信实例名（登录前无租户上下文，固定查超管租户）
     login-channel-name: ${AUTH_SMS_CHANNEL:平台登录认证}
@@ -100,15 +97,13 @@ netsight:
     # 通道发送失败重试间隔（ms），最多 3 次
     retry-intervals: ${ALERT_RETRY_INTERVALS:1000,2000,3000}
     channel:
-      # 短信通道（开发默认 mock；生产设环境变量 SMS_MOCK=false + 真实网关 API）
+      # 短信通道（真实发送；dev/test 的模拟发送由 MockSmsCodeSender 隔离，不在此处开关）
       sms:
-        mock-mode: ${SMS_MOCK:true}
         api-url: ${SMS_API_URL:}
         app-key: ${SMS_APP_KEY:}
         app-secret: ${SMS_APP_SECRET:}
-      # 微信公众号通道（开发默认 mock；生产设环境变量 WECHAT_MOCK=false + 服务号模板消息）
+      # 微信公众号通道（真实发送；dev/test 由 MockWechatMpChannelSender 接管，无 mock 开关）
       wechat:
-        mock-mode: ${WECHAT_MOCK:true}
         app-id: ${WECHAT_APP_ID:}
         app-secret: ${WECHAT_APP_SECRET:}
         template-id: ${WECHAT_TEMPLATE_ID:}
@@ -120,9 +115,8 @@ netsight:
         # 公共登录入口默认使用的微信服务号通道（notify_channel.id）；为空则按启用通道自动解析
         oauth-channel-id: ${WECHAT_OAUTH_CHANNEL_ID:}
       # PushPlus 通道（租户级 Token：云端租户管理配置 sys_tenant.pushplus_token，发送时按事件租户取用）
-      # 开发默认 mock；生产设环境变量 PUSHPLUS_MOCK=false + 租户配置真实 Token 即生效（代码层默认值亦为 false 兜底）
+      # 真实发送；dev/test 由 MockPushplusChannelSender 接管，无 mock 开关
       pushplus:
-        mock-mode: ${PUSHPLUS_MOCK:true}
         api-url: ${PUSHPLUS_API_URL:https://www.pushplus.plus/send}
         timeout-ms: 5000
         title-prefix: ${PUSHPLUS_TITLE_PREFIX:【运维告警】}

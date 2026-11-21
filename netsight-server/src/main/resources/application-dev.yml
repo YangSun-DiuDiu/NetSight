@@ -21,6 +21,9 @@ jwt:
   secret: ${JWT_SECRET:NetSightDevSecretKey2026ForLocalDevOnly!}
 
 netsight:
+  sms:
+    # 仅 dev/test profile 的 MockSmsCodeSender 读取；生产不加载模拟实现，此配置不生效
+    mock-code: "123456"
   alert:
     # 开发阶段默认 Webhook Token（仅 dev profile 生效，生产 application.yml 无默认值，缺失即拒绝启动）
     webhook-token: ${WEBHOOK_TOKEN:NetSightDevWebhookToken2026}

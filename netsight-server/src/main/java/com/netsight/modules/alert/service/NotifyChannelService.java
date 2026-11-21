@@ -41,6 +41,10 @@ public class NotifyChannelService {
     @Value("${netsight.alert.channel.wechat.oauth-channel-id:}")
     private String configuredOAuthChannelId;
 
+    /** 当前 Spring profile；生产环境禁止渠道配置开启 mockMode。 */
+    @Value("${spring.profiles.active:}")
+    private String activeProfile;
+
     /** 需要 AES 加密的配置字段（写入/读取时自动加解密） */
     private static final Set<String> SECRET_FIELDS = Set.of(
             "token", "appSecret", "appKey", "accessKey", "accessSecret", "secret",
@@ -86,7 +90,7 @@ public class NotifyChannelService {
                     field("url", "点击跳转地址", "text", false,
                             "默认 http://www.netsightplus.cn/m/orders"),
                     field("mockMode", "模拟发送", "switch", false,
-                            "开启后不调用微信接口；未配置时跟随全局 WECHAT_MOCK"),
+                            "仅 dev/test 环境生效；生产环境不提供此开关且禁止开启"),
                     field("rateLimitPerMinute", "每人每分钟上限", "number", false,
                             "默认 4 条/分钟/用户"),
                     field("dedupTtlHours", "去重窗口（小时）", "number", false,
@@ -127,7 +131,30 @@ public class NotifyChannelService {
     );
 
     public List<Map<String, Object>> listChannelMeta() {
-        return CHANNEL_META;
+        if (isMockProfile()) {
+            return CHANNEL_META;
+        }
+        // 生产/预发布使用真实 Sender，不向界面暴露 mockMode 开关，避免误开模拟发送
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> meta : CHANNEL_META) {
+            if (!"wechat".equals(meta.get("type"))) {
+                result.add(meta);
+                continue;
+            }
+            Map<String, Object> copy = new HashMap<>(meta);
+            List<Map<String, String>> fields = new ArrayList<>();
+            @SuppressWarnings("unchecked")
+            List<Map<String, String>> original =
+                    (List<Map<String, String>>) meta.get("fields");
+            for (Map<String, String> f : original) {
+                if (!"mockMode".equals(f.get("key"))) {
+                    fields.add(f);
+                }
+            }
+            copy.put("fields", fields);
+            result.add(copy);
+        }
+        return result;
     }
 
     public PageResult<NotifyChannel> page(long pageNum, long pageSize, String channelType, String channelName) {
@@ -158,6 +185,7 @@ public class NotifyChannelService {
     public void add(NotifyChannel channel) {
         channel.setTenantId(currentTenantId());
         channel.setHealthStatus("unknown");
+        assertMockDisabled(parseConfig(channel.getConfigJson()), channel.getChannelName());
         channel.setConfigJson(encryptConfig(channel.getConfigJson()));
         channelMapper.insert(channel);
     }
@@ -173,6 +201,7 @@ public class NotifyChannelService {
                 newCfg.put(k, oldCfg.get(k)); // 保留旧密钥
             }
         }
+        assertMockDisabled(newCfg, channel.getChannelName());
         channel.setConfigJson(encryptConfig(toJson(newCfg)));
         channel.setTenantId(exist.getTenantId());
         channelMapper.updateById(channel);
@@ -203,6 +232,10 @@ public class NotifyChannelService {
             if (c.getEnabled() != null && c.getEnabled() == 0) continue;
             Map<String, Object> cfg = parseConfig(c.getConfigJson());
             decryptConfig(cfg);
+            if (isProd() && isMockModeOn(cfg)) {
+                throw new ServiceException(
+                        "生产环境禁止使用已开启模拟发送的渠道：" + c.getChannelName());
+            }
             Map<String, Object> item = new HashMap<>();
             item.put("channelId", id);
             item.put("tenantId", c.getTenantId());
@@ -376,6 +409,44 @@ public class NotifyChannelService {
     }
 
     // ====== 工具方法 ======
+
+    private boolean isProd() {
+        if (activeProfile == null || activeProfile.isBlank()) {
+            return false;
+        }
+        return Arrays.stream(activeProfile.split(","))
+                .map(String::trim)
+                .anyMatch("prod"::equals);
+    }
+
+    /** 只有 dev/test profile 会加载 Mock Sender，mockMode 开关才有效。 */
+    private boolean isMockProfile() {
+        if (activeProfile == null || activeProfile.isBlank()) {
+            return false;
+        }
+        return Arrays.stream(activeProfile.split(","))
+                .map(String::trim)
+                .anyMatch(p -> "dev".equals(p) || "test".equals(p));
+    }
+
+    private void assertMockDisabled(Map<String, Object> cfg, String channelName) {
+        if (isProd() && isMockModeOn(cfg)) {
+            log.warn("生产环境拒绝保存模拟发送渠道: {}", channelName);
+            throw new ServiceException("生产环境禁止开启模拟发送（mockMode=true）");
+        }
+    }
+
+    private static boolean isMockModeOn(Map<String, Object> cfg) {
+        if (cfg == null || cfg.get("mockMode") == null) {
+            return false;
+        }
+        Object v = cfg.get("mockMode");
+        if (v instanceof Boolean b) {
+            return b;
+        }
+        String s = String.valueOf(v).trim();
+        return "true".equalsIgnoreCase(s) || "1".equals(s);
+    }
 
     private Long currentTenantId() {
         try { return SecurityUtils.getLoginUser().getTenantId(); }

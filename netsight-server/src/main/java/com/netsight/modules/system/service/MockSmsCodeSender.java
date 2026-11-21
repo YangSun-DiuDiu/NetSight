@@ -6,14 +6,13 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * 开发/测试/预发布环境验证码策略：固定验证码，仅打印日志，不真实发送。
+ * 开发/测试环境验证码策略：固定验证码，仅打印日志，不真实发送。
  *
- * <p>仅在 dev/test/staging profile 加载；生产 profile 不会实例化此类。
- * staging 用于 115 等联调环境：登录短信保持固定码，微信/PushPlus 仍走真实通道。
+ * <p>仅在 dev/test profile 加载；staging/prod 由 {@link RealSmsCodeSender} 真实发送。
  */
 @Slf4j
 @Component
-@Profile({"dev", "test", "staging"})
+@Profile({"dev", "test"})
 public class MockSmsCodeSender implements SmsCodeSender {
 
     @Value("${netsight.sms.mock-code:123456}")

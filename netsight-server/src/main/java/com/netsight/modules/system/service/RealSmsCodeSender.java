@@ -19,14 +19,14 @@ import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 生产环境验证码策略：随机 6 位验证码，通过通知中心真实短信通道发送。
+ * 真实短信验证码策略：随机 6 位验证码，通过通知中心真实短信通道发送。
  *
- * <p>仅在非 dev/test/staging profile 加载；dev/test/staging 由 {@link MockSmsCodeSender} 替代。
+ * <p>仅在非 dev/test profile 加载（含 staging/prod）；dev/test 由 {@link MockSmsCodeSender} 替代。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@Profile("!dev & !test & !staging")
+@Profile("!dev & !test")
 public class RealSmsCodeSender implements SmsCodeSender {
 
     private final NotifyChannelService notifyChannelService;

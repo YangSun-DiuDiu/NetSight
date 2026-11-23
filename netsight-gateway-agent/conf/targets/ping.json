@@ -1,5 +1,5 @@
 [ {
-  "targets" : [ "192.168.10.1:161" ],
+  "targets" : [ "192.168.10.1" ],
   "labels" : {
     "tenant_id" : "1",
     "gateway_code" : "GW00000001",
@@ -9,12 +9,10 @@
     "device_name" : "核心交换机",
     "device_ip" : "192.168.10.1",
     "device_type" : "network",
-    "device_location" : "机房A",
-    "__metrics_path__" : "/snmp",
-    "__param_module" : "netsight_if_mib"
+    "device_location" : "机房A"
   }
 }, {
-  "targets" : [ "192.168.10.20:161" ],
+  "targets" : [ "192.168.10.20" ],
   "labels" : {
     "tenant_id" : "1",
     "gateway_code" : "GW00000001",
@@ -24,8 +22,6 @@
     "device_name" : "视频存储NVR",
     "device_ip" : "192.168.10.20",
     "device_type" : "nvr",
-    "device_location" : "机房A",
-    "__metrics_path__" : "/snmp",
-    "__param_module" : "netsight_if_mib"
+    "device_location" : "机房A"
   }
 } ]

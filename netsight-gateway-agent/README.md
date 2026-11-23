@@ -103,6 +103,6 @@ systemctl daemon-reload && systemctl enable --now nams-agent
 
 设备在线 / 链路状态探测由 **Prometheus 官方 blackbox_exporter**（ICMP probe）承担，替代自研探针（nams-collector，已停用作国产化备选，见《边缘网关应用部署与配置方案.md》第十一章）：
 
-* Prometheus `nams_device_probe` job：`metrics_path=/probe` + `params.module=[icmp]` + file_sd（targets/snmp.json，云端 mapping 60s 刷新）+ relabel（去 SNMP 端口、强制 `__metrics_path__=/probe`、`__param_module=icmp`）；
+* Prometheus `nams_device_probe` job：`metrics_path=/probe` + `params.module=[icmp]` + file_sd（targets/ping.json，云端 mapping 60s 刷新）+ relabel（`__param_target` 取设备 IP、`__address__` 指向 blackbox、强制 `__metrics_path__=/probe`、`__param_module=icmp`）；
 * Recording rules：`device_up = probe_success{job="nams_device_probe"}`、`device_line_abnormal = probe_icmp_duration_seconds{...,phase="rtt"} > 0.15`——**nams-agent 查询契约（`device_up{device_code=...}`）零改动**；
 * 告警规则（离线 / 外线异常）不变 → AlertManager → nams-agent :18080 → 云端 /alert/push。

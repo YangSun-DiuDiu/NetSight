@@ -52,10 +52,10 @@ public class Device extends BaseEntity {
     /** 外线状态（device_line_abnormal）：0正常/1异常 */
     private Integer lineStatus;
 
-    /** 采集方式：snmp（默认）/probe（自研探针，国产化采集路径预留） */
+    /** 采集方式：ping（默认，ICMP）/probe（自研探针，预留） */
     private String collectType;
 
-    /** 采集端口：SNMP 默认 161 */
+    /** 兼容字段：ping 方式不使用，默认 0 */
     private Integer collectPort;
 
     /** 保修截止日期（保修期，可空；空=未设置保修期） */

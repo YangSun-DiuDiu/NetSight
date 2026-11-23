@@ -8,7 +8,7 @@
       "deviceIp": "192.168.1.1",
       "deviceType": "network",
       "location": "厂区机房A区",
-      "collectType": "snmp",
+      "collectType": "ping",
       "collectPort": 161,
       "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "H3C", "model": "S7510E" }
     },
@@ -18,7 +18,7 @@
       "deviceIp": "192.168.1.2",
       "deviceType": "network",
       "location": "厂区机房A区",
-      "collectType": "snmp",
+      "collectType": "ping",
       "collectPort": 161,
       "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "华为", "model": "S6730" }
     },
@@ -28,7 +28,7 @@
       "deviceIp": "192.168.1.3",
       "deviceType": "network",
       "location": "厂区机房B区",
-      "collectType": "snmp",
+      "collectType": "ping",
       "collectPort": 161,
       "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "华为", "model": "S5735" }
     },
@@ -38,7 +38,7 @@
       "deviceIp": "192.168.1.10",
       "deviceType": "network",
       "location": "车间一层弱电间",
-      "collectType": "snmp",
+      "collectType": "ping",
       "collectPort": 161,
       "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "华为", "model": "S1730S" }
     },
@@ -48,7 +48,7 @@
       "deviceIp": "192.168.1.20",
       "deviceType": "camera",
       "location": "车间一层东南角",
-      "collectType": "snmp",
+      "collectType": "ping",
       "collectPort": 161,
       "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "海康威视", "model": "DS-2DC4423" }
     },
@@ -58,7 +58,7 @@
       "deviceIp": "192.168.1.21",
       "deviceType": "camera",
       "location": "车间一层西侧",
-      "collectType": "snmp",
+      "collectType": "ping",
       "collectPort": 161,
       "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "大华", "model": "DH-IPC-HFW" }
     },
@@ -68,7 +68,7 @@
       "deviceIp": "192.168.1.30",
       "deviceType": "nvr",
       "location": "厂区机房A区",
-      "collectType": "snmp",
+      "collectType": "ping",
       "collectPort": 161,
       "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "海康威视", "model": "DS-9632" }
     },
@@ -78,9 +78,10 @@
       "deviceIp": "192.168.1.40",
       "deviceType": "door_controller",
       "location": "车间一层北门",
-      "collectType": "snmp",
+      "collectType": "ping",
       "collectPort": 161,
       "labels": { "tenant_id": "1", "gateway_code": "GW202609110004", "brand": "中控智慧", "model": "inBioX" }
     }
   ]
 }
+

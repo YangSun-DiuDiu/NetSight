@@ -86,10 +86,10 @@ public class DeviceService {
             device.setLineStatus(0);
         }
         if (device.getCollectType() == null || device.getCollectType().isBlank()) {
-            device.setCollectType("snmp");
+            device.setCollectType("ping");
         }
-        if (device.getCollectPort() == null || device.getCollectPort() <= 0) {
-            device.setCollectPort(161);
+        if (device.getCollectPort() == null || device.getCollectPort() < 0) {
+            device.setCollectPort(0);
         }
         deviceMapper.insert(device);
         saveTopology(device);

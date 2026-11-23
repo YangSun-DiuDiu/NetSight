@@ -111,8 +111,8 @@ public class MappingSync {
             d.setDeviceIp(n.path("deviceIp").asText());
             d.setDeviceType(n.path("deviceType").asText());
             d.setLocation(n.path("location").asText());
-            d.setCollectType(n.path("collectType").asText("snmp"));
-            d.setCollectPort(n.path("collectPort").asInt(161));
+            d.setCollectType(n.path("collectType").asText("ping"));
+            d.setCollectPort(n.path("collectPort").asInt(0));
             // labels 透传（tenant_id/gateway_code 等业务标签）
             Map<String, String> labels = new LinkedHashMap<>();
             JsonNode ls = n.path("labels");
@@ -131,34 +131,32 @@ public class MappingSync {
     }
 
     /**
-     * 生成 Prometheus file_sd targets 文件：conf/targets/snmp.json。
-     * 视频/门禁探针 targets 预留（后续版本输出 camera.json / door.json）。
+     * 生成 Prometheus file_sd targets 文件：conf/targets/ping.json。
+     * <p>设备状态统一使用 ICMP 探测，target 只写管理 IP，不再携带 SNMP 端口/模块。</p>
      */
     private void writeTargets() throws Exception {
         List<Map<String, Object>> entries = new ArrayList<>();
         for (MappingDevice d : devices) {
-            if ("snmp".equalsIgnoreCase(d.getCollectType())) {
-                Map<String, Object> e = new LinkedHashMap<>();
-                List<String> targets = List.of(d.getDeviceIp() + ":" + d.getCollectPort());
-                e.put("targets", targets);
-                Map<String, String> labels = new LinkedHashMap<>(d.getLabels());
-                labels.put("device_code", d.getDeviceCode());
-                labels.put("device_name", d.getDeviceName());
-                labels.put("device_ip", d.getDeviceIp());
-                labels.put("device_type", d.getDeviceType());
-                if (d.getLocation() != null && !d.getLocation().isBlank()) {
-                    labels.put("device_location", d.getLocation());
-                }
-                labels.put("__metrics_path__", "/snmp");
-                labels.put("__param_module", "netsight_if_mib");
-                e.put("labels", labels);
-                entries.add(e);
+            if (d.getDeviceIp() == null || d.getDeviceIp().isBlank()) {
+                continue;
             }
+            Map<String, Object> e = new LinkedHashMap<>();
+            e.put("targets", List.of(d.getDeviceIp()));
+            Map<String, String> labels = new LinkedHashMap<>(d.getLabels());
+            labels.put("device_code", d.getDeviceCode());
+            labels.put("device_name", d.getDeviceName());
+            labels.put("device_ip", d.getDeviceIp());
+            labels.put("device_type", d.getDeviceType());
+            if (d.getLocation() != null && !d.getLocation().isBlank()) {
+                labels.put("device_location", d.getLocation());
+            }
+            e.put("labels", labels);
+            entries.add(e);
         }
         Path dir = Paths.get(configHolder.getTargetsDir());
         Files.createDirectories(dir);
         String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(entries);
-        Path file = dir.resolve("snmp.json");
+        Path file = dir.resolve("ping.json");
         Files.writeString(file, json);
         log.info("targets 文件已生成: {}（{} 条）", file, entries.size());
     }
@@ -190,8 +188,8 @@ public class MappingSync {
         private String deviceIp;
         private String deviceType;
         private String location;
-        private String collectType = "snmp";
-        private int collectPort = 161;
+        private String collectType = "ping";
+        private int collectPort = 0;
         private Map<String, String> labels = new LinkedHashMap<>();
     }
 }

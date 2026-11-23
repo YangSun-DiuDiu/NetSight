@@ -17,8 +17,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 边缘网关状态上报接口（SNMP 指标接收，云端接入点）
- * 边缘网关本地 Prometheus/SNMP Exporter 采集后，将设备状态快照上报云端：
+ * 边缘网关状态上报接口（设备状态指标接收，云端接入点）
+ * 边缘网关本地 Prometheus + blackbox ICMP 采集后，将设备状态快照上报云端：
  * 1. 设备状态快照（device_up / device_line_abnormal）→ 更新设备三色状态
  * 2. 心跳（每次上报即心跳）→ 更新网关在线状态
  * 鉴权：请求头 X-Gateway-Token（网关接入 Token，非用户 JWT）

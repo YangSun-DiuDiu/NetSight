@@ -22,16 +22,18 @@ scrape_configs:
       module: ['icmp']
     file_sd_configs:
       - files:
-          - '/opt/nams-gateway/conf/targets/snmp.json'
+          - '/opt/nams-gateway/conf/targets/ping.json'
         refresh_interval: 60s
     relabel_configs:
       - source_labels: [__address__]
+        regex: '^([^:]+)(?::[0-9]+)?$'
         target_label: __param_target
+        replacement: '${1}'
       - source_labels: [__param_target]
         target_label: instance
       - target_label: __address__
         replacement: '127.0.0.1:9115'
-      # 强制覆盖 file_sd 自带 meta（SNMP 预留时 snmp.json 带 /snmp 路径会 404）
+      # 强制覆盖 file_sd 可能自带的 meta，统一走 blackbox ICMP 探针
       - target_label: __metrics_path__
         replacement: '/probe'
       - target_label: __param_module

@@ -65,8 +65,8 @@ public class EdgeConfigController {
             item.put("deviceIp", d.getIpAddress());
             item.put("deviceType", d.getDeviceType());
             item.put("location", d.getLocation());
-            item.put("collectType", d.getCollectType() == null ? "snmp" : d.getCollectType());
-            item.put("collectPort", d.getCollectPort() == null ? 161 : d.getCollectPort());
+            item.put("collectType", d.getCollectType() == null ? "ping" : d.getCollectType());
+            item.put("collectPort", d.getCollectPort() == null ? 0 : d.getCollectPort());
             Map<String, String> labels = new HashMap<>();
             labels.put("tenant_id", String.valueOf(gateway.getTenantId()));
             labels.put("gateway_code", gateway.getGatewayCode());

@@ -10,6 +10,17 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-24-edge-device-inventory-sync-design.md`
 
+## 执行状态（2026-11-24 更新）
+
+- **代码与提交**：Task 1–8 已实现；Task 9 的主链路部署与验证已完成。分支 `feature/wechat-mp-full-support` 最新提交为 `5a6dce6`，已推送 GitHub，远端与本地 HEAD 一致。
+- **部署产物**：115 已部署 `netsight-server.jar` 与 `netsight-ui/dist`，健康检查 `UP`；`.199` 已部署包含本地清单构造器修复的 `nams-agent.jar`，服务 `nams-agent` 正常运行。
+- **运行状态**：`.199` 本地清单 `revision=6`、设备 84 台、`ping.json` 84 条；云端 `edge_gateway` id=14 为 `inventory_revision=6`、`inventory_device_count=84`，84 台设备全部 `source=edge/del_flag=0`。
+- **已验证链路**：本地管理员登录；新增设备后 `revision 1→2`、本地与云端均 85 台；编辑后 `revision=3`、云端字段同步更新；删除后 `revision=4`、云端 `del_flag=2`；使用相同设备编码重新新增后恢复原云端记录 `del_flag=0`；最终删除并清理测试记录，恢复 84 台。
+- **部署事故与修复**：`LocalInventoryStore` 多构造器导致 Spring 启动失败，已为 `ConfigHolder` 构造器补 `@Autowired` 并增加反射回归断言；网关全量测试通过。
+- **尚未闭环的验证**：本地管理页与云端设备页的浏览器视觉验收未截图；空清单拒绝、409 版本冲突重试、同步失败退避仅在单测覆盖；`清空全部` 未进行真实破坏性验证；云端写接口 403 仅通过单测验证。
+- **环境与文档待办**：115 后端仍以 `--spring.profiles.active=staging` 启动，未确认是否切 `prod`；`AGENTS.md` 尚未追加本次部署记录；本计划的任务复选框保留未勾选，执行状态以本节为准。
+- **访问入口**：本地管理页为 `http://192.168.1.199:8081/`；默认管理员 `admin`，默认密码 `admin123`。
+
 ## Global Constraints
 
 - 工作分支：`feature/wechat-mp-full-support`，仓库根：`D:\gitee\worktrees\NetSight1.0-wechat-mp-full-support`。

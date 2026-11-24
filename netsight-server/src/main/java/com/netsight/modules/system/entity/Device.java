@@ -58,6 +58,12 @@ public class Device extends BaseEntity {
     /** 兼容字段：ping 方式不使用，默认 0 */
     private Integer collectPort;
 
+    /** 来源：edge=边缘网关同步 / cloud=云端历史数据 */
+    private String source;
+
+    /** 最后同步时间 */
+    private java.time.LocalDateTime syncedAt;
+
     /** 保修截止日期（保修期，可空；空=未设置保修期） */
     private LocalDate warrantyExpire;
 

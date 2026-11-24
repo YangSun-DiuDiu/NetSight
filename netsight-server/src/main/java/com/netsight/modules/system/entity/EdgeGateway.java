@@ -51,4 +51,13 @@ public class EdgeGateway extends BaseEntity {
 
     /** 启用状态：1启用/0禁用（禁用后上报不接收） */
     private Integer status;
+
+    /** 设备清单最后成功应用的 revision */
+    private Long inventoryRevision;
+
+    /** 设备清单最后同步时间 */
+    private LocalDateTime inventorySyncedAt;
+
+    /** 设备清单一共台数 */
+    private Integer inventoryDeviceCount;
 }

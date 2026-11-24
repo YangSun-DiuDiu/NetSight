@@ -2,7 +2,9 @@ package com.netsight.gateway.sync;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.annotation.Autowired;
 
+import java.lang.reflect.Constructor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -15,6 +17,14 @@ class LocalInventoryStoreTest {
 
     @TempDir
     Path temp;
+
+    @Test
+    void springConstructorIsExplicitlySelected() throws Exception {
+        Constructor<?> ctor = LocalInventoryStore.class.getConstructor(
+                com.netsight.gateway.core.ConfigHolder.class);
+        assertNotNull(ctor.getAnnotation(Autowired.class),
+                "多构造器场景必须显式标注 @Autowired，否则 Spring 会寻找无参构造器");
+    }
 
     @Test
     void createsEmptyDocumentWhenFileMissing() {

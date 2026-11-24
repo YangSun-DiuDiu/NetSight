@@ -2,6 +2,7 @@ package com.netsight.gateway.sync;
 
 import com.netsight.gateway.core.ConfigHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -32,6 +33,7 @@ public class LocalInventoryStore {
     private final ObjectMapper mapper;
     private final Object lock = new Object();
 
+    @Autowired
     public LocalInventoryStore(ConfigHolder configHolder) {
         this(resolve(configHolder), new ObjectMapper());
     }

@@ -19,7 +19,7 @@
         <div class="menu-title">运行状态</div>
         <div class="menu-item active" data-page="overview"><span class="ico">📊</span>状态总览</div>
         <div class="menu-title">配置管理</div>
-        <div class="menu-item" data-page="devices"><span class="ico">🖥️</span>设备采集</div>
+        <div class="menu-item" data-page="devices"><span class="ico">🖥️</span>设备管理</div>
         <div class="menu-item" data-page="links"><span class="ico">🔗</span>链路设置</div>
         <div class="menu-item" data-page="cloud"><span class="ico">☁️</span>云端设置</div>
         <div class="menu-title">系统</div>
@@ -56,18 +56,47 @@
           <div class="card"><h3>清单同步</h3><div class="desc" id="syncDesc"></div></div>
         </div>
 
-        <!-- 设备采集 -->
+        <!-- 设备管理 -->
         <div class="page" id="page-devices" style="display:none">
           <div class="card">
-            <h3>纳管设备（映射清单）</h3>
-            <div style="margin-bottom:12px">
-              <button class="btn primary" onclick="doSync()">手动同步清单</button>
-              <span id="syncResult" style="margin-left:10px;font-size:12px;color:#6b7280"></span>
+            <h3>设备管理（本地清单权威源）</h3>
+            <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button class="btn primary" onclick="openDeviceDialog()">新增设备</button>
+              <button class="btn" onclick="syncDevices(this)">立即同步</button>
+              <button class="btn danger" onclick="clearAllDevices()">清空全部</button>
+              <span id="devMeta" style="font-size:12px;color:#6b7280"></span>
             </div>
+            <div id="syncResult" style="margin-bottom:10px;font-size:12px;color:#6b7280"></div>
             <table>
-              <thead><tr><th>设备编码</th><th>名称</th><th>IP</th><th>类型</th><th>采集方式</th><th>状态</th><th>最近采集</th></tr></thead>
-              <tbody id="devTable"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+              <thead><tr><th>设备编码</th><th>名称</th><th>IP</th><th>类型</th><th>位置</th><th>状态</th><th>最近采集</th><th>操作</th></tr></thead>
+              <tbody id="devTable"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- 设备编辑对话框 -->
+        <div class="dialog-mask" id="devMask">
+          <div class="dialog">
+            <h3 id="devTitle">新增设备</h3>
+            <div class="form-item"><label>设备编码（留空自动生成）</label><input id="devCode" maxlength="64"></div>
+            <div class="form-item"><label>设备名称</label><input id="devName" maxlength="64"></div>
+            <div class="form-item"><label>管理 IP</label><input id="devIp" placeholder="192.168.1.10"></div>
+            <div class="form-item"><label>设备类型</label>
+              <select id="devType" style="width:100%;height:40px;border:1px solid #e5e7eb;border-radius:8px;padding:0 12px">
+                <option value="network">网络设备</option>
+                <option value="camera">视频摄像头</option>
+                <option value="nvr">NVR录像机</option>
+                <option value="door_controller">门禁控制器</option>
+              </select>
+            </div>
+            <div class="form-item"><label>部署位置</label><input id="devLocation" maxlength="256"></div>
+            <div class="form-item"><label>品牌</label><input id="devBrand" maxlength="64"></div>
+            <div class="form-item"><label>型号</label><input id="devModel" maxlength="128"></div>
+            <div class="form-item"><label>保修截止（YYYY-MM-DD）</label><input id="devWarranty" placeholder="2028-12-31"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+              <button class="btn" onclick="hideDeviceDialog()">取消</button>
+              <button class="btn primary" id="devSaveBtn" onclick="saveDevice()">保存</button>
+            </div>
           </div>
         </div>
 

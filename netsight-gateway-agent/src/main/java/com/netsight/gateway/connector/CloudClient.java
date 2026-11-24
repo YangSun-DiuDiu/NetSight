@@ -73,6 +73,31 @@ public class CloudClient {
         return null;
     }
 
+    public SyncResponse syncDevices(String body) {
+        String base = base();
+        if (base == null) {
+            return new SyncResponse(0, "云端 base_url 未配置");
+        }
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(base + "/edge/config/devices/sync"))
+                    .timeout(Duration.ofMillis(configHolder.getConfig().getCloud().getTimeoutMs()))
+                    .header("Content-Type", "application/json; charset=utf-8")
+                    .header("X-Gateway-Token", configHolder.getConfig().getCloud().getGatewayToken())
+                    .header("X-Netsight-Tenant-Id", String.valueOf(tenantId()))
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            return new SyncResponse(resp.statusCode(), resp.body());
+        } catch (Exception e) {
+            log.warn("设备清单同步请求异常: {}", e.getMessage());
+            return new SyncResponse(0, e.getMessage());
+        }
+    }
+
+    public record SyncResponse(int httpStatus, String body) {
+    }
+
     private boolean post(String path, String body, boolean gatewayAuth) {
         String base = base();
         if (base == null) {

@@ -48,6 +48,46 @@ public class RuntimeState {
     /** 最近一次清单同步结果 */
     private volatile String lastSyncResult = "-";
 
+    /** 设备清单向云端同步状态 */
+    private volatile String lastInventorySyncAt = "-";
+    private volatile String lastInventorySyncResult = "-";
+    private volatile String nextInventoryRetryAt = "-";
+    private volatile long inventorySyncFailCount = 0L;
+    private volatile String inventorySyncStatus = "pending";
+    private volatile long inventoryRevision = 0L;
+    private volatile int inventoryDeviceCount = 0;
+
+    public void markInventorySyncSuccess(long revision, int deviceCount) {
+        lastInventorySyncAt = now();
+        lastInventorySyncResult = "success";
+        nextInventoryRetryAt = "-";
+        inventorySyncFailCount = 0L;
+        inventorySyncStatus = "success";
+        inventoryRevision = revision;
+        inventoryDeviceCount = deviceCount;
+    }
+
+    public void markInventorySyncFailure(String message, String nextRetryAt) {
+        lastInventorySyncResult = message;
+        nextInventoryRetryAt = nextRetryAt;
+        inventorySyncFailCount++;
+        inventorySyncStatus = "failed";
+    }
+
+    public void markInventorySyncBlocked(String message) {
+        lastInventorySyncResult = message;
+        nextInventoryRetryAt = "-";
+        inventorySyncStatus = "empty_blocked";
+    }
+
+    public String getLastInventorySyncAt() { return lastInventorySyncAt; }
+    public String getLastInventorySyncResult() { return lastInventorySyncResult; }
+    public String getNextInventoryRetryAt() { return nextInventoryRetryAt; }
+    public long getInventorySyncFailCount() { return inventorySyncFailCount; }
+    public String getInventorySyncStatus() { return inventorySyncStatus; }
+    public long getInventoryRevision() { return inventoryRevision; }
+    public int getInventoryDeviceCount() { return inventoryDeviceCount; }
+
     @Data
     public static class DeviceState {
         private String deviceCode;

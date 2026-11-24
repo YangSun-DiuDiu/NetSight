@@ -2,6 +2,8 @@ package com.netsight.gateway.connector;
 
 import com.netsight.gateway.core.ConfigHolder;
 import com.netsight.gateway.core.RuntimeState;
+import com.netsight.gateway.sync.LocalInventoryDocument;
+import com.netsight.gateway.sync.LocalInventoryStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -22,11 +24,14 @@ public class HeartbeatService {
     private final ConfigHolder configHolder;
     private final CloudClient cloudClient;
     private final RuntimeState runtimeState;
+    private final LocalInventoryStore inventoryStore;
 
-    public HeartbeatService(ConfigHolder configHolder, CloudClient cloudClient, RuntimeState runtimeState) {
+    public HeartbeatService(ConfigHolder configHolder, CloudClient cloudClient,
+                            RuntimeState runtimeState, LocalInventoryStore inventoryStore) {
         this.configHolder = configHolder;
         this.cloudClient = cloudClient;
         this.runtimeState = runtimeState;
+        this.inventoryStore = inventoryStore;
     }
 
     @Scheduled(fixedDelay = 30000)
@@ -35,8 +40,13 @@ public class HeartbeatService {
         if (cfg == null) {
             return;
         }
+        LocalInventoryDocument doc = inventoryStore.read();
         String body = "{\"gatewayCode\":\"" + cfg.getGatewayCode() + "\","
                 + "\"status\":\"online\","
+                + "\"inventoryRevision\":" + doc.getRevision() + ","
+                + "\"inventoryDeviceCount\":" + doc.getDevices().size() + ","
+                + "\"lastInventorySyncAt\":\"" + runtimeState.getLastInventorySyncAt() + "\","
+                + "\"inventorySyncStatus\":\"" + runtimeState.getInventorySyncStatus() + "\","
                 + "\"time\":\"" + LocalDateTime.now().format(FMT) + "\"}";
         boolean ok = cloudClient.sendHeartbeat(body);
         if (ok) {

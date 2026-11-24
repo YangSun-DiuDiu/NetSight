@@ -104,6 +104,9 @@ public class ConfigHolder {
         if (cfg.getLocal().getAdmin() == null) {
             cfg.getLocal().setAdmin(new Admin());
         }
+        if (cfg.getLocal().getInventorySyncInterval() <= 0) {
+            cfg.getLocal().setInventorySyncInterval(300);
+        }
     }
 
     public GatewayConfig getConfig() {
@@ -190,6 +193,8 @@ public class ConfigHolder {
         private int alertPort = 18080;
         /** 清单同步周期（秒） */
         private int syncInterval = 60;
+        /** 设备清单向云端同步周期（秒），默认 300 秒 */
+        private int inventorySyncInterval = 300;
         private Admin admin;
     }
 

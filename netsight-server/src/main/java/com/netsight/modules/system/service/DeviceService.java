@@ -37,6 +37,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DeviceService {
 
+    private static final String CLOUD_WRITE_DISABLED = "设备清单由边缘网关维护，请在网关本地管理页面操作";
+
     private final DeviceMapper deviceMapper;
     private final EdgeGatewayMapper edgeGatewayMapper;
     private final DeviceTopologyMapper deviceTopologyMapper;
@@ -64,6 +66,7 @@ public class DeviceService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void addDevice(Device device) {
+        rejectCloudWrite();
         // 租户归属：超管可指定，普通管理员归本租户
         if (SecurityUtils.isSuperAdmin() && device.getTenantId() != null) {
             // 使用指定租户
@@ -102,6 +105,7 @@ public class DeviceService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateDevice(Device device) {
+        rejectCloudWrite();
         Device exist = deviceMapper.selectById(device.getId());
         if (exist == null) {
             throw new ServiceException(ResultCode.DEVICE_NOT_FOUND);
@@ -159,6 +163,7 @@ public class DeviceService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteDevice(Long id) {
+        rejectCloudWrite();
         Device exist = deviceMapper.selectById(id);
         if (exist == null) {
             throw new ServiceException(ResultCode.DEVICE_NOT_FOUND);
@@ -404,5 +409,13 @@ public class DeviceService {
     /** 编码随机后缀（4位，ThreadLocalRandom 线程安全且避免可预测编码） */
     private String randomSuffix() {
         return String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
+    }
+
+    /**
+     * 云端设备清单完全只读：所有写入口统一拒绝，设备只能由边缘网关本地页面维护。
+     * 平台超管也不保留应用内编辑入口，紧急修正仅通过数据库运维。
+     */
+    private void rejectCloudWrite() {
+        throw new ServiceException(403, CLOUD_WRITE_DISABLED);
     }
 }

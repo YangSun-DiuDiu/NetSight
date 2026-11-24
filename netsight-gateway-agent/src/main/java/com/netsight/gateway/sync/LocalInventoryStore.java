@@ -36,7 +36,7 @@ public class LocalInventoryStore {
         this(resolve(configHolder), new ObjectMapper());
     }
 
-    LocalInventoryStore(Path path) {
+    public LocalInventoryStore(Path path) {
         this(path, new ObjectMapper());
     }
 

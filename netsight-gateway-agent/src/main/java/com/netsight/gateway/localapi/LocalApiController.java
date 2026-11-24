@@ -37,15 +37,17 @@ public class LocalApiController {
     private final MappingSync mappingSync;
     private final LocalAuthService authService;
     private final LocalLogService logService;
+    private final LocalDeviceService localDeviceService;
 
     public LocalApiController(ConfigHolder configHolder, RuntimeState runtimeState,
                               MappingSync mappingSync, LocalAuthService authService,
-                              LocalLogService logService) {
+                              LocalLogService logService, LocalDeviceService localDeviceService) {
         this.configHolder = configHolder;
         this.runtimeState = runtimeState;
         this.mappingSync = mappingSync;
         this.authService = authService;
         this.logService = logService;
+        this.localDeviceService = localDeviceService;
     }
 
     /** 登录：成功返回会话 token（Set-Cookie） */
@@ -134,8 +136,8 @@ public class LocalApiController {
 
     /** 设备采集列表（映射清单元信息 + 实时状态） */
     @GetMapping("/devices")
-    public R<List<Map<String, Object>>> devices() {
-        List<Map<String, Object>> list = new ArrayList<>();
+    public R<Map<String, Object>> devices() {
+        List<Map<String, Object>> items = new ArrayList<>();
         for (MappingDevice d : mappingSync.getDevices()) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("deviceCode", d.getDeviceCode());
@@ -143,6 +145,9 @@ public class LocalApiController {
             item.put("deviceIp", d.getDeviceIp());
             item.put("deviceType", d.getDeviceType());
             item.put("location", d.getLocation());
+            item.put("brand", d.getBrand());
+            item.put("model", d.getModel());
+            item.put("warrantyExpire", d.getWarrantyExpire());
             item.put("collectType", d.getCollectType());
             item.put("collectPort", d.getCollectPort());
             RuntimeState.DeviceState st = runtimeState.getDeviceStates().get(d.getDeviceCode());
@@ -155,9 +160,71 @@ public class LocalApiController {
                 item.put("lineAbnormal", null);
                 item.put("collectedAt", "-");
             }
-            list.add(item);
+            items.add(item);
         }
-        return R.ok(list);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("revision", mappingSync.getRevision());
+        data.put("updatedAt", mappingSync.getUpdatedAt());
+        data.put("syncStatus", runtimeState.getInventorySyncStatus());
+        data.put("lastSyncAt", runtimeState.getLastInventorySyncAt());
+        data.put("nextRetryAt", runtimeState.getNextInventoryRetryAt());
+        data.put("items", items);
+        return R.ok(data);
+    }
+
+    @PostMapping("/devices")
+    public R<MappingDevice> addDevice(@RequestBody LocalDeviceRequest req) {
+        try {
+            return R.ok(localDeviceService.create(req));
+        } catch (IllegalArgumentException e) {
+            return R.fail(ResultCode.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    @PutMapping("/devices/{deviceCode}")
+    public R<MappingDevice> updateDevice(@PathVariable String deviceCode, @RequestBody LocalDeviceRequest req) {
+        try {
+            return R.ok(localDeviceService.update(deviceCode, req));
+        } catch (IllegalArgumentException e) {
+            return R.fail(ResultCode.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/devices/{deviceCode}")
+    public R<Void> deleteDevice(@PathVariable String deviceCode,
+                                @RequestParam(defaultValue = "false") boolean confirmEmpty) {
+        try {
+            localDeviceService.delete(deviceCode, confirmEmpty);
+            return R.ok(null);
+        } catch (IllegalArgumentException e) {
+            return R.fail(ResultCode.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    @PostMapping("/devices/clear")
+    public R<Void> clearDevices(@RequestBody Map<String, String> body) {
+        try {
+            localDeviceService.clearAll(body.getOrDefault("confirm", ""));
+            return R.ok(null);
+        } catch (IllegalArgumentException e) {
+            return R.fail(ResultCode.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    @PostMapping("/devices/sync")
+    public R<String> syncDevices() {
+        return R.ok(localDeviceService.syncNow());
+    }
+
+    @GetMapping("/devices/sync-status")
+    public R<Map<String, Object>> syncStatus() {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("status", runtimeState.getInventorySyncStatus());
+        data.put("lastSyncAt", runtimeState.getLastInventorySyncAt());
+        data.put("result", runtimeState.getLastInventorySyncResult());
+        data.put("nextRetryAt", runtimeState.getNextInventoryRetryAt());
+        data.put("failCount", runtimeState.getInventorySyncFailCount());
+        return R.ok(data);
     }
 
     /** 手动重新加载本地采集清单（mapping.json） */

@@ -3,6 +3,7 @@ package com.netsight.gateway.snapshot;
 import com.netsight.gateway.connector.CloudClient;
 import com.netsight.gateway.core.ConfigHolder;
 import com.netsight.gateway.core.RuntimeState;
+import com.netsight.gateway.sync.MappingDevice;
 import com.netsight.gateway.sync.MappingSync;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -58,14 +59,14 @@ public class SnapshotCollector {
 
     @Scheduled(fixedDelay = 30000)
     public void collectAndReport() {
-        List<MappingSync.MappingDevice> list = mappingSync.getDevices();
+        List<MappingDevice> list = mappingSync.getDevices();
         if (list.isEmpty()) {
             log.debug("无纳管设备，跳过快照");
             return;
         }
         try {
             List<Map<String, Object>> devices = new ArrayList<>();
-            for (MappingSync.MappingDevice d : list) {
+            for (MappingDevice d : list) {
                 SnapshotResult r = queryDevice(d);
                 if (r == null) {
                     // 查询异常：跳过该设备，不误报离线
@@ -109,7 +110,7 @@ public class SnapshotCollector {
     }
 
     /** 查询单设备状态：up 与 lineAbnormal。返回 null 表示查询异常/无数据。 */
-    private SnapshotResult queryDevice(MappingSync.MappingDevice d) {
+    private SnapshotResult queryDevice(MappingDevice d) {
         String source = configHolder.getConfig().getPrometheus().getSource();
         if ("probe".equalsIgnoreCase(source)) {
             // 自研探针数据源：从本地状态文件读取（探针进程/采集软件周期性写入），
@@ -131,7 +132,7 @@ public class SnapshotCollector {
     }
 
     /** probe 数据源：读本地状态文件（热可改，模拟器/探针共用同一格式） */
-    private SnapshotResult queryProbeFile(MappingSync.MappingDevice d) {
+    private SnapshotResult queryProbeFile(MappingDevice d) {
         try {
             Path file = Paths.get(configHolder.getConfig().getPrometheus().getProbeStatusFile());
             if (!Files.exists(file)) {

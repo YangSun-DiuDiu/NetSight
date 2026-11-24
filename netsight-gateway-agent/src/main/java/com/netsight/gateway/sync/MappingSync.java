@@ -1,13 +1,10 @@
 package com.netsight.gateway.sync;
 
-import com.netsight.gateway.connector.CloudClient;
 import com.netsight.gateway.core.ConfigHolder;
 import com.netsight.gateway.core.RuntimeState;
-import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.file.Files;
@@ -20,13 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 采集清单同步：mapping.json（云端下发）→ Prometheus file_sd targets 文件。
- * <p>
- * 设备增删零重启：云端改清单 → 本组件检测变更 → 重写 conf/targets/*.json →
- * Prometheus file_sd（refresh_interval 60s）自动生效。
- * </p>
- */
 @Slf4j
 @Component
 public class MappingSync {
@@ -34,106 +24,64 @@ public class MappingSync {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final ConfigHolder configHolder;
-    private final CloudClient cloudClient;
+    private final LocalInventoryStore store;
     private final RuntimeState runtimeState;
     private final ObjectMapper mapper = new ObjectMapper();
 
     private volatile List<MappingDevice> devices = new ArrayList<>();
     private volatile long lastFileMtime = 0L;
     private volatile String version = "-";
+    private volatile long revision = 0L;
+    private volatile String updatedAt = "-";
 
-    public MappingSync(ConfigHolder configHolder, CloudClient cloudClient, RuntimeState runtimeState) {
+    public MappingSync(ConfigHolder configHolder, LocalInventoryStore store, RuntimeState runtimeState) {
         this.configHolder = configHolder;
-        this.cloudClient = cloudClient;
+        this.store = store;
         this.runtimeState = runtimeState;
     }
 
-    /** 启动时同步一次 */
     @jakarta.annotation.PostConstruct
     public void init() {
-        sync();
+        reloadLocal();
     }
 
-    /** 每 60s 同步：云端拉取优先，否则本地文件变更检测 */
     @Scheduled(fixedDelay = 60000)
     public void scheduledSync() {
-        sync();
+        try {
+            Path p = store.getPath();
+            long mtime = Files.exists(p) ? Files.getLastModifiedTime(p).toMillis() : 0L;
+            if (mtime != lastFileMtime || devices.isEmpty()) {
+                reloadLocal();
+            }
+        } catch (Exception e) {
+            runtimeState.setLastSyncResult(now() + " 本地清单检测失败: " + e.getMessage());
+            log.error("本地清单检测失败", e);
+        }
     }
 
-    public synchronized String sync() {
+    public synchronized String reloadLocal() {
         try {
-            String result = null;
-            // 1) 优先尝试云端拉取（云端 v1.1.7 提供 GET /edge/config/mapping）
-            String remote = cloudClient.fetchMapping();
-            if (remote != null && !remote.isBlank()) {
-                result = parseAndApply(remote, true);
-            }
-            // 2) 云端不可用则走本地文件（变更检测）
-            if (result == null) {
-                Path p = mappingPath();
-                if (Files.exists(p)) {
-                    long mtime = Files.getLastModifiedTime(p).toMillis();
-                    if (mtime != lastFileMtime || devices.isEmpty()) {
-                        String local = Files.readString(p);
-                        result = parseAndApply(local, false);
-                        lastFileMtime = mtime;
-                    } else {
-                        result = "本地清单无变更（mtime 相同）";
-                    }
-                } else {
-                    result = "mapping.json 不存在: " + p;
-                    log.warn("{}", result);
-                }
-            }
-            runtimeState.setLastSyncResult(time() + " " + result);
-            return result;
+            LocalInventoryDocument doc = store.read();
+            this.devices = new ArrayList<>(doc.getDevices());
+            this.version = doc.getVersion();
+            this.revision = doc.getRevision();
+            this.updatedAt = doc.getUpdatedAt();
+            writeTargets();
+            this.lastFileMtime = Files.exists(store.getPath())
+                    ? Files.getLastModifiedTime(store.getPath()).toMillis() : 0L;
+            String msg = String.format("本地清单已加载（version=%s，revision=%d，设备 %d 台）",
+                    version, revision, devices.size());
+            runtimeState.setLastSyncResult(now() + " " + msg);
+            log.info("{}", msg);
+            return msg;
         } catch (Exception e) {
-            String msg = "清单同步失败: " + e.getMessage();
+            String msg = "本地清单加载失败: " + e.getMessage();
+            runtimeState.setLastSyncResult(now() + " " + msg);
             log.error("{}", msg, e);
-            runtimeState.setLastSyncResult(time() + " " + msg);
             return msg;
         }
     }
 
-    private String parseAndApply(String json, boolean fromCloud) throws Exception {
-        JsonNode root = mapper.readTree(json);
-        // 兼容云端 R 统一返回包装 {code,msg,data:{version,devices}}——data 存在且 code=200 时解包内层
-        if (root.path("code").asInt(200) == 200 && root.path("data").isObject()) {
-            root = root.path("data");
-        }
-        version = root.path("version").asText("-");
-        JsonNode arr = root.path("devices");
-        List<MappingDevice> list = new ArrayList<>();
-        for (JsonNode n : arr) {
-            MappingDevice d = new MappingDevice();
-            d.setDeviceCode(n.path("deviceCode").asText());
-            d.setDeviceName(n.path("deviceName").asText());
-            d.setDeviceIp(n.path("deviceIp").asText());
-            d.setDeviceType(n.path("deviceType").asText());
-            d.setLocation(n.path("location").asText());
-            d.setCollectType(n.path("collectType").asText("ping"));
-            d.setCollectPort(n.path("collectPort").asInt(0));
-            // labels 透传（tenant_id/gateway_code 等业务标签）
-            Map<String, String> labels = new LinkedHashMap<>();
-            JsonNode ls = n.path("labels");
-            if (ls.isObject()) {
-                ls.properties().forEach(e -> labels.put(e.getKey(), e.getValue().asText()));
-            }
-            d.setLabels(labels);
-            list.add(d);
-        }
-        this.devices = list;
-        writeTargets();
-        String src = fromCloud ? "云端" : "本地";
-        String msg = String.format("清单已同步（%s，version=%s，设备 %d 台）", src, version, list.size());
-        log.info("{}", msg);
-        return msg;
-    }
-
-    /**
-     * 生成 Prometheus file_sd targets 文件：conf/targets/ping.json。
-     * <p>设备状态统一使用 ICMP 探测，target 只写管理 IP，不再携带 SNMP 端口/模块。</p>
-     */
     private void writeTargets() throws Exception {
         List<Map<String, Object>> entries = new ArrayList<>();
         for (MappingDevice d : devices) {
@@ -142,7 +90,8 @@ public class MappingSync {
             }
             Map<String, Object> e = new LinkedHashMap<>();
             e.put("targets", List.of(d.getDeviceIp()));
-            Map<String, String> labels = new LinkedHashMap<>(d.getLabels());
+            Map<String, String> sourceLabels = d.getLabels() == null ? Map.of() : d.getLabels();
+            Map<String, String> labels = new LinkedHashMap<>(sourceLabels);
             labels.put("device_code", d.getDeviceCode());
             labels.put("device_name", d.getDeviceName());
             labels.put("device_ip", d.getDeviceIp());
@@ -156,40 +105,27 @@ public class MappingSync {
         Path dir = Paths.get(configHolder.getTargetsDir());
         Files.createDirectories(dir);
         String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(entries);
-        Path file = dir.resolve("ping.json");
-        Files.writeString(file, json);
-        log.info("targets 文件已生成: {}（{} 条）", file, entries.size());
-    }
-
-    private Path mappingPath() {
-        String mp = configHolder.getConfig().getMappingPath();
-        if (mp != null && !mp.isBlank()) {
-            return Paths.get(mp);
-        }
-        return Paths.get(configHolder.getConfDir(), "mapping.json");
+        Files.writeString(dir.resolve("ping.json"), json);
+        log.info("targets 文件已生成: {}（{} 条）", dir.resolve("ping.json"), entries.size());
     }
 
     public List<MappingDevice> getDevices() {
         return devices;
     }
 
+    public long getRevision() {
+        return revision;
+    }
+
+    public String getUpdatedAt() {
+        return updatedAt;
+    }
+
     public String getVersion() {
         return version;
     }
 
-    private static String time() {
+    private static String now() {
         return LocalDateTime.now().format(FMT);
-    }
-
-    @Data
-    public static class MappingDevice {
-        private String deviceCode;
-        private String deviceName;
-        private String deviceIp;
-        private String deviceType;
-        private String location;
-        private String collectType = "ping";
-        private int collectPort = 0;
-        private Map<String, String> labels = new LinkedHashMap<>();
     }
 }

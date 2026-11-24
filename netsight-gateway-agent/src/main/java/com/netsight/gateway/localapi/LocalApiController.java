@@ -4,6 +4,7 @@ import com.netsight.gateway.common.R;
 import com.netsight.gateway.common.ResultCode;
 import com.netsight.gateway.core.ConfigHolder;
 import com.netsight.gateway.core.RuntimeState;
+import com.netsight.gateway.sync.MappingDevice;
 import com.netsight.gateway.sync.MappingSync;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -135,7 +136,7 @@ public class LocalApiController {
     @GetMapping("/devices")
     public R<List<Map<String, Object>>> devices() {
         List<Map<String, Object>> list = new ArrayList<>();
-        for (MappingSync.MappingDevice d : mappingSync.getDevices()) {
+        for (MappingDevice d : mappingSync.getDevices()) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("deviceCode", d.getDeviceCode());
             item.put("deviceName", d.getDeviceName());
@@ -159,10 +160,10 @@ public class LocalApiController {
         return R.ok(list);
     }
 
-    /** 手动同步采集清单（立即拉取/检测 mapping.json） */
+    /** 手动重新加载本地采集清单（mapping.json） */
     @PostMapping("/sync")
     public R<String> sync() {
-        String result = mappingSync.sync();
+        String result = mappingSync.reloadLocal();
         return R.ok(result);
     }
 

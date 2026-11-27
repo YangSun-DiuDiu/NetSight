@@ -2,6 +2,16 @@
 
 > **【全局硬约束】全程使用中文提示**：与用户交互、回复、错误提示、文档说明、代码注释中的用户可见文案、提交信息、commit message、备份目录说明等，一律使用中文；技术术语/类名/接口路径/变量名保留英文原文。
 
+> **【2026-11-22 业务部署标准 · 所有环境按此执行】**：以后云端 NetSight、边缘网关、前端的每次业务部署，统一按“环境基线 → 备份 → 同版本部署 → 服务健康检查 → 业务端到端验证 → 上下文记录”六步执行，禁止直接上传覆盖后宣称完成。
+> - **环境基线**：部署前先记录目标机 OS/内核、CPU/内存/磁盘、`systemctl --failed`、`ss -tlnp`、Java/Prometheus/Alertmanager/Blackbox 版本；边缘网关还必须记录 8081/18080/9090/9093/9115 端口占用和 `nams-*` 服务状态。基线不通过（磁盘满、端口被占、版本不符）先处理，不进入部署。
+> - **备份**：先备份 `/opt/nams-gateway/conf`、`/etc/systemd/system` 下相关 unit、云端 `nams.env` 与 Nginx 配置；备份文件带时间戳，保留可回滚路径。禁止用 `rm -rf` 清目录后再上传。
+> - **同版本部署**：以参考环境（当前为 192.168.1.55）实际运行的 jar、二进制版本和配置为基准，不拿仓库里的历史模板冒充现网配置；复制 `conf/` 与二进制，不复制 `data/`、`cache/`、`logs/`、Prometheus TSDB 等运行数据。
+> - **网关身份唯一**：复制 .55 配置后，`gateway_code`、`gateway_name`、`cloud.gateway_token` 必须改为目标机专属值，并在云端 `edge_gateway` 注册；`tenant_id`、`cloud.base_url`、`alert_webhook_token` 按现场保持一致。**严禁两台网关共用同一 gateway_code/token**，否则云端状态更新会串网关。
+> - **启动顺序**：Blackbox(9115) → Prometheus(9090) → Alertmanager(9093) → nams-agent(8081/18080)；每次 `systemctl restart` 后等待 5–10 秒再验端口和日志。
+> - **验证门槛**：管理页 `http://目标:8081/login.html` 200；`/edge/report/heartbeat` 与 `/edge/report/status` 返回 200；Prometheus `device_up` 有数据且 targets 为 up；云端设备页状态随采集变化；至少做一次“断网/关机 → 离线事件 → 通知送达 → 恢复 → 恢复事件”的端到端验证。
+> - **记录**：部署完成后在 AGENTS.md 记录目标 IP、部署时间、版本、配置差异、验证结果和回滚方式；敏感 Token/密码只记“已配置”，不写明文。
+> - **凭据**：服务器 root 与网关本地管理员凭据沿用现有运维账号，不在文档、脚本、Git 中记录明文；远程执行统一用 Python paramiko 或系统 OpenSSH。
+
 > **【2026-11-01 环境变更 · 最新，优先于下方案例中的旧环境描述】测试环境全部迁移至 115.159.194.149**：应用（/opt/nams-server/，nams.env 已指向本机库）、**MySQL8（127.0.0.1:3306，库名 `netsight`，sadmin/Chinaunicom@1358）**、Redis（127.0.0.1:6379）**全部在同一台服务器**；**1.94.26.126 与 192.168.1.55 不再作为测试目标（测试体系彻底脱离这两台）**；本机 Windows 仅保留代码开发（JDK21/Maven3.9.6/Node16 本地构建用），不跑测试服务。**项目本地仓库实际路径为 `D:\gitee\gitee\NetSight1.0`**（E:\gitee\NetSight1.0 已不存在，本文件下文及历史记录中的 E 盘路径均为过时信息，以本行为准）。**测试库数据源**：`D:\gitee\gitee\NetSight1.0\netsight-server\sql\`（netsight.sql 建库名 netsight + netsight-upgrade-v1.1.x/v1.2.8/v1.3.0 按序导入；库名口径=本地脚本原生名 `netsight`，与早期印象 netsight-test 不同；演示数据 demo_v115.sql 未导入）。**MySQL 低内存配置**：/etc/mysql/mysql.conf.d/99-netsight-lowmem.cnf（buffer_pool 128M、performance_schema=OFF、max_connections=100、skip-name-resolve），1.9Gi 内存服务器专用。远程生产部署硬规则（start_nams.sh 重启 / mvn clean package / python3 zipfile 解压 / Python sftp 传脚本 / F 盘 git 备份）不变，仅适用于生产环境 115.159.194.149。
 
 > **GitHub 远程仓库（2026-10-04 建立并完成首次 push，权限与过程全记录）**：

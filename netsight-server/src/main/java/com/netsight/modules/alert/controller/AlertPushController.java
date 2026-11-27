@@ -62,7 +62,6 @@ public class AlertPushController {
     @PostMapping
     public R<List<Long>> push(@RequestHeader(value = "X-Netsight-Webhook-Token", required = false) String token,
             @RequestHeader(value = "X-Netsight-Tenant-Id", required = false) Long tenantId,
-
             @RequestBody Map<String, Object> body,
             HttpServletRequest request) {
         // ① 租户级 Token 优先：服务端反查（Redis → DB → 回填缓存）

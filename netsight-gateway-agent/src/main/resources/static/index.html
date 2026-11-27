@@ -20,6 +20,7 @@
         <div class="menu-item active" data-page="overview"><span class="ico">📊</span>状态总览</div>
         <div class="menu-title">配置管理</div>
         <div class="menu-item" data-page="devices"><span class="ico">🖥️</span>设备管理</div>
+        <div class="menu-item" data-page="video"><span class="ico">🎬</span>视频预览</div>
         <div class="menu-item" data-page="links"><span class="ico">🔗</span>链路设置</div>
         <div class="menu-item" data-page="cloud"><span class="ico">☁️</span>云端设置</div>
         <div class="menu-title">系统</div>
@@ -70,6 +71,18 @@
             <table>
               <thead><tr><th>设备编码</th><th>名称</th><th>IP</th><th>类型</th><th>位置</th><th>状态</th><th>最近采集</th><th>操作</th></tr></thead>
               <tbody id="devTable"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 视频预览 -->
+        <div class="page" id="page-video" style="display:none">
+          <div class="card">
+            <h3>视频预览（边缘局域网 RTSP → HTTP-FLV）</h3>
+            <div style="margin-bottom:12px;font-size:12px;color:#6b7280" id="videoMeta">加载中…</div>
+            <table>
+              <thead><tr><th>设备编码</th><th>名称</th><th>IP</th><th>品牌</th><th>类型</th><th>视频配置</th><th>操作</th></tr></thead>
+              <tbody id="videoTable"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -146,8 +159,63 @@
     </div>
   </div>
 
+  <!-- 视频配置对话框 -->
+  <div class="dialog-mask" id="videoCfgMask">
+    <div class="dialog video-cfg-dialog">
+      <h3 id="videoCfgTitle">视频接入配置</h3>
+      <div class="form-item"><label>设备</label><input id="vcDevice" disabled></div>
+      <div class="form-item"><label><input type="checkbox" id="vcEnabled" style="width:auto;height:auto"> 启用视频预览</label></div>
+      <div class="form-item"><label>厂商</label>
+        <select id="vcVendor" onchange="onVendorChange()">
+          <option value="hikvision">海康 Hikvision</option>
+          <option value="dahua">大华 Dahua</option>
+          <option value="custom">自定义 RTSP 路径</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-item"><label>RTSP 主机</label><input id="vcHost" placeholder="192.168.1.64"></div>
+        <div class="form-item"><label>端口</label><input id="vcPort" type="number" value="554"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-item"><label>通道号</label><input id="vcChannel" type="number" value="1" min="1" max="256"></div>
+        <div class="form-item"><label>传输</label>
+          <select id="vcTransport"><option value="tcp">TCP</option><option value="udp">UDP</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-item"><label>用户名</label><input id="vcUsername" autocomplete="off"></div>
+        <div class="form-item"><label>密码（留空沿用原密码）</label><input id="vcPassword" type="password" autocomplete="new-password"></div>
+      </div>
+      <div class="form-item" id="vcMainPathItem"><label>主码流路径</label><input id="vcMainPath" placeholder="/Streaming/Channels/101"></div>
+      <div class="form-item" id="vcSubPathItem"><label>子码流路径</label><input id="vcSubPath" placeholder="/Streaming/Channels/102"></div>
+      <div style="font-size:12px;color:#6b7280;margin:8px 0">海康/大华选择厂商后路径可留空，网关按通道号自动生成。密码只在本机加密保存。</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button class="btn danger" id="vcDeleteBtn" onclick="deleteVideoConfig()">删除配置</button>
+        <button class="btn" onclick="hideVideoCfgDialog()">取消</button>
+        <button class="btn primary" onclick="saveVideoConfig()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 视频预览对话框 -->
+  <div class="dialog-mask" id="videoMask">
+    <div class="dialog video-dialog">
+      <h3 id="videoTitle">视频预览</h3>
+      <div class="video-status" id="videoStatus">正在连接…</div>
+      <div class="video-box"><video id="videoPlayer" controls autoplay muted playsinline></video></div>
+      <div style="display:flex;gap:10px;margin-top:12px;align-items:center">
+        <button class="btn primary" id="btnMain" onclick="switchVideoProfile('main')">主码流</button>
+        <button class="btn" id="btnSub" onclick="switchVideoProfile('sub')">子码流</button>
+        <span style="flex:1"></span>
+        <button class="btn" onclick="closeVideoDialog()">关闭</button>
+      </div>
+      <div class="video-tip">仅边缘局域网可访问；关闭页面或无人观看 60 秒后自动停流。</div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
+  <script src="/assets/mpegts.min.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>

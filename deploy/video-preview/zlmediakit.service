@@ -1,0 +1,16 @@
+[Unit]
+Description=ZLMediaKit for NetSight local video preview
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zlmediakit
+ExecStart=/opt/zlmediakit/MediaServer -c /opt/zlmediakit/config.ini
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+Environment=LD_LIBRARY_PATH=/opt/zlmediakit/lib
+
+[Install]
+WantedBy=multi-user.target

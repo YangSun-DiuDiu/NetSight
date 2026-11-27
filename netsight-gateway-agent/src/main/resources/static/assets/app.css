@@ -119,6 +119,16 @@ tr:hover td { background: #fafcff; }
 .dialog { width: 400px; background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 .dialog h3 { font-size: 16px; margin-bottom: 18px; }
 .dialog .form-item input { width: 100%; }
+.form-item select { width: 100%; height: 40px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 14px; background: #fff; }
+.form-row { display: flex; gap: 10px; }
+.form-row .form-item { flex: 1; }
+.video-cfg-dialog { width: 520px; }
+.video-dialog { width: min(860px, 92vw); }
+.video-box { background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; }
+.video-box video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+.video-status { font-size: 13px; color: var(--muted); margin-bottom: 10px; min-height: 20px; }
+.video-tip { font-size: 12px; color: var(--muted); margin-top: 10px; }
 
 .empty { text-align: center; color: var(--muted); padding: 30px 0; font-size: 13px; }
 .toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 100;

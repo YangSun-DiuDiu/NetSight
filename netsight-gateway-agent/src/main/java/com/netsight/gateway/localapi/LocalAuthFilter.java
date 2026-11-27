@@ -48,6 +48,11 @@ public class LocalAuthFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
+        // ZLM 本机回调：只允许回环地址，避免局域网伪造播放/停流事件
+        if (uri.startsWith("/local/api/video/hook/") && isLoopback(request.getRemoteAddr())) {
+            chain.doFilter(request, response);
+            return;
+        }
         String token = resolveToken(request);
         if (!authService.isLoggedIn(token)) {
             writeJson(response, ResultCode.UNAUTHORIZED, "未登录或会话失效");
@@ -62,8 +67,12 @@ public class LocalAuthFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    private String resolveToken(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
+    private static boolean isLoopback(String addr) {
+        return addr != null && ("127.0.0.1".equals(addr) || "::1".equals(addr)
+                || "0:0:0:0:0:0:0:1".equals(addr));
+    }
+
+    private String resolveToken(HttpServletRequest request) {        Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie c : cookies) {
                 if (LocalAuthService.COOKIE_NAME.equals(c.getName())) {

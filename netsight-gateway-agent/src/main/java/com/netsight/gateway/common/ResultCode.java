@@ -19,6 +19,19 @@ public final class ResultCode {
     /** 登录尝试过于频繁 */
     public static final int RATE_LIMIT = 4005;
 
+    /** 视频：设备未配置 RTSP 接入 */
+    public static final int VIDEO_NOT_CONFIGURED = 4101;
+    /** 视频：RTSP 源不可达 */
+    public static final int VIDEO_SOURCE_UNREACHABLE = 4102;
+    /** 视频：摄像头认证失败 */
+    public static final int VIDEO_AUTH_FAILED = 4103;
+    /** 视频：ZLM 媒体服务不可用 */
+    public static final int VIDEO_ZLM_UNAVAILABLE = 4104;
+    /** 视频：并发路数已满 */
+    public static final int VIDEO_MAX_SESSIONS = 4105;
+    /** 视频：拉流启动超时 */
+    public static final int VIDEO_START_TIMEOUT = 4106;
+
     private ResultCode() {
     }
 }

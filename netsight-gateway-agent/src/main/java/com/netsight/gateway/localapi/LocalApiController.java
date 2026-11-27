@@ -6,6 +6,8 @@ import com.netsight.gateway.core.ConfigHolder;
 import com.netsight.gateway.core.RuntimeState;
 import com.netsight.gateway.sync.MappingDevice;
 import com.netsight.gateway.sync.MappingSync;
+import com.netsight.gateway.video.VideoEndpoint;
+import com.netsight.gateway.video.VideoEndpointStore;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -38,16 +40,19 @@ public class LocalApiController {
     private final LocalAuthService authService;
     private final LocalLogService logService;
     private final LocalDeviceService localDeviceService;
+    private final VideoEndpointStore videoEndpointStore;
 
     public LocalApiController(ConfigHolder configHolder, RuntimeState runtimeState,
                               MappingSync mappingSync, LocalAuthService authService,
-                              LocalLogService logService, LocalDeviceService localDeviceService) {
+                              LocalLogService logService, LocalDeviceService localDeviceService,
+                              VideoEndpointStore videoEndpointStore) {
         this.configHolder = configHolder;
         this.runtimeState = runtimeState;
         this.mappingSync = mappingSync;
         this.authService = authService;
         this.logService = logService;
         this.localDeviceService = localDeviceService;
+        this.videoEndpointStore = videoEndpointStore;
     }
 
     /** 登录：成功返回会话 token（Set-Cookie） */
@@ -150,6 +155,9 @@ public class LocalApiController {
             item.put("warrantyExpire", d.getWarrantyExpire());
             item.put("collectType", d.getCollectType());
             item.put("collectPort", d.getCollectPort());
+            VideoEndpoint ve = videoEndpointStore.find(d.getDeviceCode());
+            item.put("videoConfigured", ve != null && ve.isConfigured());
+            item.put("videoEnabled", ve != null && ve.isEnabled());
             RuntimeState.DeviceState st = runtimeState.getDeviceStates().get(d.getDeviceCode());
             if (st != null) {
                 item.put("up", st.getUp());

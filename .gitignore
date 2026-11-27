@@ -30,6 +30,10 @@ deploy/_wechat/deploy_out*.txt
 **/.env
 **/application-local.yml
 **/application-local.yaml
+# 边缘网关视频本地配置与密钥（仅保留 .example）
+**/conf/video-settings.json
+**/conf/video-endpoints.json
+**/conf/.video-key
 
 # ===== IDE / OS =====
 .idea/

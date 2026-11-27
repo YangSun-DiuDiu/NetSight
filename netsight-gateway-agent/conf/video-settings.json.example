@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "zlmApiBase": "http://127.0.0.1:8000",
+  "zlmSecret": "",
+  "maxSessions": 8,
+  "startTimeoutMs": 5000,
+  "publicHttpPort": 8000,
+  "noneReaderDelaySec": 60
+}

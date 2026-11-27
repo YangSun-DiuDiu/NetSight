@@ -17,9 +17,10 @@ function bindMenu() {
       CURRENT_PAGE = page;
       document.querySelectorAll('.page').forEach(function (p) { p.style.display = 'none'; });
       document.getElementById('page-' + page).style.display = 'block';
-      var titles = { overview: '状态总览', devices: '设备管理', links: '链路设置', cloud: '云端设置', system: '系统' };
+      var titles = { overview: '状态总览', devices: '设备管理', video: '视频预览', links: '链路设置', cloud: '云端设置', system: '系统' };
       document.getElementById('pageTitle').textContent = titles[page] || '状态总览';
       if (page === 'devices') loadDevices();
+      if (page === 'video') loadVideoPage();
       if (page === 'links') loadLinks();
       if (page === 'cloud') loadCloudCfg();
       if (page === 'system') loadLogs();
@@ -318,3 +319,241 @@ function doChangePwd() {
     }
   }).catch(function (e) { toast('失败: ' + e.message, false); });
 }
+
+/* ===== 视频预览 ===== */
+var VIDEO_DEVICES = [];
+var VIDEO_ENDPOINTS = [];
+var VIDEO_CFG_CODE = null;
+var VIDEO_CURRENT_CODE = null;
+var VIDEO_CURRENT_PROFILE = 'main';
+var FLV_PLAYER = null;
+var VIDEO_SESSION_ID = null;
+
+function loadVideoPage() {
+  Promise.all([api('/local/api/devices'), api('/local/api/video/endpoints'), api('/local/api/video/health')])
+    .then(function (res) {
+      var devRes = res[0], epRes = res[1], healthRes = res[2];
+      if (devRes.code !== 200) { return handleAuthError(devRes); }
+      VIDEO_DEVICES = (devRes.data.items || []).filter(function (d) {
+        return d.deviceType === 'camera' || d.deviceType === 'nvr';
+      });
+      VIDEO_ENDPOINTS = epRes.code === 200 ? (epRes.data || []) : [];
+      var health = healthRes.code === 200 ? healthRes.data : {};
+      document.getElementById('videoMeta').textContent =
+        '已接入 ' + VIDEO_ENDPOINTS.filter(function (e) { return e.configured; }).length + ' 台 · ' +
+        '活动预览 ' + (health.activeSessions || 0) + '/' + (health.maxSessions || 8) + ' 路 · ' +
+        (health.zlmHealthy ? '媒体服务正常' : '媒体服务不可用') +
+        (health.configured === false ? '（未配置 video-settings.json）' : '');
+      var tb = document.getElementById('videoTable');
+      if (VIDEO_DEVICES.length === 0) {
+        tb.innerHTML = '<tr><td colspan="7" class="empty">暂无摄像头/NVR，请先在“设备管理”录入</td></tr>';
+        return;
+      }
+      tb.innerHTML = VIDEO_DEVICES.map(function (d) {
+        var ep = videoConfigFor(d.deviceCode);
+        var badge = ep && ep.configured
+          ? '<span class="badge ok">已配置' + (ep.enabled ? '' : '·停用') + '</span>'
+          : '<span class="badge gray">未配置</span>';
+        var buttons = '<button class="btn" onclick="openVideoConfig(\'' + esc(d.deviceCode) + '\')">配置</button>';
+        if (ep && ep.configured && ep.enabled) {
+          buttons += ' <button class="btn primary" onclick="startVideoPreview(\'' + esc(d.deviceCode) + '\',\'main\')">主码流</button>';
+          if (ep.vendor !== 'custom' || ep.subPath) {
+            buttons += ' <button class="btn" onclick="startVideoPreview(\'' + esc(d.deviceCode) + '\',\'sub\')">子码流</button>';
+          }
+        }
+        return '<tr><td>' + esc(d.deviceCode) + '</td><td>' + esc(d.deviceName || '-') + '</td><td>' +
+          esc(d.deviceIp || '-') + '</td><td>' + esc(d.brand || '-') + '</td><td>' +
+          esc(d.deviceType) + '</td><td>' + badge + '</td><td>' + buttons + '</td></tr>';
+      }).join('');
+    }).catch(function (e) { toast('加载视频列表失败: ' + e.message, false); });
+}
+
+function videoConfigFor(code) {
+  return VIDEO_ENDPOINTS.filter(function (e) { return e.deviceCode === code; })[0] || null;
+}
+
+function openVideoConfig(code) {
+  VIDEO_CFG_CODE = code;
+  var d = VIDEO_DEVICES.filter(function (x) { return x.deviceCode === code; })[0];
+  var ep = videoConfigFor(code);
+  if (!d) { toast('设备不存在', false); return; }
+  document.getElementById('videoCfgTitle').textContent = '视频接入配置 · ' + (d.deviceName || code);
+  document.getElementById('vcDevice').value = code;
+  document.getElementById('vcEnabled').checked = ep ? !!ep.enabled : true;
+  document.getElementById('vcHost').value = ep ? (ep.host || '') : (d.deviceIp || '');
+  document.getElementById('vcPort').value = ep ? (ep.port || 554) : 554;
+  document.getElementById('vcChannel').value = ep ? (ep.channel || 1) : 1;
+  document.getElementById('vcUsername').value = ep ? (ep.username || '') : '';
+  document.getElementById('vcPassword').value = '';
+  document.getElementById('vcPassword').placeholder = ep && ep.passwordSet ? '已保存，不修改则留空' : '未设置';
+  document.getElementById('vcMainPath').value = ep ? (ep.mainPath || '') : '';
+  document.getElementById('vcSubPath').value = ep ? (ep.subPath || '') : '';
+  document.getElementById('vcTransport').value = ep ? (ep.transport || 'tcp') : 'tcp';
+  var brand = (d.brand || '').toLowerCase();
+  document.getElementById('vcVendor').value = ep ? (ep.vendor || inferVendor(brand)) : inferVendor(brand);
+  document.getElementById('vcDeleteBtn').style.display = ep ? '' : 'none';
+  onVendorChange();
+  document.getElementById('videoCfgMask').classList.add('show');
+}
+
+function inferVendor(brand) {
+  if (brand.indexOf('hik') >= 0 || brand.indexOf('海康') >= 0) return 'hikvision';
+  if (brand.indexOf('dahua') >= 0 || brand.indexOf('大华') >= 0) return 'dahua';
+  return 'custom';
+}
+
+function onVendorChange() {
+  var v = document.getElementById('vcVendor').value;
+  var main = document.getElementById('vcMainPath');
+  var sub = document.getElementById('vcSubPath');
+  if (v === 'hikvision') {
+    main.placeholder = '/Streaming/Channels/101（留空自动生成）';
+    sub.placeholder = '/Streaming/Channels/102（留空自动生成）';
+  } else if (v === 'dahua') {
+    main.placeholder = '/cam/realmonitor?channel=1&subtype=0（留空自动生成）';
+    sub.placeholder = '/cam/realmonitor?channel=1&subtype=1（留空自动生成）';
+  } else {
+    main.placeholder = '/live/channel1';
+    sub.placeholder = '/live/channel1-sub';
+  }
+}
+
+function hideVideoCfgDialog() {
+  document.getElementById('videoCfgMask').classList.remove('show');
+}
+
+function saveVideoConfig() {
+  if (!VIDEO_CFG_CODE) return;
+  var payload = {
+    enabled: document.getElementById('vcEnabled').checked,
+    vendor: document.getElementById('vcVendor').value,
+    host: document.getElementById('vcHost').value.trim(),
+    port: parseInt(document.getElementById('vcPort').value, 10) || 554,
+    channel: parseInt(document.getElementById('vcChannel').value, 10) || 1,
+    username: document.getElementById('vcUsername').value.trim(),
+    password: document.getElementById('vcPassword').value,
+    mainPath: document.getElementById('vcMainPath').value.trim(),
+    subPath: document.getElementById('vcSubPath').value.trim(),
+    transport: document.getElementById('vcTransport').value
+  };
+  api('/local/api/video/endpoints/' + encodeURIComponent(VIDEO_CFG_CODE), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function (data) {
+    if (data.code !== 200) { toast(data.msg || '保存失败', false); return; }
+    toast('视频配置已保存', true);
+    hideVideoCfgDialog();
+    loadVideoPage();
+  }).catch(function (e) { toast('保存失败: ' + e.message, false); });
+}
+
+function deleteVideoConfig() {
+  if (!VIDEO_CFG_CODE) return;
+  if (!confirm('确认删除该设备的视频接入配置？')) return;
+  api('/local/api/video/endpoints/' + encodeURIComponent(VIDEO_CFG_CODE), { method: 'DELETE' })
+    .then(function (data) {
+      if (data.code !== 200) { toast(data.msg || '删除失败', false); return; }
+      toast('视频配置已删除', true);
+      hideVideoCfgDialog();
+      loadVideoPage();
+    }).catch(function (e) { toast('删除失败: ' + e.message, false); });
+}
+
+function startVideoPreview(code, profile) {
+  var ep = videoConfigFor(code);
+  if (!ep || !ep.configured) {
+    toast('请先配置视频接入', false);
+    openVideoConfig(code);
+    return;
+  }
+  VIDEO_CURRENT_CODE = code;
+  VIDEO_CURRENT_PROFILE = profile;
+  document.getElementById('videoTitle').textContent =
+    (ep.deviceName || code) + ' · ' + (profile === 'sub' ? '子码流' : '主码流');
+  document.getElementById('videoStatus').textContent = '正在拉起 RTSP 流…（首次约 1-3 秒）';
+  document.getElementById('btnMain').className = 'btn' + (profile === 'main' ? ' primary' : '');
+  document.getElementById('btnSub').className = 'btn' + (profile === 'sub' ? ' primary' : '');
+  document.getElementById('videoMask').classList.add('show');
+  closeVideoSession();
+  api('/local/api/video/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceCode: code, profile: profile })
+  }).then(function (data) {
+    if (data.code !== 200) {
+      document.getElementById('videoStatus').textContent = data.msg || '视频启动失败';
+      return;
+    }
+    VIDEO_SESSION_ID = data.data.sessionId;
+    playFlv(data.data.playUrl);
+  }).catch(function (e) {
+    document.getElementById('videoStatus').textContent = '视频启动失败: ' + e.message;
+  });
+}
+
+function playFlv(url) {
+  destroyFlv();
+  try {
+    var lib = (typeof mpegts !== 'undefined' && mpegts.isSupported()) ? mpegts : null;
+    if (!lib) {
+      document.getElementById('videoStatus').textContent = '当前浏览器不支持 HTTP-FLV 播放';
+      return;
+    }
+    FLV_PLAYER = lib.createPlayer(
+      { type: 'flv', url: url, isLive: true, hasAudio: true },
+      { enableWorker: false, enableStashBuffer: false, stashInitialSize: 128 }
+    );
+    FLV_PLAYER.attachMediaElement(document.getElementById('videoPlayer'));
+    FLV_PLAYER.on(lib.Events.ERROR, function (type, detail) {
+      document.getElementById('videoStatus').textContent = '播放失败：' + detail;
+    });
+    FLV_PLAYER.on(lib.Events.METADATA_ARRIVED, function () {
+      document.getElementById('videoStatus').textContent = '播放中';
+    });
+    FLV_PLAYER.load();
+    var p = FLV_PLAYER.play();
+    if (p && p.catch) {
+      p.catch(function () {
+        document.getElementById('videoStatus').textContent = '已连接，点击视频区域允许播放';
+      });
+    }
+  } catch (e) {
+    document.getElementById('videoStatus').textContent = '播放器初始化失败：' + (e && e.message ? e.message : e);
+    destroyFlv();
+  }
+}
+
+function destroyFlv() {
+  if (FLV_PLAYER) {
+    try { FLV_PLAYER.pause(); FLV_PLAYER.unload(); FLV_PLAYER.detachMediaElement(); FLV_PLAYER.destroy(); } catch (e) {}
+    FLV_PLAYER = null;
+  }
+}
+
+function closeVideoSession() {
+  if (VIDEO_SESSION_ID) {
+    var id = VIDEO_SESSION_ID;
+    VIDEO_SESSION_ID = null;
+    api('/local/api/video/session/' + encodeURIComponent(id), { method: 'DELETE' }).catch(function () {});
+  }
+  destroyFlv();
+}
+
+function closeVideoDialog() {
+  closeVideoSession();
+  document.getElementById('videoStatus').textContent = '已关闭';
+  document.getElementById('videoMask').classList.remove('show');
+}
+
+function switchVideoProfile(profile) {
+  if (!VIDEO_CURRENT_CODE || profile === VIDEO_CURRENT_PROFILE) return;
+  startVideoPreview(VIDEO_CURRENT_CODE, profile);
+}
+
+window.addEventListener('beforeunload', function () {
+  if (VIDEO_SESSION_ID) {
+    fetch('/local/api/video/session/' + encodeURIComponent(VIDEO_SESSION_ID),
+      { method: 'DELETE', keepalive: true }).catch(function () {});
+  }
+});

@@ -71,6 +71,9 @@ public class VideoSessionService {
         }
 
         if (sessions.size() >= settings.get().getMaxSessions()) {
+            sweepStale();
+        }
+        if (sessions.size() >= settings.get().getMaxSessions()) {
             throw new VideoException(ResultCode.VIDEO_MAX_SESSIONS,
                     "已达到最大并发预览路数（" + settings.get().getMaxSessions() + " 路）");
         }
@@ -183,6 +186,18 @@ public class VideoSessionService {
             if (stream.equals(e.getValue().getStream())) {
                 log.info("无人观看，释放视频流: device={}, stream={}",
                         e.getValue().getDeviceCode(), stream);
+                return true;
+            }
+            return false;
+        });
+    }
+
+    /** 清理 ZLM 已不存在的会话，避免失效会话占满并发上限。 */
+    private void sweepStale() {
+        sessions.entrySet().removeIf(e -> {
+            if (!zlmClient.isStreamAlive(e.getValue().getStream())) {
+                log.info("清理失效视频会话: device={}, stream={}",
+                        e.getValue().getDeviceCode(), e.getValue().getStream());
                 return true;
             }
             return false;

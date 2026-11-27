@@ -155,7 +155,8 @@ public class VideoController {
     @PostMapping("/hook/none_reader")
     public Map<String, Object> noneReader(@RequestBody Map<String, Object> body) {
         sessionService.onNoneReader(str(body.get("stream")));
-        return hookOk();
+        // 返回 close=true，让 ZLM 停止 RTSP 拉流，避免会话已回收但仍在空转占带宽
+        return Map.of("code", 0, "msg", "success", "close", true);
     }
 
     private static String str(Object v) {
